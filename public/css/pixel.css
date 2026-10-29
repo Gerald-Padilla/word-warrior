@@ -1,0 +1,101 @@
+:root {
+  --ink: #1b1426;
+  --panel: #2d2342;
+  --panel-2: #3a2d57;
+  --panel-3: #4a3a6e;
+  --cream: #f4ead5;
+  --muted: #a99cc7;
+  --gold: #ffd23f;
+  --gold-dark: #c99a12;
+  --gold-light: #fff2a8;
+  --red: #ff4d4d;
+  --green: #68c74f;
+  --b: 4px;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--ink);
+  color: var(--cream);
+  font-family: 'Press Start 2P', ui-monospace, monospace;
+  line-height: 1.5;
+  -webkit-font-smoothing: none;
+  -webkit-tap-highlight-color: transparent;
+}
+button, input, select { font-family: inherit; }
+.hidden { display: none !important; }
+
+.px-sprite { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+
+/* Chunky pixel frame: four hard shadows leave the corners notched. */
+.px-box {
+  background: var(--panel);
+  box-shadow:
+    0 calc(-1 * var(--b)) 0 0 var(--ink), 0 var(--b) 0 0 var(--ink),
+    calc(-1 * var(--b)) 0 0 0 var(--ink), var(--b) 0 0 0 var(--ink),
+    inset 0 var(--b) 0 0 var(--panel-3), inset 0 calc(-1 * var(--b)) 0 0 rgba(0, 0, 0, 0.3);
+  margin: var(--b);
+  padding: 16px;
+}
+
+.px-btn {
+  --face: var(--gold); --lo: var(--gold-dark); --hi: var(--gold-light); --fg: var(--ink);
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--face);
+  border: 0;
+  padding: 14px 20px;
+  margin: var(--b);
+  cursor: pointer;
+  text-transform: uppercase;
+  box-shadow:
+    0 calc(-1 * var(--b)) 0 0 var(--ink), 0 var(--b) 0 0 var(--ink),
+    calc(-1 * var(--b)) 0 0 0 var(--ink), var(--b) 0 0 0 var(--ink),
+    inset 0 calc(-1 * var(--b)) 0 0 var(--lo), inset 0 var(--b) 0 0 var(--hi);
+  touch-action: manipulation;
+  user-select: none;
+}
+.px-btn:hover { filter: brightness(1.08); }
+.px-btn:active { transform: translateY(2px); box-shadow:
+    0 calc(-1 * var(--b)) 0 0 var(--ink), 0 var(--b) 0 0 var(--ink),
+    calc(-1 * var(--b)) 0 0 0 var(--ink), var(--b) 0 0 0 var(--ink),
+    inset 0 var(--b) 0 0 var(--lo); }
+.px-btn:disabled { --face: #5a5070; --lo: #3f3852; --hi: #6f668a; --fg: #a99cc7; cursor: not-allowed; filter: none; transform: none; }
+.px-btn.ghost { --face: var(--panel-2); --lo: var(--panel); --hi: var(--panel-3); --fg: var(--cream); }
+.px-btn.green { --face: #4fb848; --lo: #2f7d2b; --hi: #9be38a; --fg: var(--ink); }
+.px-btn.big { font-size: 18px; padding: 18px 26px; }
+.px-btn.small { font-size: 10px; padding: 8px 10px; }
+
+.px-input {
+  width: 100%;
+  font-size: 16px;
+  color: var(--cream);
+  background: var(--ink);
+  border: 0;
+  padding: 12px;
+  outline: none;
+  box-shadow: inset 0 0 0 var(--b) var(--panel-3);
+}
+.px-input:focus { box-shadow: inset 0 0 0 var(--b) var(--gold); }
+
+.logo {
+  margin: 0;
+  color: var(--gold);
+  letter-spacing: 2px;
+  line-height: 1.15;
+  text-shadow: 4px 4px 0 #c0392b, 8px 8px 0 var(--ink);
+}
+
+.label { font-size: 10px; color: var(--muted); margin: 14px 0 8px; letter-spacing: 1px; }
+
+@keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+@keyframes blink { 50% { opacity: 0.25; } }
+@keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+@keyframes pop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); } }
+@keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-18px); } }
+
+.bob { animation: bob 1s steps(2) infinite; }
+.blink { animation: blink 1.2s steps(2) infinite; }
+.pop { animation: pop 0.35s steps(6) both; }

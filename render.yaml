@@ -1,0 +1,9 @@
+# Render Blueprint: Render reads this when you choose New > Blueprint and pick this repository.
+services:
+  - type: web
+    name: word-warriors
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /api/network
