@@ -455,11 +455,6 @@
 
   typeIn.addEventListener('input', () => {
     let v = normalize(typeIn.value);
-    // Backspace throws the whole word away so you can start the next one clean.
-    if (v.length < shown.length) {
-      clearTyping();
-      return;
-    }
     // Some phone keyboards re-insert the text we just wiped (plus the next key) when composition ends.
     // Only strip that exact replay so a word swiped in one go isn't cut short.
     const lc = lastCleared;
@@ -482,8 +477,9 @@
     typeIn.classList.toggle('miss', !onTrack);
   });
 
+  // Enter (the keyboard's Done key on phones) throws the whole word away; Backspace deletes one letter.
   typeIn.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' || e.keyCode === 13) {
       e.preventDefault();
       clearTyping();
     }
