@@ -23,7 +23,9 @@ Players scan the QR code on it. Phones must be able to reach this laptop (see *N
 | 3 · HARD | Skull Inferno | 8–13 letters (`necromancer`) | 30 per letter |
 
 - Free-for-all: whoever finishes typing a word first gets it. Nobody else can score that word.
-- No Enter key needed. The word fires the moment it's spelled correctly. Enter clears your input.
+- No Enter key needed. The word fires the moment it's spelled correctly. Backspace (or Enter) clears the whole word.
+- On phones, every hero stands on the battlefield: yours big in the middle, the rest beside you. When someone
+  gets a word, their hero attacks it and their name pops up above them.
 - Words you're typing are highlighted gold on your phone. Typos turn the input red.
 - If someone else gets the word you were typing, your input clears and you see "TOO SLOW!".
 - Words that reach the ground escape and nobody scores them.

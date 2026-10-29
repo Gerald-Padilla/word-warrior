@@ -235,7 +235,24 @@
       this.heroPos.clear();
       if (!this.W) return;
       if (this.mode === 'phone') {
-        if (this.selfId) this.heroPos.set(this.selfId, { x: this.W / 2, hu: this.U });
+        // Your hero stands big in the middle; everyone else crowds in smaller on both sides,
+        // nearest the middle first. Others go in first so your hero is drawn on top.
+        const U = this.U;
+        const others = [...this.players.keys()].filter((id) => id !== this.selfId);
+        const gap = 9 * U;
+        const sideW = this.W / 2 - gap - U;
+        const perSide = Math.ceil(others.length / 2);
+        let hu = Math.max(2, Math.round(U / 2));
+        let spacing = perSide ? Math.min(18 * hu, sideW / perSide) : 0;
+        while (hu > 2 && spacing < 11 * hu) {
+          hu--;
+          spacing = Math.min(18 * hu, sideW / perSide);
+        }
+        others.forEach((id, i) => {
+          const side = i % 2 ? 1 : -1;
+          this.heroPos.set(id, { x: this.W / 2 + side * (gap + spacing * (Math.floor(i / 2) + 0.5)), hu });
+        });
+        if (this.selfId) this.heroPos.set(this.selfId, { x: this.W / 2, hu: U });
         return;
       }
       const list = [...this.players.values()];
@@ -504,6 +521,7 @@
 
     drawHeroes(t) {
       const ctx = this.ctx;
+      const labels = [];
       for (const [id, pos] of this.heroPos) {
         const p = this.players.get(id);
         if (!p) continue;
@@ -524,16 +542,35 @@
           const fs = hu >= 4 ? 16 : 8;
           const maxChars = Math.max(3, Math.floor((pos.spacing - 4) / fs));
           const name = p.name.length > maxChars ? p.name.slice(0, maxChars - 1) + '.' : p.name;
-          ctx.font = `${fs}px "Press Start 2P", monospace`;
-          const nx = Math.round(pos.x - (name.length * fs) / 2);
-          const ny = this.feetY + hu;
-          ctx.fillStyle = '#1b1426';
-          ctx.fillText(name, nx + 2, ny + 2);
-          ctx.fillStyle = this.colorOf(id).Q;
-          ctx.fillText(name, nx, ny);
-          ctx.font = `${this.fontPx}px "Press Start 2P", monospace`;
+          labels.push({ text: name, x: pos.x, y: this.feetY + hu, fs, color: this.colorOf(id).Q });
+        } else if (id !== this.selfId && hopT >= 0 && hopT < 6) {
+          // Phones have no room for every name, so a hero's name pops up while they attack.
+          const fs = Math.max(8, Math.round((this.fontPx * 0.67) / 8) * 8);
+          labels.push({ text: p.name, x: pos.x, y: y - fs - hu, fs, color: this.colorOf(id).Q });
         }
       }
+      if (this.mode === 'phone') {
+        // Neighbours attacking at once would print their names on top of each other; stack them instead.
+        const placed = [];
+        for (const l of labels) {
+          const half = (l.text.length * l.fs) / 2 + l.fs / 2;
+          while (placed.some((o) => Math.abs(o.x - l.x) < half + o.half && Math.abs(o.y - l.y) < l.fs * 1.3)) l.y -= l.fs * 1.4;
+          placed.push({ x: l.x, y: l.y, half });
+        }
+      }
+      for (const l of labels) this.drawLabel(l);
+    }
+
+    drawLabel({ text, x, y, fs, color }) {
+      const ctx = this.ctx;
+      ctx.font = `${fs}px "Press Start 2P", monospace`;
+      const w = text.length * fs;
+      const nx = Math.round(clamp(x - w / 2, 2, this.W - w - 4));
+      ctx.fillStyle = '#1b1426';
+      ctx.fillText(text, nx + 2, y + 2);
+      ctx.fillStyle = color;
+      ctx.fillText(text, nx, y);
+      ctx.font = `${this.fontPx}px "Press Start 2P", monospace`;
     }
 
     block(x, y, size, color) {

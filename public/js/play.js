@@ -25,7 +25,6 @@
   let rounds = [];
   let state = { state: 'none', round: -1, phaseEndsAt: 0 };
   let editing = false;
-  let lastClaim = null;
   const toasted = new Set();
 
   const look = Object.assign({
@@ -442,19 +441,34 @@
     return [...arena.words.values()].filter((w) => t >= w.spawn && t <= w.spawn + w.dur);
   }
 
+  let shown = ''; // normalized text in the box after the last edit
+  let lastCleared = null; // { text, t } of the last text we wiped
+
   function clearTyping() {
+    const v = normalize(typeIn.value);
+    if (v) lastCleared = { text: v, t: performance.now() };
     typeIn.value = '';
+    shown = '';
     arena.typed = '';
     typeIn.classList.remove('miss');
   }
 
   typeIn.addEventListener('input', () => {
     let v = normalize(typeIn.value);
-    // Some keyboards re-insert the word we just cleared when composition ends.
-    if (lastClaim && performance.now() - lastClaim.t < 1500 && v.startsWith(lastClaim.text)) {
-      v = v.slice(lastClaim.text.length);
+    // Backspace throws the whole word away so you can start the next one clean.
+    if (v.length < shown.length) {
+      clearTyping();
+      return;
+    }
+    // Some phone keyboards re-insert the text we just wiped (plus the next key) when composition ends.
+    // Only strip that exact replay so a word swiped in one go isn't cut short.
+    const lc = lastCleared;
+    if (lc && !shown && performance.now() - lc.t < 1500 && lc.text.length >= 2
+      && v.startsWith(lc.text) && v.length <= lc.text.length + 1) {
+      v = v.slice(lc.text.length);
       typeIn.value = v;
     }
+    shown = v;
     arena.typed = v;
     if (!v || state.state !== 'playing') {
       typeIn.classList.remove('miss');
@@ -476,7 +490,6 @@
   });
 
   function claim(word) {
-    lastClaim = { text: word.text, t: performance.now() };
     clearTyping();
     socket.emit('player:claim', { id: word.id, text: word.text }, (res) => {
       if (res && !res.ok && res.reason === 'taken' && !toasted.has(word.id)) {
