@@ -100,15 +100,15 @@
     setTimeout(() => Sfx.play('win'), 700);
   });
 
-  // A hero used their class skill.
+  // A hero used their class skill: the banner and effect come first (skill:cast), then the result.
+  socket.on('skill:cast', (c) => {
+    arena.castSkill(c, window.Art.classByKey(c.skill).skill.split(': ')[1] || '');
+    Sfx.play(`skill:${c.skill}`);
+  });
   socket.on('skill:use', (u) => {
     setScore(u.id, u.score, u.roundScore, u.kills);
     if (u.hp) setHp(u.hp);
-    const p = players.find((pl) => pl.id === u.id);
-    const desc = window.Art.classByKey(p ? p.cls : u.cls).skill.split(': ')[1] || '';
-    arena.callout(`${u.name}!`, '#7fd4ff', `${p ? p.name : 'Someone'} · ${u.total ? `+${u.total}` : desc}`);
-    arena.heroHop.set(u.id, performance.now());
-    Sfx.play('award');
+    arena.skillTotal(u.id, u.total);
     scheduleBoard();
   });
 
@@ -156,12 +156,14 @@
   };
   socket.on('duel:launch', (d) => {
     arena.duelLaunch(d.slot, d.missile);
+    if (d.boosted) arena.useBoost(d.missile.by);
     Sfx.play('shoot');
     announce(d.missile.by, d);
   });
   socket.on('duel:block', (b) => {
     setScore(b.by, b.score, b.roundScore, b.kills);
-    arena.duelBlock(b.id, b.by);
+    arena.duelBlock(b.id, b.by, b.skill);
+    if (b.boosted) arena.useBoost(b.by);
     announce(b.by, b);
   });
   socket.on('duel:hit', (h) => {
@@ -400,7 +402,7 @@
     if (s.options) options = s.options;
     summary = s.summary || null;
     boss = s.boss || null;
-    arena.setBoss(boss);
+    arena.setBoss(s.state === 'finished' ? null : boss); // the results screen has the boss's fate in words
     arena.setIce(s.iceUntil);
     mode = s.mode || 'ffa';
     teams = s.teams || null;

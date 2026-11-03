@@ -416,19 +416,18 @@
     }
     renderSkill();
   });
+  // Whoever used a skill gets a banner with their hero on every phone, and the effect plays from them.
+  socket.on('skill:cast', (c) => {
+    arena.castSkill(c, classByKey(c.skill).skill.split(': ')[1] || '');
+    if (c.id === you) {
+      Sfx.play(`skill:${c.skill}`);
+      if (navigator.vibrate) navigator.vibrate([30, 30, 60]);
+    }
+  });
   socket.on('skill:use', (u) => {
     setScore(u.id, u.score, u.roundScore, u.kills);
     if (u.hp) setHp(u.hp);
-    const p = players.find((pl) => pl.id === u.id);
-    const s = skillOf(p);
-    if (u.id === you) {
-      arena.callout(`${u.name}!`, '#7fd4ff', u.total ? `+${u.total}` : s.desc);
-      arena.heroHop.set(you, performance.now());
-      Sfx.play('award');
-      if (navigator.vibrate) navigator.vibrate([30, 30, 60]);
-    } else {
-      showToast(`${p ? p.name : 'Someone'} USED ${u.name}!`, '', 1600);
-    }
+    arena.skillTotal(u.id, u.total);
   });
 
   function renderSkill() {
@@ -510,6 +509,7 @@
     const { slot, missile } = d;
     if (missile.by !== you) lostWord(missile.text, 'TOO SLOW!', `${nameOf(missile.by)} launched "${missile.text}"`);
     arena.duelLaunch(slot, missile);
+    if (d.boosted) arena.useBoost(missile.by);
     if (missile.by === you) {
       Sfx.play('shoot');
       if (navigator.vibrate) navigator.vibrate(25);
@@ -520,7 +520,8 @@
     const w = arena.words.get(b.id);
     if (w && b.by !== you) lostWord(w.text, 'TOO SLOW!', `${nameOf(b.by)} blocked "${w.text}"`);
     setScore(b.by, b.score, b.roundScore, b.kills);
-    arena.duelBlock(b.id, b.by);
+    arena.duelBlock(b.id, b.by, b.skill);
+    if (b.boosted) arena.useBoost(b.by);
     if (b.by === you) showToast(`BLOCKED! +${b.gained}${b.perk ? ' PERK' : ''}`, 'good');
     if (!b.skill) noteStreak(b.by, b);
   });
@@ -638,7 +639,7 @@
     if (s.options) options = s.options;
     summary = s.summary || null;
     boss = s.boss || null;
-    arena.setBoss(boss);
+    arena.setBoss(s.state === 'finished' ? null : boss); // the results screen has the boss's fate in words
     arena.setIce(s.iceUntil);
     mode = s.mode || 'ffa';
     teams = s.teams || null;

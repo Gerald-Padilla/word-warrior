@@ -121,6 +121,22 @@
         case 'reveal': this.tone(523, 0.1, { vol: 0.07 }); this.tone(784, 0.16, { delay: 0.08, vol: 0.06 }); break;
         case 'award': [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.12, { delay: i * 0.08, type: 'triangle', vol: 0.06 })); break;
         case 'emote': this.tone(1046, 0.06, { type: 'triangle', vol: 0.04 }); break;
+        // Class skills, one sound each.
+        case 'skill:knight': [523, 659, 784, 1046, 1318].forEach((f, i) => this.tone(f, 0.16, { delay: i * 0.07, vol: 0.07 })); break;
+        case 'skill:barbarian': this.tone(130, 0.5, { to: 70, type: 'sawtooth', vol: 0.09 }); this.noise(0.4, { vol: 0.08, freq: 600 }); break;
+        case 'skill:cleric': [1046, 1318, 1568].forEach((f) => this.tone(f, 0.8, { type: 'triangle', vol: 0.05 })); break;
+        case 'skill:druid': this.tone(300, 0.6, { to: 900, type: 'triangle', vol: 0.07 }); this.tone(450, 0.6, { to: 1200, type: 'triangle', vol: 0.04, delay: 0.1 }); break;
+        case 'skill:wizard':
+          this.tone(1200, 0.6, { to: 150, type: 'sawtooth', vol: 0.05 });
+          this.noise(0.5, { vol: 0.18, freq: 700, delay: 0.65 });
+          break;
+        case 'skill:archer': for (let i = 0; i < 6; i++) this.tone(1400 - i * 60, 0.05, { delay: 0.3 + i * 0.06, vol: 0.05 }); break;
+        case 'skill:rogue': [0.35, 0.58, 0.81].forEach((d) => this.noise(0.08, { vol: 0.12, freq: 4000, delay: d })); break;
+        case 'skill:ninja': for (let i = 0; i < 8; i++) this.tone(900 + (i % 2) * 300, 0.04, { delay: i * 0.05, vol: 0.04 }); break;
+        case 'skill:pirate': [0.14, 0.32, 0.5, 0.68].forEach((d) => { this.noise(0.25, { vol: 0.16, freq: 500, delay: d }); this.tone(90, 0.2, { to: 40, type: 'triangle', vol: 0.1, delay: d }); }); break;
+        case 'skill:valkyrie': this.noise(0.15, { vol: 0.2, freq: 6000, delay: 0.36 }); this.noise(0.9, { vol: 0.12, freq: 300, delay: 0.4 }); break;
+        case 'skill:necromancer': [220, 208, 196, 185].forEach((f, i) => this.tone(f, 0.3, { type: 'triangle', vol: 0.08, delay: i * 0.18 })); break;
+        case 'skill:bard': [523, 659, 784, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.12, { type: 'triangle', delay: i * 0.08, vol: 0.06 })); break;
         case 'drumroll':
           // Faster and faster snare hits for about two seconds, then a crash.
           for (let i = 0, t = 0; t < 1.9; i++, t += Math.max(0.035, 0.12 - i * 0.004)) this.noise(0.06, { vol: 0.05 + t * 0.03, delay: t, freq: 2500 });

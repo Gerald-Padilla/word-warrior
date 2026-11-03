@@ -175,7 +175,9 @@
     .final-rest { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 1100px; margin-top: 6px; }
     .final-rest .row { grid-template-columns: 30px 28px auto auto; font-size: 10px; }
     .final-rest .row img { width: 28px; height: 28px; }
-    .final-actions { display: flex; gap: 12px; margin-top: 8px; }
+    /* Always reachable, however long the results get */
+    .final-actions { position: fixed; right: 18px; top: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 2; }
+    .final-actions .px-btn.big { font-size: 13px; padding: 12px 16px; }
     .pod .rec { font-size: 9px; color: #8be36b; text-shadow: 2px 2px 0 var(--ink); margin-bottom: 6px; }
 
     /* Hall of fame */

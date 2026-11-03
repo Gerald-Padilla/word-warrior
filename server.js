@@ -844,53 +844,45 @@ function pickTargets(list, pick, progress, value) {
   return list;
 }
 
-// Free for all and solo: the hero's attack hits words on screen for (a share of) their points. Hits that
-// find nothing (a nearly empty field in a crowded game) carry over as a boost on the hero's next words,
-// so a strike is worth the same however busy the field is.
-function strikeWords(room, player, pick, count, share, now) {
-  const list = [...room.words.values()].filter((w) => now >= w.spawn);
-  const targets = pickTargets(list, pick, (x) => (now - x.spawn) / x.dur, (x) => x.points).slice(0, count);
-  const missed = count - targets.length;
-  if (missed > 0) {
-    const had = player.empower;
-    player.empower = { left: (had ? had.left : 0) + missed, extra: Math.max(share, had ? had.extra : 0) };
+// What a strike will hit, worked out before anything happens so every screen can play the effect from
+// the hero to each target. Free for all and solo: words on screen; hits that would find nothing (a
+// nearly empty field) are `missed` and carry over as a boost on the hero's next words, so a strike is
+// worth the same however busy the field is. Team battle: attacks flying at the hero's team, then, if
+// there are fewer, the team's own attack words to fire (up to SKILL_LAUNCHES).
+function planStrike(room, player, pick, count, now) {
+  if (room.mode === 'teams') {
+    const incoming = [...room.words.values()].filter((w) => w.kind === 'missile' && w.team !== player.team);
+    const words = pickTargets(incoming, pick, (x) => (now - x.launch) / x.dur, (x) => x.dmg).slice(0, count);
+    const launches = Math.min(SKILL_LAUNCHES, Math.max(0, count - words.length));
+    const slots = [...room.words.values()].filter((w) => w.kind === 'attack' && w.team === player.team)
+      .sort((a, b) => a.id - b.id).slice(0, launches);
+    return { words, slots, missed: 0 };
   }
+  const list = [...room.words.values()].filter((w) => now >= w.spawn);
+  const words = pickTargets(list, pick, (x) => (now - x.spawn) / x.dur, (x) => x.points).slice(0, count);
+  return { words, slots: [], missed: count - words.length };
+}
+
+// Lands a planned strike for (a share of) each target's points. Returns the points scored.
+function applyStrike(room, player, plan, share, now) {
   let total = 0;
-  for (const w of targets) {
-    const points = Math.round(w.points * (w.special === 'gold' ? GOLD_FACTOR : 1) * share);
+  if (plan.missed > 0) {
+    const had = player.empower;
+    player.empower = { left: (had ? had.left : 0) + plan.missed, extra: Math.max(share, had ? had.extra : 0) };
+  }
+  for (const w of plan.words) {
+    const points = Math.round((w.kind ? w.dmg : w.points * (w.special === 'gold' ? GOLD_FACTOR : 1)) * share);
     room.words.delete(w.id);
     room.recentKills.set(w.id, { by: player.id, at: now });
     addScore(room, player, points);
     player.kills += 1;
     total += points;
-    io.to(channel(room)).emit('word:kill', {
-      id: w.id, by: player.id, points, score: player.score, kills: player.kills,
-      roundScore: player.roundScores[room.round], skill: true,
-    });
+    const common = { id: w.id, by: player.id, score: player.score, kills: player.kills, roundScore: player.roundScores[room.round], skill: true };
+    if (w.kind) io.to(channel(room)).emit('duel:block', { ...common, gained: points });
+    else io.to(channel(room)).emit('word:kill', { ...common, points });
   }
-  return total;
-}
-
-// Team battle: a strike blocks attacks flying at the hero's team; with fewer to block, it fires the
-// team's own attack words instead (up to SKILL_LAUNCHES).
-function strikeDuel(room, player, pick, count, share, now) {
   const cfg = room.rounds[room.round];
-  const incoming = [...room.words.values()].filter((w) => w.kind === 'missile' && w.team !== player.team);
-  const blocks = pickTargets(incoming, pick, (x) => (now - x.launch) / x.dur, (x) => x.dmg).slice(0, count);
-  for (const w of blocks) {
-    const gained = Math.round(w.dmg * share);
-    room.words.delete(w.id);
-    room.recentKills.set(w.id, { by: player.id, at: now });
-    addScore(room, player, gained);
-    player.kills += 1;
-    io.to(channel(room)).emit('duel:block', {
-      id: w.id, by: player.id, score: player.score, kills: player.kills, roundScore: player.roundScores[room.round],
-      gained, skill: true,
-    });
-  }
-  const launches = Math.min(SKILL_LAUNCHES, Math.max(0, count - blocks.length));
-  const slots = [...room.words.values()].filter((w) => w.kind === 'attack' && w.team === player.team).sort((a, b) => a.id - b.id);
-  for (const slot of slots.slice(0, launches)) {
+  for (const slot of plan.slots) {
     room.words.delete(slot.id);
     const m = {
       id: room.nextWordId++, kind: 'missile', team: slot.team, by: player.id, text: slot.text, at: now,
@@ -900,22 +892,34 @@ function strikeDuel(room, player, pick, count, share, now) {
     io.to(channel(room)).emit('duel:launch', { slot: slot.id, missile: m, skill: true });
     addSlot(room, slot.team, cfg);
   }
+  return total;
 }
 
 function useSkill(room, player, now) {
   const s = SKILLS[player.cls] || SKILLS.knight;
   const teams = room.mode === 'teams';
+  let plan = { words: [], slots: [], missed: 0 };
+  let back = [];
+  if (s.kind === 'strike') plan = planStrike(room, player, s.pick, s.count, now);
+  if (s.kind === 'raise') {
+    // Words that got away this round come back as points; in a team battle, the last hits your team took
+    // are healed. If there aren't enough, the rest strike like a Rogue's Backstab.
+    const pool = teams ? room.hits[player.team] : room.escaped;
+    back = pool.splice(Math.max(0, pool.length - s.count));
+    if (back.length < s.count) plan = planStrike(room, player, 'low', s.count - back.length, now);
+  }
+  // Everyone hears about it first, so the effect plays from this hero to these targets as the hits land.
+  io.to(channel(room)).emit('skill:cast', {
+    id: player.id, skill: player.cls, name: s.name, kind: s.kind,
+    targets: plan.words.map((w) => w.id), launches: plan.slots.map((w) => w.id), souls: back.length,
+    boost: s.kind === 'empower' ? s.count : plan.missed,
+  });
   let total = 0;
   if (s.kind === 'empower') {
     player.empower = { left: s.count, extra: s.mult - 1 };
   } else if (s.kind === 'strike') {
-    if (teams) strikeDuel(room, player, s.pick, s.count, s.share, now);
-    else total = strikeWords(room, player, s.pick, s.count, s.share, now);
+    total = applyStrike(room, player, plan, s.share, now);
   } else if (s.kind === 'raise') {
-    // Words that got away this round come back as points; in a team battle, the last hits your team took
-    // are healed. If there aren't enough, the rest strike like a Rogue's Backstab.
-    const pool = teams ? room.hits[player.team] : room.escaped;
-    const back = pool.splice(Math.max(0, pool.length - s.count));
     total = back.reduce((a, b) => a + b, 0);
     if (teams) {
       const t = room.teams[player.team];
@@ -923,9 +927,7 @@ function useSkill(room, player, now) {
     } else {
       addScore(room, player, total);
     }
-    const rest = s.count - back.length;
-    if (rest > 0 && teams) strikeDuel(room, player, 'low', rest, 1, now);
-    else if (rest > 0) total += strikeWords(room, player, 'low', rest, 1, now);
+    total += applyStrike(room, player, plan, 1, now);
   } else if (s.kind === 'encore') {
     // Your last few words score again; in a team battle they hit the other team directly.
     total = player.recent.reduce((a, b) => a + b, 0);
@@ -1103,7 +1105,7 @@ function duelClaim(room, player, w, now) {
     };
     room.words.set(m.id, m);
     player.kills += 1;
-    io.to(channel(room)).emit('duel:launch', { slot: w.id, missile: m, streak: g.streak, mult: g.mult, perk: g.perk });
+    io.to(channel(room)).emit('duel:launch', { slot: w.id, missile: m, streak: g.streak, mult: g.mult, perk: g.perk, boosted: g.extra > 0 });
     addSlot(room, w.team, cfg);
     return { ok: true, p: null };
   }
@@ -1118,7 +1120,7 @@ function duelClaim(room, player, w, now) {
     player.roundScores[room.round] += gained;
     io.to(channel(room)).emit('duel:block', {
       id: w.id, by: player.id, score: player.score, kills: player.kills, roundScore: player.roundScores[room.round],
-      gained, streak: g.streak, mult: g.mult, perk: g.perk,
+      gained, streak: g.streak, mult: g.mult, perk: g.perk, boosted: g.extra > 0,
     });
     return { ok: true, p };
   }

@@ -46,6 +46,19 @@
   // Trail left behind each kind of attack in flight.
   const TRAIL = { soul: '#7dff6b', thorn: '#4fa865', cannon: '#8691a6', spear: '#fff6b0', shuriken: '#d5dbe6' };
 
+  // Class skills: how each one looks, when its hits land (ms after it's cast, for the i-th target) and the
+  // glow a boost leaves on the hero until it's used up.
+  const SKILL_FX = {
+    knight: 'rally', barbarian: 'berserk', cleric: 'favor', druid: 'grow', wizard: 'meteor', rogue: 'backstab',
+    archer: 'arrows', ninja: 'shuriken', pirate: 'cannon', valkyrie: 'thunder', necromancer: 'raise', bard: 'encore',
+  };
+  const IMPACT = {
+    meteor: (i) => 700 + i * 220, arrows: (i) => 640 + i * 110, backstab: (i) => 380 + i * 230, shuriken: (i) => 560 + i * 90,
+    cannon: (i) => 560 + i * 180, thunder: (i) => 430 + i * 90, raise: (i) => 650 + i * 160,
+  };
+  const impactAt = (style, i) => (IMPACT[style] || ((n) => 500 + n * 120))(i);
+  const AURA = { rally: '#ffd23f', berserk: '#ff4d4d', favor: '#fff6b0', grow: '#6fe08b' };
+
   const lerp = (a, b, t) => a + (b - a) * t;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const rand = (lo, hi) => lo + Math.random() * (hi - lo);
@@ -94,6 +107,11 @@
       this.emotes = new Map(); // playerId -> { e, t0 }
       this.auraAt = new Map(); // playerId -> last streak-flame particle time
       this.boltAt = 0; // boss lair lightning
+      this.skillFx = []; // class skills playing out (see castSkill)
+      this.skillHits = new Map(); // word or attack id -> the skill target that will hit it
+      this.cutins = []; // fighting-game banners naming the hero and their skill
+      this.auras = new Map(); // playerId -> { left, color }: a skill boost on their next words
+      this.hiddenUntil = new Map(); // playerId -> time: a Rogue mid-Backstab is out of sight
       this.onHit = null;
       this.onEscape = null;
       this.lastFrame = performance.now();
@@ -607,9 +625,18 @@
         if (k.special === 'ice') this.flash('#7fd4ff');
         if (this.onHit) this.onHit(playerId);
       };
+      if (k.boosted) this.useBoost(playerId);
       // A bomb's blast takes everything at once; no attack flies for those.
       if (k.bomb) {
         land();
+        return;
+      }
+      // A skill's own effect delivers this hit (see castSkill); the word holds still until it lands.
+      const tg = k.skill && this.skillHits.get(wordId);
+      if (tg) {
+        dying.held = true;
+        tg.pos = { x: L.cx, y: L.cy };
+        tg.onImpact = land;
         return;
       }
       this.heroHop.set(playerId, performance.now());
@@ -678,6 +705,479 @@
 
     emote(playerId, e) {
       this.emotes.set(playerId, { e, t0: performance.now() });
+    }
+
+    // ---- class skills ----------------------------------------------------
+    // c: the server's skill:cast ({ id, skill, name, targets, souls, boost }), sent just before the hits.
+    // A banner names the hero, the field dims around them, and the skill's own effect travels from the
+    // hero to each target; the hits (word:kill / duel:block with `skill`) wait for it to arrive.
+    castSkill(c, desc) {
+      const t0 = performance.now();
+      const style = SKILL_FX[c.skill] || 'rally';
+      const fx = { style, by: c.id, t0, souls: c.souls || 0, targets: [], seed: hash(`${c.id}:${t0}`) };
+      (c.targets || []).forEach((id, i) => {
+        const w = this.words.get(id);
+        const L = w && (w.kind ? this.duelPos(w, this.now()) : this.layoutWord(w, this.now()));
+        const tg = { id, i, impact: t0 + impactAt(style, i), pos: L ? { x: L.cx, y: L.cy } : null, onImpact: null, done: false };
+        fx.targets.push(tg);
+        this.skillHits.set(id, tg);
+      });
+      const last = fx.targets.length ? fx.targets[fx.targets.length - 1].impact - t0 : 0;
+      fx.end = t0 + Math.max(1300, last + 600, fx.souls ? 900 + fx.souls * 160 : 0);
+      this.skillFx.push(fx);
+      if (c.boost > 0) this.auras.set(c.id, { left: c.boost, color: AURA[style] || '#7fd4ff' });
+      if (style === 'backstab') {
+        this.hiddenUntil.set(c.id, t0 + last + 250);
+        const o = this.heroOrigin(c.id);
+        this.puff(o.x, o.y + 6 * this.U, ['#3d3550', '#5a4f73', '#1b1426'], 18);
+      }
+      this.heroHop.set(c.id, t0);
+      const p = this.players.get(c.id);
+      this.cutins = this.cutins.filter((x) => t0 - x.t0 < 1300).slice(-1);
+      this.cutins.push({ by: c.id, name: c.name, desc, hero: p ? p.name : '', color: this.colorOf(c.id), t0 });
+    }
+
+    // A boosted word was typed: one less left on the hero's glow.
+    useBoost(playerId) {
+      const a = this.auras.get(playerId);
+      if (!a) return;
+      a.left -= 1;
+      if (a.left <= 0) this.auras.delete(playerId);
+    }
+
+    // What the skill scored, over the hero's head once its effect has played.
+    skillTotal(playerId, total) {
+      if (!total) return;
+      setTimeout(() => {
+        const o = this.heroOrigin(playerId);
+        this.floatText(o.x, o.y - 10 * this.U, `+${total}`, '#7fd4ff', null, 'SKILL');
+      }, 650);
+    }
+
+    targetPos(tg) {
+      if (tg.pos) return tg.pos;
+      const w = this.words.get(tg.id);
+      const L = w && (w.kind ? this.duelPos(w, this.now()) : this.layoutWord(w, this.now()));
+      return L ? { x: L.cx, y: L.cy } : { x: this.W / 2, y: this.H * 0.3 };
+    }
+
+    // The field darkens around the hero who used a skill, so everyone sees whose it was.
+    drawSpotlight(t) {
+      const c = this.cutins.find((x) => t - x.t0 < 1000);
+      if (!c) return;
+      const k = (t - c.t0) / 1000;
+      const a = 0.45 * Math.min(1, k / 0.12) * Math.min(1, (1 - k) / 0.35);
+      const o = this.heroOrigin(c.by);
+      const pos = this.heroPos.get(c.by);
+      const r = (pos ? pos.hu : this.U) * 15;
+      const ctx = this.ctx;
+      ctx.save();
+      ctx.fillStyle = `rgba(10, 6, 18, ${a.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.rect(0, 0, this.W, this.H);
+      ctx.arc(o.x, o.y, r, 0, Math.PI * 2, true);
+      ctx.fill('evenodd');
+      ctx.restore();
+      // A ring in the hero's color around them.
+      ctx.globalAlpha = Math.min(1, a * 2.2);
+      for (let i = 0; i < 24; i++) {
+        const ang = (i / 24) * Math.PI * 2 + t / 400;
+        this.block(o.x + Math.cos(ang) * r, o.y + Math.sin(ang) * r, this.U, c.color.Q);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    drawSkills(t) {
+      const keep = [];
+      for (const fx of this.skillFx) {
+        for (const tg of fx.targets) {
+          if (!tg.done && t >= tg.impact) {
+            tg.done = true;
+            this.skillHits.delete(tg.id);
+            this.impact(fx, tg);
+            if (tg.onImpact) tg.onImpact();
+          }
+        }
+        if (t > fx.end) {
+          for (const tg of fx.targets) if (!tg.done && tg.onImpact) tg.onImpact();
+          for (const tg of fx.targets) this.skillHits.delete(tg.id);
+          continue;
+        }
+        keep.push(fx);
+        this.drawSkill(fx, t);
+      }
+      this.skillFx = keep;
+    }
+
+    // The flash where a skill's hit lands, on top of the word's own explosion.
+    impact(fx, tg) {
+      const p = this.targetPos(tg);
+      const U = this.U;
+      const colors = { meteor: ['#ffd23f', '#ff7b1c', '#e8371c'], thunder: ['#ffffff', '#7fd4ff', '#fff6b0'], cannon: ['#8691a6', '#d5dbe6', '#1b1426'] };
+      if (colors[fx.style]) {
+        this.particles.push({ ring: true, x: p.x, y: p.y, t0: performance.now(), life: 320, color: colors[fx.style][0] });
+        this.puff(p.x, p.y + 2 * U, colors[fx.style], 12);
+      }
+      if (fx.style === 'meteor') this.shake(2.5, 300);
+      if (fx.style === 'thunder') {
+        this.shake(1.5, 200);
+        this.flash('#fff6d0');
+      }
+      if (fx.style === 'cannon') this.shake(1.2, 180);
+    }
+
+    drawSkill(fx, t) {
+      const ctx = this.ctx;
+      const U = this.U;
+      const age = t - fx.t0;
+      const o = this.heroOrigin(fx.by);
+      const color = this.colorOf(fx.by);
+      const field = Math.max(this.W * 0.4, this.W - this.reserveRight);
+      const top = this.reserveTop - 6 * U;
+      const flightOf = (tg, ms) => clamp((t - (tg.impact - ms)) / ms, 0, 1);
+      const live = (tg, ms) => !tg.done && t >= tg.impact - ms;
+      const sk = 1.8; // skills draw their attacks bigger than everyday ones
+      // Every target wears a pulsing marker in the caster's color until the hit lands.
+      for (const tg of fx.targets) {
+        if (tg.done) continue;
+        const p = this.targetPos(tg);
+        const r = U * (5 + Math.sin(t / 70) * 0.8);
+        ctx.globalAlpha = Math.min(1, age / 120);
+        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          this.block(p.x + sx * r, p.y + sy * r * 0.7, U, color.Q);
+          this.block(p.x + sx * (r - U), p.y + sy * r * 0.7, U, color.Q);
+          this.block(p.x + sx * r, p.y + sy * (r * 0.7 - U), U, color.Q);
+        }
+        ctx.globalAlpha = 1;
+      }
+      switch (fx.style) {
+        case 'rally': {
+          // Golden shockwaves roll out from the knight under a raised banner.
+          for (let r = 0; r < 3; r++) {
+            const k = (age - r * 160) / 700;
+            if (k < 0 || k > 1) continue;
+            ctx.globalAlpha = 1 - k;
+            for (let i = 0; i < 28; i++) {
+              const ang = (i / 28) * Math.PI * 2;
+              this.block(o.x + Math.cos(ang) * U * (3 + k * 22), o.y + Math.sin(ang) * U * (3 + k * 12), U, i % 2 ? '#ffd23f' : '#fff6b0');
+            }
+          }
+          ctx.globalAlpha = Math.min(1, (fx.end - t) / 300);
+          const fy = o.y - 14 * U - Math.min(1, age / 300) * 6 * U;
+          for (let s = 0; s < 9; s++) this.block(o.x, fy + s * U, U, '#8b5a2b');
+          for (let row = 0; row < 4; row++) {
+            for (let col = 0; col < 5; col++) this.block(o.x + U * (1 + col), fy + U * row + Math.sin(t / 120 + col) * U * 0.4, U, col === 2 && row === 1 ? '#ffd23f' : color.P);
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case 'berserk': {
+          // Red rage: the barbarian roars, flames burst from the ground around them.
+          if (age < 600 && Math.random() < 0.9) {
+            for (let i = 0; i < 3; i++) {
+              this.particles.push({
+                x: o.x + rand(-7, 7) * U, y: o.y + 10 * U, vx: rand(-0.01, 0.01) * U, vy: -rand(0.04, 0.09) * U, g: 0,
+                life: rand(350, 650), t0: t, size: U * (Math.random() < 0.4 ? 2 : 1), color: ['#ff4d4d', '#ff7b1c', '#ffd23f'][i],
+              });
+            }
+          }
+          const k = age / 500;
+          if (k < 1) {
+            ctx.globalAlpha = 1 - k;
+            for (let i = 0; i < 20; i++) {
+              const ang = (i / 20) * Math.PI * 2;
+              this.block(o.x + Math.cos(ang) * U * (4 + k * 14), o.y + Math.sin(ang) * U * (4 + k * 8), U * 1.5, '#ff4d4d');
+            }
+            ctx.globalAlpha = 1;
+          }
+          if (age < 200) this.shake(1.5, 220);
+          break;
+        }
+        case 'favor': {
+          // A pillar of holy light comes down on the cleric, with a halo over their head.
+          const k = age / 1200;
+          const w = U * (6 + Math.sin(t / 60) * 0.8);
+          ctx.globalAlpha = 0.55 * Math.min(1, age / 150) * Math.max(0, 1 - k);
+          ctx.fillStyle = '#fff6b0';
+          ctx.fillRect(Math.round(o.x - w / 2), 0, Math.round(w), Math.round(o.y + 10 * U));
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(Math.round(o.x - w / 6), 0, Math.round(w / 3), Math.round(o.y + 10 * U));
+          ctx.globalAlpha = Math.max(0, 1 - k);
+          for (let i = 0; i < 12; i++) {
+            const ang = (i / 12) * Math.PI * 2;
+            this.block(o.x + Math.cos(ang) * U * 4, o.y - 9 * U + Math.sin(ang) * U * 1.2, U, '#ffd23f');
+          }
+          ctx.globalAlpha = 1;
+          if (Math.random() < 0.5) this.sparkle(o.x + rand(-4, 4) * U, rand(top, o.y), '#fff6b0', 1);
+          break;
+        }
+        case 'grow': {
+          // Vines curl up out of the ground around the druid, shedding leaves.
+          const k = Math.min(1, age / 650);
+          ctx.globalAlpha = Math.min(1, (fx.end - t) / 400);
+          for (let v = 0; v < 6; v++) {
+            const bx = o.x + (v - 2.5) * 3 * U;
+            const h = Math.round((8 + (v % 3) * 4) * k);
+            for (let s = 0; s < h; s++) {
+              const sx = bx + Math.sin(s * 0.6 + v) * U * 1.2;
+              this.block(sx, o.y + 12 * U - s * U, U, s % 3 ? '#2f7d4a' : '#4fa865');
+              if (s % 4 === 3) this.block(sx + U * (v % 2 ? 1 : -1), o.y + 12 * U - s * U, U, '#8be36b');
+            }
+          }
+          ctx.globalAlpha = 1;
+          if (Math.random() < 0.35) {
+            this.particles.push({
+              x: o.x + rand(-9, 9) * U, y: o.y - rand(0, 8) * U, vx: rand(-0.01, 0.01) * U, vy: rand(-0.01, 0.005) * U,
+              g: 0, life: 900, t0: t, size: U, color: '#6fe08b', sway: rand(0, 6),
+            });
+          }
+          break;
+        }
+        case 'meteor': {
+          // A magic circle over the wizard, then a meteor crashes down out of the sky onto each target.
+          if (age < 700) {
+            ctx.globalAlpha = Math.min(1, (700 - age) / 200);
+            for (let i = 0; i < 16; i++) {
+              const ang = (i / 16) * Math.PI * 2 + t / 150;
+              this.block(o.x + Math.cos(ang) * U * 6, o.y - 12 * U + Math.sin(ang) * U * 2, U, i % 2 ? '#ff7b1c' : '#ffd23f');
+            }
+            ctx.globalAlpha = 1;
+          }
+          for (const tg of fx.targets) {
+            if (!live(tg, 520)) continue;
+            const p = this.targetPos(tg);
+            const q = flightOf(tg, 520);
+            const side = o.x < field / 2 ? -1 : 1;
+            const x = lerp(p.x + side * this.W * 0.22, p.x, q);
+            const y = lerp(top, p.y, q);
+            const R = U * sk * 2.4;
+            for (let s = 7; s >= 1; s--) {
+              const tr = R * (1 - s / 9);
+              this.block(x + side * s * R * 0.55, y - s * R * 0.75, tr * 1.6, s % 2 ? '#ff7b1c' : '#e8371c');
+            }
+            this.block(x, y, R * 2.2, '#7a1010');
+            this.block(x, y, R * 1.8, '#e8371c');
+            this.block(x - R * 0.15, y - R * 0.15, R * 1.2, '#ff7b1c');
+            this.block(x - R * 0.35, y - R * 0.35, R * 0.6, '#ffd23f');
+            if (Math.random() < 0.8) this.particles.push({ x: x + rand(-1, 1) * R, y: y + rand(-1, 1) * R, vx: 0, vy: -0.01 * U, g: 0, life: 300, t0: t, size: U * 1.5, color: ['#ffd23f', '#ff7b1c', '#e8371c'][Math.floor(rand(0, 3))] });
+          }
+          break;
+        }
+        case 'arrows': {
+          // The archer looses a volley straight up; it comes down as rain on every target.
+          if (age < 360) {
+            for (let i = 0; i < 3; i++) {
+              const y = lerp(o.y - 8 * U, top, age / 360);
+              this.drawBolt('arrow', o.x + (i - 1) * 3 * U, y - i * U * 2, 0, -1, -Math.PI / 2, color, t, sk);
+            }
+          }
+          for (const tg of fx.targets) {
+            if (!live(tg, 280)) continue;
+            const p = this.targetPos(tg);
+            this.drawBolt('arrow', p.x, lerp(top, p.y, flightOf(tg, 280)), 0, 1, Math.PI / 2, color, t, sk);
+          }
+          break;
+        }
+        case 'backstab': {
+          // The rogue vanishes, then strikes from the shadows behind each target.
+          for (const tg of fx.targets) {
+            const d = t - (tg.impact - 140);
+            if (d < 0 || d > 420) continue;
+            const p = this.targetPos(tg);
+            const spr = heroSprite(this.players.get(fx.by) || { cls: 'rogue' });
+            const s = Math.max(1, Math.round(U * 0.9));
+            ctx.globalAlpha = Math.max(0, 1 - d / 420) * 0.8;
+            this.drawSprite(spr, Math.round(p.x - 12 * s), Math.round(p.y - 8 * s), s, false);
+            ctx.globalAlpha = Math.max(0, 1 - Math.max(0, d - 140) / 280);
+            const len = Math.min(1, d / 120) * 9;
+            for (let i = -len; i <= len; i++) {
+              this.block(p.x + i * U, p.y + i * U * 0.8, U * 1.6, '#ffffff');
+              this.block(p.x + i * U, p.y - i * U * 0.8, U * 1.6, '#ff6b7a');
+            }
+            ctx.globalAlpha = 1;
+          }
+          if (!fx.back && t >= (this.hiddenUntil.get(fx.by) || 0)) {
+            fx.back = true; // the rogue steps back out of the shadows
+            this.puff(o.x, o.y + 6 * U, ['#3d3550', '#5a4f73'], 12);
+          }
+          break;
+        }
+        case 'shuriken': {
+          // Shuriken spin up around the ninja, then curve out to their targets.
+          if (age < 600) {
+            ctx.globalAlpha = Math.min(1, (600 - age) / 200);
+            for (let i = 0; i < 8; i++) {
+              const ang = (i / 8) * Math.PI * 2 + age / 80;
+              this.drawBolt('shuriken', o.x + Math.cos(ang) * U * 8, o.y + Math.sin(ang) * U * 5, 1, 0, 0, color, t + i * 30, sk);
+            }
+            ctx.globalAlpha = 1;
+          }
+          for (const tg of fx.targets) {
+            if (!live(tg, 320)) continue;
+            const p = this.targetPos(tg);
+            const q = flightOf(tg, 320);
+            const bend = (tg.i % 2 ? 1 : -1) * this.W * 0.12;
+            const cx = (o.x + p.x) / 2 + bend;
+            const cy = Math.min(o.y, p.y) - 6 * U;
+            const x = (1 - q) * (1 - q) * o.x + 2 * (1 - q) * q * cx + q * q * p.x;
+            const y = (1 - q) * (1 - q) * o.y + 2 * (1 - q) * q * cy + q * q * p.y;
+            this.drawBolt('shuriken', x, y, 1, 0, 0, color, t, sk);
+            if (Math.random() < 0.6) this.particles.push({ x, y, vx: 0, vy: 0, g: 0, life: 160, t0: t, size: U, color: '#d5dbe6' });
+          }
+          break;
+        }
+        case 'cannon': {
+          // A cannon rolls out beside the pirate and lobs a ball at each target.
+          const side = o.x < field / 2 ? 1 : -1;
+          const cx = o.x + side * 9 * U;
+          const cy = o.y + 9 * U;
+          const fired = fx.targets.filter((tg) => t >= tg.impact - 420);
+          const kick = fired.length && t - (fired[fired.length - 1].impact - 420) < 120 ? -side * U : 0;
+          ctx.globalAlpha = Math.min(1, age / 150, (fx.end - t) / 300);
+          for (let i = 0; i < 6; i++) this.block(cx + kick + side * i * U, cy - i * U * 0.6, U * 2, i < 5 ? '#1b1426' : '#5a4f73');
+          this.block(cx + kick - side * U, cy + 1.5 * U, U * 2, '#8b5a2b');
+          this.block(cx + kick + side * U, cy + 1.5 * U, U * 2, '#8b5a2b');
+          ctx.globalAlpha = 1;
+          for (const tg of fx.targets) {
+            const d = t - (tg.impact - 420);
+            if (d >= 0 && d < 40) this.puff(cx + side * 6 * U, cy - 4 * U, ['#d5dbe6', '#8691a6', '#ffffff'], 6);
+            if (!live(tg, 420)) continue;
+            const p = this.targetPos(tg);
+            const q = flightOf(tg, 420);
+            const x = lerp(cx + side * 6 * U, p.x, q);
+            const y = lerp(cy - 4 * U, p.y, q) - Math.sin(q * Math.PI) * this.H * 0.18;
+            this.drawBolt('cannon', x, y, 1, 0, 0, color, t, sk);
+          }
+          break;
+        }
+        case 'thunder': {
+          // The valkyrie raises her spear and lightning strikes down on every target.
+          if (age < 400 && Math.random() < 0.7) this.sparkle(o.x + rand(-3, 3) * U, o.y - rand(6, 14) * U, '#7fd4ff', 1);
+          for (const tg of fx.targets) {
+            const d = t - (tg.impact - 70);
+            if (d < 0 || d > 240) continue;
+            const p = this.targetPos(tg);
+            const r = seeded(fx.seed + tg.i * 977);
+            let x = p.x + (r() - 0.5) * 10 * U;
+            ctx.globalAlpha = d < 140 ? 1 : 1 - (d - 140) / 100;
+            for (let y = top; y < p.y; y += U * 2) {
+              const nx = lerp(x, p.x, (y - top) / (p.y - top)) + (r() - 0.5) * 4 * U;
+              this.block(nx, y, U * 4, '#4da6ff');
+              this.block(nx, y, U * 2.4, '#7fd4ff');
+              this.block(nx, y, U * 1.2, '#ffffff');
+              x = nx;
+            }
+            ctx.globalAlpha = 1;
+          }
+          break;
+        }
+        case 'raise': {
+          // Ghosts of the words that got away rise from the ground and fly into the necromancer; anything
+          // still needed is struck by soul bolts.
+          for (let g = 0; g < fx.souls; g++) {
+            const d = age - g * 160;
+            if (d < 0 || d > 900) continue;
+            const q = d / 900;
+            const sx = field * (0.15 + 0.7 * ((hash(`${fx.seed}:${g}`) % 1000) / 1000));
+            const x = lerp(sx, o.x, q * q);
+            const y = lerp(this.groundY, o.y, q) - Math.sin(q * Math.PI) * this.H * 0.2;
+            ctx.globalAlpha = Math.min(1, (1 - q) * 3);
+            this.drawBolt('soul', x, y, 0, -1, 0, color, t + g * 50, sk);
+            ctx.globalAlpha = 1;
+            if (Math.random() < 0.5) this.particles.push({ x, y, vx: 0, vy: -0.01 * U, g: 0, life: 300, t0: t, size: U, color: '#7dff6b' });
+          }
+          for (const tg of fx.targets) {
+            if (!live(tg, 380)) continue;
+            const p = this.targetPos(tg);
+            const q = flightOf(tg, 380);
+            this.drawBolt('soul', lerp(o.x, p.x, q), lerp(o.y, p.y, q), p.x - o.x, p.y - o.y, 0, color, t, sk);
+          }
+          break;
+        }
+        case 'encore': {
+          // A spotlight on the bard and a burst of notes spiralling up around them.
+          const k = age / 1200;
+          ctx.globalAlpha = 0.28 * Math.max(0, 1 - k);
+          ctx.fillStyle = '#fff6b0';
+          ctx.beginPath();
+          ctx.moveTo(o.x - 3 * U, 0);
+          ctx.lineTo(o.x + 3 * U, 0);
+          ctx.lineTo(o.x + 12 * U, o.y + 12 * U);
+          ctx.lineTo(o.x - 12 * U, o.y + 12 * U);
+          ctx.fill();
+          ctx.globalAlpha = Math.max(0, 1 - k);
+          for (let i = 0; i < 8; i++) {
+            const ang = (i / 8) * Math.PI * 2 + age / 200;
+            const r = U * (4 + age / 60);
+            this.drawBolt('notes', o.x + Math.cos(ang) * r, o.y - 4 * U + Math.sin(ang) * r * 0.5 - age / 25, 1, 0, 0, color, t, sk);
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    // The banner: the hero's portrait and their skill's name slide in from the hero's side of the field.
+    drawCutins(t) {
+      const ctx = this.ctx;
+      const U = this.U;
+      const fp = this.fontPx;
+      this.cutins = this.cutins.filter((c) => t - c.t0 < 1300);
+      const field = Math.max(this.W * 0.4, this.W - this.reserveRight);
+      const bh = Math.round(Math.max(fp * 3.2, (this.groundY - this.reserveTop) * (this.mode === 'host' ? 0.15 : 0.13)));
+      this.cutins.forEach((c, row) => {
+        const k = (t - c.t0) / 1300;
+        const fromLeft = this.heroOrigin(c.by).x < field / 2;
+        const dir = fromLeft ? 1 : -1;
+        const slide = k < 0.12 ? 1 - k / 0.12 : k > 0.82 ? -(k - 0.82) / 0.18 : 0;
+        const ox = -dir * slide * field;
+        const y = Math.round(this.reserveTop + (this.groundY - this.reserveTop) * 0.5 - bh / 2 + row * (bh + 2 * U));
+        ctx.globalAlpha = k > 0.82 ? Math.max(0, 1 - (k - 0.82) / 0.18) : 1;
+        // Band in the hero's color, with speed stripes.
+        ctx.fillStyle = '#1b1426';
+        ctx.fillRect(Math.round(ox), y - U, field, bh + 2 * U);
+        ctx.fillStyle = c.color.p;
+        ctx.fillRect(Math.round(ox), y, field, bh);
+        ctx.fillStyle = c.color.P;
+        for (let sx = (t / 2) % (U * 12); sx < field; sx += U * 12) ctx.fillRect(Math.round(ox + (fromLeft ? sx : field - sx)), y, U * 3, bh);
+        ctx.fillStyle = c.color.Q;
+        ctx.fillRect(Math.round(ox), y, field, U);
+        ctx.fillRect(Math.round(ox), y + bh - U, field, U);
+        // The hero, big, bursting out of the band, facing into the field.
+        const p = this.players.get(c.by);
+        if (p) {
+          const s = Math.max(2, Math.floor((bh * 1.3) / 16));
+          const sw = 16 * s;
+          const hx = fromLeft ? ox + 4 * U : ox + field - sw - 4 * U;
+          this.drawSprite(heroSprite(p), Math.round(hx), Math.round(y + bh - sw), s, !fromLeft);
+        }
+        // Skill name with the hero's name above and what it does below, shrunk to fit beside the portrait
+        // (a phone held upright is narrow); the description is left out if it still won't fit.
+        const portrait = 16 * Math.max(2, Math.floor((bh * 1.3) / 16));
+        const room = field - portrait - 16 * U;
+        const legible = Math.max(8, Math.round((fp * 0.6) / 4) * 4);
+        const fit = (size, chars) => Math.max(legible, Math.min(size, Math.floor(room / Math.max(1, chars) / 4) * 4));
+        const big = fit(Math.max(16, Math.round((bh * 0.36) / 4) * 4), c.name.length + 1);
+        const small = fit(Math.max(legible, Math.round((bh * 0.15) / 4) * 4), Math.max(c.hero.length, (c.desc || '').length));
+        const desc = (c.desc || '').length * small <= room ? c.desc : '';
+        const textW = Math.max((c.name.length + 1) * big, desc.length * small, c.hero.length * small);
+        const tx = fromLeft ? ox + portrait + 10 * U : ox + field - textW - portrait - 10 * U;
+        const line = (str, size, ly, colr) => {
+          ctx.font = `${size}px "Press Start 2P", monospace`;
+          const o = Math.max(2, Math.round(size / 8));
+          ctx.fillStyle = '#1b1426';
+          ctx.fillText(str, Math.round(tx + o), Math.round(ly + o));
+          ctx.fillStyle = colr;
+          ctx.fillText(str, Math.round(tx), Math.round(ly));
+        };
+        line(c.hero.toUpperCase(), small, y + bh * 0.1, c.color.Q);
+        line(`${c.name}!`, big, y + bh * 0.1 + small * 1.5, '#ffffff');
+        if (desc) line(desc, small, y + bh * 0.1 + small * 1.5 + big * 1.25, '#ffd23f');
+        ctx.globalAlpha = 1;
+      });
+      ctx.font = `${fp}px "Press Start 2P", monospace`;
     }
 
     // Side-on: attacks cruise between the attack-word rows and the armies' heads.
@@ -816,7 +1316,8 @@
     }
 
     // An incoming attack was typed by a defender: their hero shoots it down mid-air.
-    duelBlock(id, by) {
+    // skill: the block came from a class skill, whose own effect delivers the hit.
+    duelBlock(id, by, skill = false) {
       const w = this.words.get(id);
       if (!w) return;
       const L = this.missilePos(w, this.now());
@@ -825,13 +1326,21 @@
       const dying = { w, L, color, t0: performance.now() };
       this.dying.push(dying);
       const player = this.players.get(by);
-      this.heroHop.set(by, performance.now());
-      this.launch(player ? player.cls : 'knight', this.heroOrigin(by), { x: L.x, y: L.y }, color, () => {
+      const land = () => {
         this.dying = this.dying.filter((d) => d !== dying);
         this.explode(L.x, L.y, color);
         this.floatText(L.x, L.y - 2 * this.U, 'BLOCKED!', color.Q, player ? player.name : null);
         if (this.onHit) this.onHit(by);
-      });
+      };
+      const tg = skill && this.skillHits.get(id);
+      if (tg) {
+        dying.held = true;
+        tg.pos = { x: L.x, y: L.y };
+        tg.onImpact = land;
+        return;
+      }
+      this.heroHop.set(by, performance.now());
+      this.launch(player ? player.cls : 'knight', this.heroOrigin(by), { x: L.x, y: L.y }, color, land);
     }
 
     // An attack reached its target army.
@@ -1079,8 +1588,8 @@
           this.drawPlate(w, L, t, null, { border: w.special ? SPECIAL_ART[w.special].color : iced && w.iced ? '#bfe9ff' : null });
         }
         for (const d of this.dying) {
-          if (t - d.t0 > 1500) continue;
-          if (Math.floor((t - d.t0) / 60) % 2 === 0) {
+          if (t - d.t0 > 1800) continue;
+          if (d.held || Math.floor((t - d.t0) / 60) % 2 === 0) {
             if (d.w.special) this.drawSpecial(d.w, d.L, t);
             else this.drawMonster(d.L, 0);
           }
@@ -1088,14 +1597,17 @@
         }
         if (iced) this.drawIce(t, now);
       }
-      this.dying = this.dying.filter((d) => t - d.t0 <= 1500);
+      this.dying = this.dying.filter((d) => t - d.t0 <= 1800);
 
       this.drawHeroes(t, dt);
       if (this.teamMode && this.geo) this.drawEffects(t);
+      this.drawSpotlight(t);
       this.drawProjectiles(t);
+      this.drawSkills(t);
       this.drawParticles(t, dt);
       this.drawTexts(t);
       this.drawCallouts(t);
+      this.drawCutins(t);
 
       const fk = (t - this.flashAt) / 320;
       if (fk < 1) {
@@ -1300,7 +1812,7 @@
       }
 
       for (const d of this.dying) {
-        if (t - d.t0 > 1500 || Math.floor((t - d.t0) / 60) % 2) continue;
+        if (t - d.t0 > 1800 || (!d.held && Math.floor((t - d.t0) / 60) % 2)) continue;
         this.drawPlate(d.w, d.L, t, d.color.Q);
       }
     }
@@ -1414,6 +1926,23 @@
       });
     }
 
+    // A skill boost waiting on the hero's next words: a glowing ring at their feet and rising sparks.
+    boostGlow(id, pos, feet, hu, color, t) {
+      const ctx = this.ctx;
+      ctx.globalAlpha = 0.55 + Math.sin(t / 120) * 0.25;
+      for (let i = 0; i < 16; i++) {
+        const ang = (i / 16) * Math.PI * 2 + t / 500;
+        this.block(pos.x + Math.cos(ang) * 7 * hu, feet + Math.sin(ang) * 1.5 * hu, hu, color);
+      }
+      ctx.globalAlpha = 1;
+      if (t - (this.auraAt.get(`b:${id}`) || 0) < 110) return;
+      this.auraAt.set(`b:${id}`, t);
+      this.particles.push({
+        x: pos.x + rand(-6, 6) * hu, y: feet - rand(0, 4) * hu, vx: 0, vy: -rand(0.02, 0.04) * this.U,
+        g: 0, life: 500, t0: t, size: Math.max(1, Math.round(hu)), color: Math.random() < 0.5 ? color : '#ffffff',
+      });
+    }
+
     // An emote pops up in a speech bubble over the hero's head.
     drawEmote(id, pos, feet, hu, t) {
       const em = this.emotes.get(id);
@@ -1448,6 +1977,7 @@
       for (const [id, pos] of this.heroPos) {
         const p = this.players.get(id);
         if (!p) continue;
+        if ((this.hiddenUntil.get(id) || 0) > t) continue;
         const spr = heroSprite(p);
         const hu = pos.hu;
         const bob = Math.sin(t / 320 + (hash(id) % 100)) > 0 ? 0 : hu;
@@ -1471,6 +2001,8 @@
         this.drawSprite(spr, x, y, hu, pos.flip);
         ctx.globalAlpha = 1;
         if ((p.streak || 0) >= 3 && p.connected !== false) this.aura(id, pos, feet, hu, p.streak, t);
+        const boosted = this.auras.get(id);
+        if (boosted) this.boostGlow(id, pos, feet, hu, boosted.color, t);
         this.drawEmote(id, pos, feet, hu, t);
 
         if (this.mode === 'host' && !this.teamMode) {
@@ -1586,8 +2118,8 @@
 
     // One frame of a hero's attack at (x, y), heading along (dx, dy) / angle a. Also used for the slower
     // team battle attacks; a cleric's beam travels as a holy orb there.
-    drawBolt(kind, x, y, dx, dy, a, color, t) {
-      const U = this.U;
+    drawBolt(kind, x, y, dx, dy, a, color, t, scale = 1) {
+      const U = this.U * scale;
       switch (kind) {
         case 'slash': {
           const r = 5 * U;
