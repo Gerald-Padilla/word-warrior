@@ -96,10 +96,158 @@
           [523, 523, 523, 698, 880, 784, 1046].forEach((f, i) =>
             this.tone(f, i === 6 ? 0.6 : 0.14, { delay: [0, 0.14, 0.28, 0.42, 0.7, 0.84, 0.98][i], vol: 0.07 }));
           break;
+        case 'tick': this.tone(1760, 0.03, { vol: 0.05 }); break;
+        case 'streak': [660, 880, 1320].forEach((f, i) => this.tone(f, 0.08, { delay: i * 0.06, vol: 0.05 })); break;
+        case 'freeze': [1568, 1319, 1047, 880].forEach((f, i) => this.tone(f, 0.18, { delay: i * 0.07, type: 'triangle', vol: 0.06 })); break;
+        case 'boom': this.noise(0.5, { vol: 0.22, freq: 700 }); this.tone(110, 0.4, { to: 35, type: 'triangle', vol: 0.18 }); break;
+        case 'roar':
+          this.tone(180, 0.7, { to: 60, type: 'sawtooth', vol: 0.06 });
+          this.noise(0.6, { vol: 0.08, freq: 500 });
+          break;
+        case 'bosshit': this.noise(0.12, { vol: 0.12, freq: 900 }); this.tone(90, 0.12, { to: 50, type: 'triangle', vol: 0.12 }); break;
+        case 'reveal': this.tone(523, 0.1, { vol: 0.07 }); this.tone(784, 0.16, { delay: 0.08, vol: 0.06 }); break;
+        case 'award': [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.12, { delay: i * 0.08, type: 'triangle', vol: 0.06 })); break;
+        case 'emote': this.tone(1046, 0.06, { type: 'triangle', vol: 0.04 }); break;
+        case 'drumroll':
+          // Faster and faster snare hits for about two seconds, then a crash.
+          for (let i = 0, t = 0; t < 1.9; i++, t += Math.max(0.035, 0.12 - i * 0.004)) this.noise(0.06, { vol: 0.05 + t * 0.03, delay: t, freq: 2500 });
+          this.noise(0.6, { vol: 0.14, delay: 1.95, freq: 5000 });
+          break;
         default: break;
       }
     },
   };
 
-  window.WW = { $, el, syncClock, rankPlayers, TEAMS, Sfx };
+  // Chiptune background music, made on the fly: each track loops a chord progression with a bass line,
+  // an arpeggio on top and drums. `fast` (the last seconds of a round) speeds it up.
+  const TONES = { maj: [0, 4, 7, 12], min: [0, 3, 7, 12] };
+  const TRACKS = {
+    lobby: {
+      bpm: 92, vol: 0.5, lead: 'triangle', chords: [[60, 'maj'], [57, 'min'], [53, 'maj'], [55, 'maj']],
+      arp: [[0, -1, 2, -1, 1, -1, 2, -1, 3, -1, 2, -1, 1, -1, 2, -1]], bass: [0, -1, -1, -1, -1, -1, -1, -1, 1, -1, -1, -1, -1, -1, -1, -1],
+      kick: [], snare: [], hat: [4, 12],
+    },
+    easy: {
+      bpm: 124, vol: 0.55, lead: 'square', chords: [[60, 'maj'], [55, 'maj'], [57, 'min'], [53, 'maj']],
+      arp: [[0, 1, 2, 1, 3, 2, 1, 2, 0, 1, 2, 1, 3, 2, 3, -1], [2, -1, 2, 1, 0, -1, 1, 2, 3, -1, 3, 2, 1, -1, 0, -1]],
+      bass: [0, -1, 0, -1, 1, -1, 0, -1, 0, -1, 0, -1, 1, -1, 2, -1], kick: [0, 8], snare: [4, 12], hat: [2, 6, 10, 14],
+    },
+    medium: {
+      bpm: 132, vol: 0.55, lead: 'square', chords: [[57, 'min'], [53, 'maj'], [60, 'maj'], [52, 'maj']],
+      arp: [[0, 2, 1, 2, 0, 2, 1, 2, 3, 2, 1, 2, 3, 2, 1, 2], [3, -1, 2, -1, 1, -1, 0, -1, 1, 2, 3, 2, 1, 0, 1, -1]],
+      bass: [0, -1, -1, 0, -1, -1, 1, -1, 0, -1, -1, 0, -1, -1, 1, -1], kick: [0, 6, 8], snare: [4, 12], hat: [2, 6, 10, 14, 15],
+    },
+    hard: {
+      bpm: 148, vol: 0.55, lead: 'sawtooth', chords: [[62, 'min'], [58, 'maj'], [60, 'maj'], [57, 'maj']],
+      arp: [[0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 3, 2, 1, 0]],
+      bass: [0, 0, -1, 0, 0, -1, 1, -1, 0, 0, -1, 0, 1, -1, 2, -1], kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14],
+    },
+    boss: {
+      bpm: 162, vol: 0.6, lead: 'sawtooth', chords: [[64, 'min'], [60, 'maj'], [62, 'maj'], [59, 'maj']],
+      arp: [[0, 0, 2, 0, 3, 0, 2, 1, 0, 0, 2, 0, 3, 2, 1, 2], [3, 2, 3, 1, 3, 0, 3, 1, 2, 1, 2, 0, 1, 0, 1, -1]],
+      bass: [0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 1, 1], kick: [0, 3, 6, 8, 11, 14], snare: [4, 12], hat: [0, 2, 4, 6, 8, 10, 12, 14],
+    },
+  };
+  const freq = (midi) => 440 * Math.pow(2, (midi - 69) / 12);
+
+  const Music = {
+    on: true,
+    want: null, // the track that should be playing
+    track: null, // the track that is playing
+    step: 0,
+    nextAt: 0,
+    fast: false,
+    gain: null,
+    play(name) {
+      this.want = TRACKS[name] ? name : null;
+    },
+    stop() {
+      this.want = null;
+    },
+    setFast(on) {
+      this.fast = on;
+    },
+    voice(type, f, t, dur, vol) {
+      const ctx = Sfx.ctx;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(f, t);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(g).connect(this.gain);
+      osc.start(t);
+      osc.stop(t + dur + 0.02);
+    },
+    drum(kind, t) {
+      const ctx = Sfx.ctx;
+      if (kind === 'kick') {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.frequency.setValueAtTime(150, t);
+        osc.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+        g.gain.setValueAtTime(0.5, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.14);
+        osc.connect(g).connect(this.gain);
+        osc.start(t);
+        osc.stop(t + 0.16);
+        return;
+      }
+      const dur = kind === 'snare' ? 0.11 : 0.03;
+      const buf = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * dur), ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      const src = ctx.createBufferSource();
+      const filter = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      src.buffer = buf;
+      filter.type = 'highpass';
+      filter.frequency.value = kind === 'snare' ? 1200 : 6000;
+      g.gain.value = kind === 'snare' ? 0.3 : 0.14;
+      src.connect(filter).connect(g).connect(this.gain);
+      src.start(t);
+    },
+    // One sixteenth note of the current track.
+    schedule(tr, step, t, len) {
+      const bar = Math.floor(step / 16) % tr.chords.length;
+      const s = step % 16;
+      const [root, kind] = tr.chords[bar];
+      const tones = TONES[kind];
+      const arp = tr.arp[Math.floor(step / 16) % tr.arp.length][s];
+      if (arp >= 0) this.voice(tr.lead, freq(root + 12 + tones[arp]), t, len * 0.9, 0.05 * tr.vol);
+      const b = tr.bass[s];
+      if (b >= 0) this.voice('triangle', freq(root - 12 + [0, 7, 12][b]), t, len * 1.6, 0.16 * tr.vol);
+      if (tr.kick.includes(s)) this.drum('kick', t);
+      if (tr.snare.includes(s)) this.drum('snare', t);
+      if (tr.hat.includes(s)) this.drum('hat', t);
+    },
+    pump() {
+      const ctx = Sfx.ctx;
+      if (!ctx || ctx.state !== 'running') return;
+      if (!this.gain) {
+        this.gain = ctx.createGain();
+        this.gain.connect(ctx.destination);
+      }
+      this.gain.gain.value = this.on && !Sfx.muted ? 0.5 : 0;
+      if (this.want !== this.track) {
+        this.track = this.want;
+        this.step = 0;
+        this.nextAt = ctx.currentTime + 0.05;
+      }
+      const tr = TRACKS[this.track];
+      if (!tr) return;
+      const len = (60 / tr.bpm / 4) * (this.fast ? 0.85 : 1);
+      while (this.nextAt < ctx.currentTime + 0.15) {
+        this.schedule(tr, this.step, this.nextAt, len);
+        this.nextAt += len;
+        this.step += 1;
+      }
+    },
+  };
+  setInterval(() => Music.pump(), 50);
+
+  // Emotes players can send from their phones.
+  const EMOTES = ['👍', '😂', '😮', '🔥', '👏', '😭'];
+
+  window.WW = { $, el, syncClock, rankPlayers, TEAMS, Sfx, Music, EMOTES };
 })();

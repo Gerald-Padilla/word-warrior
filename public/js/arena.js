@@ -2,24 +2,40 @@
 // Used by both the host screen and phones. A team battle is a different scene: two armies face off and
 // fling word-carrying attacks at each other (see the "team battle" sections).
 (function () {
-  const { heroSprite, petSprite, monsterSprite, axeSprite, powerSprite, COLORS, MONSTERS, POWERS } = window.Art;
-  const { TEAMS } = window.WW;
+  const { heroSprite, petSprite, monsterSprite, axeSprite, powerSprite, bossSprite, specialSprite } = window.Art;
+  const { COLORS, MONSTERS, POWERS, SPECIAL_ART } = window.Art;
+  const { TEAMS, EMOTES } = window.WW;
 
+  // One look per round, so a game goes from a sunny morning to dusk to a burning night, then the boss's lair.
+  // orb: the sun or moon (x, y and r are shares of the sky). ambient: what moves in the sky.
   const THEMES = {
     slime: {
-      sky: ['#140f2b', '#1f1840', '#2e2152', '#46306a', '#6a3f7a', '#8f5585'],
-      moon: '#fff2c4', crater: '#e6d39a', mountain: '#2a1f45', hill: '#1c2238', castle: '#120d22',
-      window: '#ffd23f', grass: '#3f9b3d', grassLight: '#68c74f', dirt: '#5c3a1e', dirtDark: '#40280f',
+      sky: ['#3d7fd6', '#4f93e0', '#64a7ea', '#7dbbf0', '#9ccff4', '#c4e6f7'],
+      orb: { sun: true, color: '#fff3b0', rim: '#ffd23f', x: 0.72, y: 0.16, r: 0.07 },
+      stars: 0, ambient: ['clouds'], cloud: '#ffffff', cloudShade: '#d7e9f7',
+      mountain: '#6f8fc4', hill: '#4e8a52', castle: '#4f4a68', window: '#ffd23f',
+      grass: '#3f9b3d', grassLight: '#68c74f', dirt: '#6b4422', dirtDark: '#4a2e14',
     },
     bat: {
-      sky: ['#05081a', '#0b1230', '#132048', '#1c2f5e', '#264070', '#33547e'],
-      moon: '#e4ecff', crater: '#b8c4e6', mountain: '#141c38', hill: '#0f1a2a', castle: '#080c18',
-      window: '#9fd7ff', grass: '#2f7d4a', grassLight: '#4fa865', dirt: '#3e2c22', dirtDark: '#2a1c14',
+      sky: ['#24163f', '#3f1f58', '#6b2a60', '#a83f5c', '#e0664a', '#f7a04a'],
+      orb: { sun: true, color: '#ffd27a', rim: '#ff8a3c', x: 0.7, y: 0.62, r: 0.11 },
+      stars: 0.35, ambient: ['clouds', 'bats'], cloud: '#e88a7a', cloudShade: '#b85f6a',
+      mountain: '#3a1f45', hill: '#24162e', castle: '#1a0f22', window: '#ffd23f',
+      grass: '#2f7d4a', grassLight: '#4fa865', dirt: '#3e2c22', dirtDark: '#2a1c14',
     },
     skull: {
-      sky: ['#1a0505', '#2e0909', '#4a0f0c', '#6e1a10', '#9a2c12', '#c4481a'],
-      moon: '#ff9a3c', crater: '#d4671f', mountain: '#2a0c0c', hill: '#1e0808', castle: '#120404',
-      window: '#ff5a1f', grass: '#5a3a2a', grassLight: '#7d4f30', dirt: '#3a1a10', dirtDark: '#24100a',
+      sky: ['#0c0410', '#1e0812', '#3a0c10', '#5e140e', '#8a240e', '#c4481a'],
+      orb: { color: '#ff9a3c', rim: '#d4671f', x: 0.72, y: 0.2, r: 0.07 },
+      stars: 1, ambient: ['embers'], glow: '#ff5a1f',
+      mountain: '#2a0c0c', hill: '#1e0808', castle: '#120404', window: '#ff5a1f',
+      grass: '#5a3a2a', grassLight: '#7d4f30', dirt: '#3a1a10', dirtDark: '#24100a',
+    },
+    boss: {
+      sky: ['#040106', '#10030a', '#24050c', '#40080c', '#6e1208', '#b02c0a'],
+      orb: null,
+      stars: 0.5, ambient: ['embers', 'lightning'], glow: '#ff3b1f', volcano: true,
+      mountain: '#1c0707', hill: '#120404', castle: '#080202', window: '#ff3b1f',
+      grass: '#3a1a10', grassLight: '#ff5a1f', dirt: '#241008', dirtDark: '#150804',
     },
   };
 
@@ -65,6 +81,14 @@
       this.effects = [{}, {}]; // team battle power-ups: per team, name -> active until (server ms)
       this.geo = null; // team battle layout, from layoutDuel()
       this.flashAt = -1e9;
+      this.boss = null; // boss round: { hp, max, down } from the server, plus hitAt / downAt here
+      this.iceUntil = 0; // special words: an ice word has slowed everything until then (server ms)
+      this.shakeUntil = 0;
+      this.shakePow = 0;
+      this.callouts = []; // big words across the field ("ON FIRE!")
+      this.emotes = new Map(); // playerId -> { e, t0 }
+      this.auraAt = new Map(); // playerId -> last streak-flame particle time
+      this.boltAt = 0; // boss lair lightning
       this.onHit = null;
       this.onEscape = null;
       this.lastFrame = performance.now();
@@ -143,7 +167,7 @@
 
     buildBackground() {
       const U = this.U;
-      const th = THEMES[this.monster];
+      const th = THEMES[this.monster] || THEMES.slime;
       const bw = Math.ceil(this.W / U);
       const bh = Math.ceil(this.H / U);
       const gr = Math.floor(this.groundY / U);
@@ -166,40 +190,76 @@
         }
       }
 
-      // Stars; a few twinkle at runtime.
+      // Stars (none by day, a few at dusk); some twinkle at runtime.
       this.stars = [];
-      const starCount = Math.round((bw * gr) / 70);
+      const starCount = Math.round(((bw * gr) / 70) * th.stars);
       for (let i = 0; i < starCount; i++) {
         const x = Math.floor(rnd() * bw);
-        const y = Math.floor(rnd() * gr * 0.65);
+        const y = Math.floor(rnd() * gr * (th.stars < 1 ? 0.35 : 0.65));
         g.fillStyle = rnd() < 0.8 ? 'rgba(255,255,255,0.55)' : '#ffe9a8';
         g.fillRect(x, y, 1, 1);
         if (rnd() < 0.12) this.stars.push({ x, y, phase: rnd() * 6 });
       }
 
-      // Moon.
-      const r = Math.max(4, Math.round(Math.min(bw, gr) * 0.07));
-      const mx = Math.floor(bw * (this.mode === 'host' ? 0.72 : 0.8));
-      const my = Math.floor(gr * 0.2);
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (dx * dx + dy * dy > r * r) continue;
-          g.fillStyle = dx * dx + dy * dy > (r - 1) * (r - 1) && dx > 0 ? th.crater : th.moon;
-          g.fillRect(mx + dx, my + dy, 1, 1);
+      // Sun or moon.
+      const orb = th.orb;
+      if (orb) {
+        const r = Math.max(4, Math.round(Math.min(bw, gr) * orb.r));
+        const mx = Math.floor(bw * (this.mode === 'host' ? orb.x : Math.min(0.85, orb.x + 0.08)));
+        const my = Math.floor(gr * orb.y);
+        if (orb.sun) {
+          // A soft halo, then the disc.
+          g.fillStyle = orb.rim;
+          g.globalAlpha = 0.25;
+          for (let dy = -r - 2; dy <= r + 2; dy++) {
+            for (let dx = -r - 2; dx <= r + 2; dx++) if (dx * dx + dy * dy <= (r + 2) * (r + 2) && (dx + dy) % 2 === 0) g.fillRect(mx + dx, my + dy, 1, 1);
+          }
+          g.globalAlpha = 1;
+        }
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (dx * dx + dy * dy > r * r) continue;
+            g.fillStyle = dx * dx + dy * dy > (r - 1) * (r - 1) && (orb.sun || dx > 0) ? orb.rim : orb.color;
+            g.fillRect(mx + dx, my + dy, 1, 1);
+          }
+        }
+        if (!orb.sun) {
+          g.fillStyle = orb.rim;
+          g.fillRect(mx - Math.round(r / 3), my - Math.round(r / 4), 2, 2);
+          g.fillRect(mx + Math.round(r / 4), my + Math.round(r / 3), 2, 1);
+          g.fillRect(mx - Math.round(r / 6), my + Math.round(r / 2), 1, 1);
         }
       }
-      g.fillStyle = th.crater;
-      g.fillRect(mx - Math.round(r / 3), my - Math.round(r / 4), 2, 2);
-      g.fillRect(mx + Math.round(r / 4), my + Math.round(r / 3), 2, 1);
-      g.fillRect(mx - Math.round(r / 6), my + Math.round(r / 2), 1, 1);
 
-      // Mountains.
+      // A glow along the horizon on fiery nights.
+      if (th.glow) {
+        g.fillStyle = th.glow;
+        for (let y = Math.round(gr * 0.6); y < gr; y++) {
+          g.globalAlpha = ((y - gr * 0.6) / (gr * 0.4)) * 0.35;
+          for (let x = y % 2; x < bw; x += 2) g.fillRect(x, y, 1, 1);
+        }
+        g.globalAlpha = 1;
+      }
+
+      // Mountains; the boss's lair has a volcano in the middle.
       const p1 = rnd() * 6;
       const p2 = rnd() * 6;
       g.fillStyle = th.mountain;
       for (let x = 0; x < bw; x++) {
-        const h = Math.round(gr * 0.32 + Math.sin(x * 0.045 + p1) * gr * 0.09 + Math.sin(x * 0.13 + p2) * gr * 0.035);
+        let h = Math.round(gr * 0.32 + Math.sin(x * 0.045 + p1) * gr * 0.09 + Math.sin(x * 0.13 + p2) * gr * 0.035);
+        if (th.volcano) h = Math.max(h, Math.round(gr * 0.62 - Math.abs(x - bw / 2) * 1.1));
         g.fillRect(x, gr - h, 1, h);
+      }
+      if (th.volcano) {
+        // Lava running down from the crater.
+        const top = Math.round(gr * 0.38);
+        g.fillStyle = th.glow;
+        for (let y = top; y < gr; y++) {
+          const spread = (y - top) * 0.25;
+          for (const off of [-spread, spread * 0.6]) if (rnd() < 0.8) g.fillRect(Math.round(bw / 2 + off + Math.sin(y * 0.3) * 1.5), y, 1, 1);
+        }
+        g.fillStyle = '#ffd23f';
+        g.fillRect(Math.round(bw / 2) - 2, top, 4, 1);
       }
 
       // Castle silhouette with lit windows.
@@ -248,6 +308,78 @@
       for (let i = 0; i < bw * (bh - gr) * 0.12; i++) g.fillRect(Math.floor(rnd() * bw), gr + 2 + Math.floor(rnd() * (bh - gr)), 1, 1);
 
       this.bg = c;
+      // What drifts across the sky, in background pixels.
+      this.th = th;
+      this.clouds = th.ambient.includes('clouds')
+        ? Array.from({ length: 5 }, () => ({ x: rnd() * bw, y: 2 + rnd() * gr * 0.3, w: 8 + Math.floor(rnd() * 10), speed: 0.5 + rnd() * 0.8 }))
+        : [];
+      this.skyBats = th.ambient.includes('bats')
+        ? Array.from({ length: 6 }, () => ({ x: rnd(), y: 0.08 + rnd() * 0.3, speed: 0.012 + rnd() * 0.02, phase: rnd() * 6 }))
+        : [];
+      this.embers = [];
+    }
+
+    // Clouds, distant bats, rising embers and lightning: behind the words, in front of the sky.
+    drawAmbient(t, dt) {
+      const ctx = this.ctx;
+      const U = this.U;
+      const th = this.th;
+      const bw = this.bg.width;
+      for (const c of this.clouds) {
+        const x = ((c.x + (t / 1000) * c.speed) % (bw + c.w * 2)) - c.w;
+        const y = Math.round(c.y);
+        ctx.fillStyle = th.cloudShade;
+        ctx.fillRect(Math.round(x) * U, (y + 2) * U, c.w * U, U);
+        ctx.fillStyle = th.cloud;
+        ctx.fillRect(Math.round(x) * U, (y + 1) * U, c.w * U, U);
+        ctx.fillRect(Math.round(x + 2) * U, y * U, Math.max(2, c.w - 5) * U, U);
+        ctx.fillRect(Math.round(x + 4) * U, (y - 1) * U, Math.max(1, Math.floor(c.w / 3)) * U, U);
+      }
+      for (const b of this.skyBats) {
+        const x = (((b.x + (t / 1000) * b.speed) % 1.2) - 0.1) * this.W;
+        const y = b.y * this.groundY + Math.sin(t / 400 + b.phase) * U * 2;
+        const up = Math.floor(t / 140 + b.phase * 3) % 2 ? -1 : 1;
+        ctx.fillStyle = '#1a0f22';
+        this.block(x, y, U, '#1a0f22');
+        for (const s of [-1, 1]) {
+          this.block(x + s * U, y, U, '#1a0f22');
+          this.block(x + s * 2 * U, y + up * U, U, '#1a0f22');
+        }
+      }
+      if (th.ambient.includes('embers')) {
+        if (Math.random() < dt / (this.mode === 'host' ? 40 : 90)) {
+          this.embers.push({ x: rand(0, this.W), y: this.groundY, vy: -rand(0.02, 0.06) * U, life: rand(2200, 3800), t0: t, sway: rand(0, 6) });
+        }
+        this.embers = this.embers.filter((e) => t - e.t0 < e.life);
+        for (const e of this.embers) {
+          const k = (t - e.t0) / e.life;
+          e.y += e.vy * dt;
+          ctx.globalAlpha = Math.min(1, (1 - k) * 1.5);
+          ctx.fillStyle = k < 0.4 ? '#ffd23f' : k < 0.75 ? '#ff7b1c' : '#b02c0a';
+          ctx.fillRect(Math.round(e.x + Math.sin(t / 500 + e.sway) * U * 3), Math.round(e.y), U, U);
+        }
+        ctx.globalAlpha = 1;
+      }
+      if (th.ambient.includes('lightning')) {
+        if (t >= (this.nextBoltAt || 0)) {
+          this.boltAt = t;
+          this.nextBoltAt = t + rand(5000, 11000);
+          const pts = [];
+          let x = rand(0.1, 0.9) * this.W;
+          for (let y = 0; y < this.groundY * 0.55; y += U * 3) {
+            x += rand(-2.5, 2.5) * U;
+            pts.push([x, y]);
+          }
+          this.bolt = pts;
+        }
+        if (t - this.boltAt < 160 && this.bolt) {
+          ctx.globalAlpha = Math.floor((t - this.boltAt) / 40) % 2 ? 0.08 : 0.22;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, this.W, this.groundY);
+          ctx.globalAlpha = 1;
+          for (const [x, y] of this.bolt) this.block(x, y, U * 1.5, '#fff6d0');
+        }
+      }
     }
 
     // ---- players -------------------------------------------------------
@@ -437,10 +569,12 @@
       let cx = half * 2 > fieldW ? fieldW / 2 : clamp(w.x * fieldW, half, fieldW - half);
       if (this.monster === 'bat') cx += Math.sin(now / 280 + w.id) * U * 2;
       if (this.monster === 'skull') cx += Math.sin(now / 520 + w.id) * U * 1.5;
+      if (this.monster === 'boss') cx += Math.sin(now / 360 + w.id) * U * 1.5;
       return { p, cx, top, mw, mh, plateW, plateH, cy: top + mh / 2, py: top + mh + U };
     }
 
-    kill(wordId, playerId, points) {
+    // k: the server's kill event (points, plus streak multiplier, perk, special word, bomb blast).
+    kill(wordId, playerId, points, k = {}) {
       const w = this.words.get(wordId);
       if (!w) return;
       this.words.delete(wordId);
@@ -449,15 +583,94 @@
       const dying = { w, L, color, t0: performance.now() };
       this.dying.push(dying);
       const player = this.players.get(playerId);
-      const from = this.heroOrigin(playerId);
-      this.heroHop.set(playerId, performance.now());
-      this.launch(player ? player.cls : 'knight', from, { x: L.cx, y: L.cy }, color, () => {
+      const showName = this.mode === 'host' || playerId !== this.selfId;
+      const tags = [];
+      if (k.special === 'gold') tags.push('GOLD x3');
+      if (k.mult > 1) tags.push(`x${k.mult} STREAK`);
+      if (k.perk) tags.push('PERK');
+      const land = () => {
         this.dying = this.dying.filter((d) => d !== dying);
         this.explode(L.cx, L.cy, color);
-        const showName = this.mode === 'host' || playerId !== this.selfId;
-        this.floatText(L.cx, L.top, `+${points}`, color.Q, showName && player ? player.name : null);
+        this.floatText(L.cx, L.top, `+${points}`, k.special === 'gold' ? '#ffd23f' : color.Q, showName && player ? player.name : null, tags.join(' '));
+        if (w.text.length >= 9 || k.special) this.shake(k.special === 'bomb' ? 3 : 1.5, 260);
+        if (k.special === 'bomb') {
+          for (let i = 0; i < 3; i++) this.particles.push({ ring: true, x: L.cx, y: L.cy, t0: performance.now() + i * 90, life: 420, color: ['#ffd23f', '#ff7b1c', '#ffffff'][i] });
+          this.flash('#ff7b1c');
+        }
+        if (k.special === 'ice') this.flash('#7fd4ff');
         if (this.onHit) this.onHit(playerId);
-      });
+      };
+      // A bomb's blast takes everything at once; no attack flies for those.
+      if (k.bomb) {
+        land();
+        return;
+      }
+      this.heroHop.set(playerId, performance.now());
+      this.launch(player ? player.cls : 'knight', this.heroOrigin(playerId), { x: L.cx, y: L.cy }, color, land);
+    }
+
+    // ---- boss round, special words, juice ---------------------------------
+    setBoss(b) {
+      if (!b) {
+        this.boss = null;
+        return;
+      }
+      this.boss = { ...(this.boss || {}), ...b };
+    }
+
+    bossHit(hp, dmg) {
+      if (!this.boss) return;
+      this.boss.hp = hp;
+      this.boss.hitAt = performance.now();
+      const B = this.bossLayout();
+      if (!B) return;
+      this.sparkle(B.cx + rand(-0.3, 0.3) * B.w, B.cy + rand(-0.2, 0.3) * B.h, '#ffd23f', 10);
+      this.floatText(B.cx + rand(-0.25, 0.25) * B.w, B.y + B.h * 0.3, `-${dmg}`, '#ff6b7a', null);
+    }
+
+    bossDown() {
+      if (!this.boss) return;
+      this.boss.hp = 0;
+      this.boss.down = true;
+      this.boss.downAt = performance.now();
+      const B = this.bossLayout();
+      if (B) {
+        for (let i = 0; i < 6; i++) {
+          setTimeout(() => this.explode(B.cx + rand(-0.4, 0.4) * B.w, B.cy + rand(-0.3, 0.3) * B.h, { Q: '#ffd23f', P: '#ff7b1c' }), i * 180);
+        }
+      }
+      this.shake(5, 1200);
+      this.flash('#ffffff');
+      this.clearWords();
+    }
+
+    setIce(until) {
+      this.iceUntil = until || 0;
+    }
+
+    shake(pow, ms) {
+      const t = performance.now();
+      this.shakePow = Math.max(t < this.shakeUntil ? this.shakePow : 0, pow);
+      this.shakeUntil = Math.max(this.shakeUntil, t + ms);
+    }
+
+    // A big word across the middle of the field for a moment.
+    // Callouts that overlap in time stack in rows instead of printing over each other.
+    callout(text, color, sub) {
+      const t = performance.now();
+      this.callouts = this.callouts.filter((c) => t - c.t0 < 1500);
+      let row = 0;
+      while (this.callouts.some((c) => c.row === row)) row++;
+      if (row > 2) {
+        this.callouts.shift();
+        row = 0;
+        while (this.callouts.some((c) => c.row === row)) row++;
+      }
+      this.callouts.push({ text, color, sub, row, t0: t });
+    }
+
+    emote(playerId, e) {
+      this.emotes.set(playerId, { e, t0: performance.now() });
     }
 
     // Side-on: attacks cruise between the attack-word rows and the armies' heads.
@@ -647,10 +860,11 @@
       this.heroHop.set(by, performance.now());
     }
 
+    // Attacks in the air ({ launch, dur }) or falling words ({ spawn, dur }) changing speed.
     retime(list) {
-      for (const r of list) {
-        const w = this.words.get(r.id);
-        if (w) Object.assign(w, { launch: r.launch, dur: r.dur });
+      for (const { id, ...r } of list) {
+        const w = this.words.get(id);
+        if (w) Object.assign(w, r);
       }
     }
 
@@ -708,20 +922,52 @@
       }
     }
 
+    // Each kind of monster goes out its own way: slimes splat, bats burst into feathers, skulls shatter,
+    // fire spirits flare up.
     explode(x, y, color) {
-      const fx = MONSTERS[this.monster].fx;
+      const mon = MONSTERS[this.monster];
+      const fx = mon.fx;
       const U = this.U;
-      for (let i = 0; i < 26; i++) {
+      const t0 = performance.now();
+      const style = mon.death;
+      const n = style === 'feathers' ? 18 : 26;
+      for (let i = 0; i < n; i++) {
         const a = rand(0, Math.PI * 2);
         const v = rand(0.012, 0.045) * U;
-        this.particles.push({
+        const p = {
           x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 0.01 * U,
-          g: 0.00009 * U, life: rand(450, 850), t0: performance.now(),
+          g: 0.00009 * U, life: rand(450, 850), t0,
           size: U * (Math.random() < 0.3 ? 2 : 1),
           color: i % 4 === 0 ? color.Q : i % 5 === 0 ? '#ffffff' : fx[i % fx.length],
-        });
+        };
+        if (style === 'splat') {
+          // Gooey drops that arc up and rain down.
+          p.vy = -rand(0.02, 0.05) * U;
+          p.vx *= 0.8;
+          p.g = 0.00016 * U;
+          p.life = rand(700, 1100);
+          p.size = U * (Math.random() < 0.5 ? 2 : 1);
+        } else if (style === 'feathers') {
+          // Slow, swaying flakes.
+          p.vx *= 0.5;
+          p.vy = rand(-0.02, 0.005) * U;
+          p.g = 0.00002 * U;
+          p.life = rand(1100, 1700);
+          p.sway = rand(0, 6);
+        } else if (style === 'shatter') {
+          // Bone chips fly hard and drop; a few flames hang in the air.
+          p.color = i % 3 === 0 ? '#efe6d0' : i % 3 === 1 ? '#c9bfa6' : fx[i % fx.length];
+          p.vx *= 1.4;
+          p.g = 0.00022 * U;
+        } else if (style === 'burst') {
+          // Flames that rise.
+          p.vy = -rand(0.015, 0.05) * U;
+          p.g = -0.00002 * U;
+          p.color = ['#ffd23f', '#ff7b1c', '#e8371c', '#ffffff'][i % 4];
+        }
+        this.particles.push(p);
       }
-      this.particles.push({ ring: true, x, y, t0: performance.now(), life: 260, color: '#ffffff' });
+      this.particles.push({ ring: true, x, y, t0, life: 260, color: '#ffffff' });
     }
 
     puff(x, y, colors, n) {
@@ -759,8 +1005,9 @@
       }
     }
 
-    floatText(x, y, text, color, name) {
-      this.texts.push({ x, y, text, color, name, t0: performance.now(), life: 1100 });
+    // sub: an extra line under the points ("x2 STREAK PERK").
+    floatText(x, y, text, color, name, sub) {
+      this.texts.push({ x, y, text, color, name, sub, t0: performance.now(), life: sub ? 1400 : 1100 });
     }
 
     // ---- drawing -------------------------------------------------------
@@ -782,6 +1029,15 @@
       this.lastFrame = t;
       ctx.imageSmoothingEnabled = false;
       ctx.globalAlpha = 1;
+      const shaking = t < this.shakeUntil;
+      if (shaking) {
+        const k = (this.shakeUntil - t) / 300;
+        const pow = this.shakePow * this.U * Math.min(1, k);
+        ctx.fillStyle = '#0e0a17';
+        ctx.fillRect(0, 0, this.W, this.H);
+        ctx.save();
+        ctx.translate(Math.round(rand(-pow, pow)), Math.round(rand(-pow, pow)));
+      }
       ctx.drawImage(this.bg, 0, 0, this.bg.width * U, this.bg.height * U);
 
       for (const s of this.stars) {
@@ -790,6 +1046,7 @@
           ctx.fillRect(s.x * U, s.y * U, U, U);
         }
       }
+      this.drawAmbient(t, dt);
 
       ctx.font = `${this.fontPx}px "Press Start 2P", monospace`;
       ctx.textBaseline = 'top';
@@ -797,7 +1054,9 @@
       if (this.teamMode && this.geo) {
         this.drawDuel(t, now);
       } else {
+        if (this.boss && this.monster === 'boss') this.drawBoss(t);
         const mon = MONSTERS[this.monster];
+        const iced = this.iceUntil > now;
         for (const w of this.words.values()) {
           const L = this.layoutWord(w, now);
           if (L.p < 0) continue;
@@ -806,22 +1065,28 @@
             continue;
           }
           const frame = Math.floor((t + w.id * 97) / mon.frameMs) % 2;
-          this.drawMonster(L, frame);
-          this.drawPlate(w, L, t);
+          if (w.special) this.drawSpecial(w, L, t);
+          else this.drawMonster(L, frame);
+          this.drawPlate(w, L, t, null, { border: w.special ? SPECIAL_ART[w.special].color : iced && w.iced ? '#bfe9ff' : null });
         }
         for (const d of this.dying) {
           if (t - d.t0 > 1500) continue;
-          if (Math.floor((t - d.t0) / 60) % 2 === 0) this.drawMonster(d.L, 0);
+          if (Math.floor((t - d.t0) / 60) % 2 === 0) {
+            if (d.w.special) this.drawSpecial(d.w, d.L, t);
+            else this.drawMonster(d.L, 0);
+          }
           this.drawPlate(d.w, d.L, t, d.color.Q);
         }
+        if (iced) this.drawIce(t, now);
       }
       this.dying = this.dying.filter((d) => t - d.t0 <= 1500);
 
-      this.drawHeroes(t);
+      this.drawHeroes(t, dt);
       if (this.teamMode && this.geo) this.drawEffects(t);
       this.drawProjectiles(t);
       this.drawParticles(t, dt);
       this.drawTexts(t);
+      this.drawCallouts(t);
 
       const fk = (t - this.flashAt) / 320;
       if (fk < 1) {
@@ -830,6 +1095,119 @@
         ctx.fillRect(0, 0, this.W, this.H);
         ctx.globalAlpha = 1;
       }
+      if (shaking) ctx.restore();
+    }
+
+    // ---- boss round, special words, callouts: drawing --------------------
+    // Where the Dragon King hovers: top middle, as big as fits without crowding the words.
+    bossLayout() {
+      const spr = bossSprite(0);
+      const field = Math.max(this.W * 0.4, this.W - this.reserveRight);
+      const s = Math.max(2, Math.floor(Math.min((field * 0.42) / spr.width, (this.groundY - this.reserveTop) * 0.34 / spr.height)));
+      const w = spr.width * s;
+      const h = spr.height * s;
+      const cx = field / 2;
+      const top = this.reserveTop + (this.mode === 'phone' ? this.fontPx * 1.6 : 0); // phones: clear of the streak chip
+      const y = top + this.fontPx * 2.2;
+      return { s, w, h, cx, y, cy: y + h / 2, top };
+    }
+
+    drawBoss(t) {
+      const ctx = this.ctx;
+      const b = this.boss;
+      const B = this.bossLayout();
+      const downK = b.down ? (t - b.downAt) / 2200 : 0;
+      if (downK >= 1) return;
+      const hit = t - (b.hitAt || -1e9) < 160;
+      const frame = b.down || hit || Math.floor(t / 700) % 3 === 0 ? 1 : 0;
+      const bob = Math.round(Math.sin(t / 500) * B.s);
+      const jx = hit || b.down ? Math.round(rand(-1, 1) * B.s) : 0;
+      ctx.globalAlpha = b.down ? Math.max(0, 1 - downK) : 1;
+      this.drawSprite(bossSprite(frame), Math.round(B.cx - B.w / 2) + jx, Math.round(B.y + bob + downK * B.h), B.s, false);
+      ctx.globalAlpha = 1;
+
+      // HP bar with the boss's name.
+      const fp = this.fontPx;
+      const small = Math.max(8, Math.round((fp * 0.67) / 8) * 8);
+      const bw = Math.min(B.w * 1.6, (this.W - this.reserveRight) * 0.8);
+      const bh = Math.max(8, Math.round(fp * 0.7));
+      const bx = Math.round(B.cx - bw / 2);
+      const by = Math.round(B.top + fp * 0.6);
+      const k = b.max ? b.hp / b.max : 0;
+      ctx.fillStyle = '#0e0a17';
+      ctx.fillRect(bx - 3, by - 3, bw + 6, bh + 6);
+      ctx.fillStyle = '#3a0c10';
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.fillStyle = hit ? '#ffffff' : k < 0.25 ? '#ffd23f' : '#e8371c';
+      ctx.fillRect(bx, by, Math.round(bw * k), bh);
+      this.drawLabel({ text: b.down ? 'DEFEATED!' : `THE DRAGON KING  ${b.hp}`, x: B.cx, y: by + bh + 6, fs: small, color: b.down ? '#ffd23f' : '#ffb061' });
+    }
+
+    drawSpecial(w, L, t) {
+      const spr = specialSprite(w.special);
+      const s = Math.max(1, Math.round((L.mh / spr.height) * 1.0));
+      const x = Math.round(L.cx - (spr.width * s) / 2);
+      const y = Math.round(L.top + L.mh - spr.height * s + Math.sin(t / 220 + w.id) * this.U);
+      this.drawSprite(spr, x, y, s, false);
+      if (Math.random() < 0.15) {
+        const c = SPECIAL_ART[w.special].color;
+        this.particles.push({
+          x: L.cx + rand(-0.6, 0.6) * spr.width * s, y: L.cy + rand(-0.5, 0.5) * L.mh, vx: 0, vy: -0.01 * this.U, g: 0,
+          life: 500, t0: t, size: this.U, color: Math.random() < 0.5 ? c : '#ffffff',
+        });
+      }
+    }
+
+    // Ice: a blue chill over the field and frost creeping in from the edges.
+    drawIce(t, now) {
+      const ctx = this.ctx;
+      const left = this.iceUntil - now;
+      ctx.globalAlpha = Math.min(0.16, left / 3000);
+      ctx.fillStyle = '#7fd4ff';
+      ctx.fillRect(0, this.reserveTop, this.W, this.groundY - this.reserveTop);
+      ctx.globalAlpha = Math.min(0.8, left / 1000);
+      const U = this.U;
+      for (let x = 0; x < this.W; x += U * 2) {
+        const h = (hash(x) % 4) + 1;
+        ctx.fillStyle = '#e8f7ff';
+        ctx.fillRect(x, this.reserveTop, U * 2, h * U);
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    drawCallouts(t) {
+      const ctx = this.ctx;
+      const keep = [];
+      for (const c of this.callouts) {
+        const k = (t - c.t0) / 1500;
+        if (k >= 1) continue;
+        keep.push(c);
+        const pop = k < 0.12 ? 0.6 + (k / 0.12) * 0.55 : k < 0.2 ? 1.15 - ((k - 0.12) / 0.08) * 0.15 : 1;
+        const fs = Math.max(16, Math.round((this.fontPx * (this.mode === 'host' ? 2.2 : 1.6) * pop) / 4) * 4);
+        const field = Math.max(this.W * 0.4, this.W - this.reserveRight);
+        const rowH = this.fontPx * (this.mode === 'host' ? 2.2 : 1.6) * 1.9;
+        const y = Math.round(this.reserveTop + (this.groundY - this.reserveTop) * 0.26 + c.row * rowH - k * this.U * 6);
+        ctx.globalAlpha = k > 0.75 ? (1 - k) / 0.25 : 1;
+        ctx.font = `${fs}px "Press Start 2P", monospace`;
+        const x = Math.round(field / 2 - (c.text.length * fs) / 2);
+        const o = Math.max(2, Math.round(fs / 8));
+        ctx.fillStyle = '#1b1426';
+        for (const [ox, oy] of [[-o, 0], [o, 0], [0, -o], [0, o], [o, o]]) ctx.fillText(c.text, x + ox, y + oy);
+        ctx.fillStyle = c.color;
+        ctx.fillText(c.text, x, y);
+        if (c.sub) {
+          const ss = Math.max(8, Math.round(fs / 2.5 / 4) * 4);
+          ctx.font = `${ss}px "Press Start 2P", monospace`;
+          const sx = Math.round(field / 2 - (c.sub.length * ss) / 2);
+          ctx.fillStyle = '#1b1426';
+          ctx.fillText(c.sub, sx + 2, y + fs + ss * 0.8 + 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(c.sub, sx, y + fs + ss * 0.8);
+        }
+      }
+      ctx.globalAlpha = 1;
+      ctx.font = `${this.fontPx}px "Press Start 2P", monospace`;
+      this.callouts = keep;
     }
 
     // ---- team battle: drawing --------------------------------------------
@@ -1016,6 +1394,45 @@
       ctx.globalAlpha = 1;
     }
 
+    // A hero on a streak burns: orange flames from 3 in a row, blue from 6, violet from 10.
+    aura(id, pos, feet, hu, streak, t) {
+      if (t - (this.auraAt.get(id) || 0) < (streak >= 10 ? 40 : streak >= 6 ? 60 : 90)) return;
+      this.auraAt.set(id, t);
+      const colors = streak >= 10 ? ['#bb8cff', '#ffd23f', '#ffffff'] : streak >= 6 ? ['#7fd4ff', '#ffffff', '#4da6ff'] : ['#ff7b1c', '#ffd23f', '#e8371c'];
+      this.particles.push({
+        x: pos.x + rand(-6, 6) * hu, y: feet - rand(1, 13) * hu, vx: rand(-0.004, 0.004) * this.U, vy: -rand(0.02, 0.04) * this.U,
+        g: 0, life: rand(350, 600), t0: t, size: Math.max(1, Math.round(hu * (Math.random() < 0.4 ? 1.5 : 1))), color: colors[Math.floor(rand(0, 3))],
+      });
+    }
+
+    // An emote pops up in a speech bubble over the hero's head.
+    drawEmote(id, pos, feet, hu, t) {
+      const em = this.emotes.get(id);
+      if (!em) return;
+      const k = (t - em.t0) / 2200;
+      if (k >= 1) {
+        this.emotes.delete(id);
+        return;
+      }
+      const ctx = this.ctx;
+      const pop = k < 0.07 ? k / 0.07 : 1;
+      const es = Math.round(Math.max(14, hu * 8) * (0.6 + 0.4 * pop));
+      const pad = Math.round(es * 0.25);
+      const bw = es + pad * 2;
+      const x = Math.round(clamp(pos.x - bw / 2, 2, this.W - bw - 2));
+      const y = Math.round(feet - 17 * hu - bw - Math.max(2, hu * 2) - Math.sin(k * Math.PI) * hu * 2);
+      ctx.globalAlpha = k > 0.85 ? (1 - k) / 0.15 : 1;
+      ctx.fillStyle = '#1b1426';
+      ctx.fillRect(x - 2, y - 2, bw + 4, bw + 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x, y, bw, bw);
+      ctx.fillRect(Math.round(pos.x - hu), y + bw, Math.max(2, hu * 2), Math.max(2, hu * 2));
+      ctx.font = `${es}px sans-serif`;
+      ctx.fillText(EMOTES[em.e] || '', x + pad, y + pad * 0.9);
+      ctx.font = `${this.fontPx}px "Press Start 2P", monospace`;
+      ctx.globalAlpha = 1;
+    }
+
     drawHeroes(t) {
       const ctx = this.ctx;
       const labels = [];
@@ -1044,6 +1461,8 @@
         }
         this.drawSprite(spr, x, y, hu, pos.flip);
         ctx.globalAlpha = 1;
+        if ((p.streak || 0) >= 3 && p.connected !== false) this.aura(id, pos, feet, hu, p.streak, t);
+        this.drawEmote(id, pos, feet, hu, t);
 
         if (this.mode === 'host' && !this.teamMode) {
           const fs = hu >= 4 ? 16 : 8;
@@ -1237,6 +1656,10 @@
       for (const p of this.particles) {
         const age = t - p.t0;
         if (age > p.life) continue;
+        if (age < 0) {
+          keep.push(p); // starts a moment later
+          continue;
+        }
         if (p.ring) {
           const k = age / p.life;
           const r = this.U * (2 + k * 9);
@@ -1270,7 +1693,9 @@
         if (k >= 1) continue;
         const y = Math.round(tx.y - k * this.U * 10);
         ctx.globalAlpha = k > 0.6 ? (1 - k) / 0.4 : 1;
-        const lines = tx.name ? [[tx.name, fp >= 24 ? fp / 2 : 8, '#ffffff'], [tx.text, fp, tx.color]] : [[tx.text, fp, tx.color]];
+        const small = fp >= 24 ? fp / 2 : 8;
+        const lines = tx.name ? [[tx.name, small, '#ffffff'], [tx.text, fp, tx.color]] : [[tx.text, fp, tx.color]];
+        if (tx.sub) lines.push([tx.sub, small, '#ffd23f']);
         let ly = y;
         for (const [str, size, color] of lines) {
           ctx.font = `${size}px "Press Start 2P", monospace`;

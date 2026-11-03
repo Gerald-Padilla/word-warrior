@@ -1,7 +1,7 @@
 // Host / big-screen controller: QR lobby, live battlefield, leaderboard and podium.
 (function () {
-  const { $, el, syncClock, rankPlayers, TEAMS, Sfx } = window.WW;
-  const { heroDataURL, powerDataURL, POWERS } = window.Art;
+  const { $, el, syncClock, rankPlayers, TEAMS, Sfx, Music, EMOTES } = window.WW;
+  const { heroDataURL, powerDataURL, crownDataURL, POWERS } = window.Art;
 
   const socket = io();
   let offset = 0;
@@ -18,8 +18,13 @@
   let winner = null; // team battle: 0, 1, or -1 for a draw
   let ko = false;
   let effects = [{}, {}]; // team battle power-ups: per team, name -> active until (server ms)
+  let options = {}; // the room's game options (on/off switches, plus how many of your own words)
+  let summary = null; // finished: { stats, awards }
+  let boss = null; // boss round: { hp, max, down }
+  let pushedOptions = false;
   let lastCount = 0;
   let lastBeep = null;
+  let lastTick = null;
   const prevScores = new Map();
 
   const ack = (ev, data) => new Promise((res) => socket.emit(ev, data, res));
@@ -28,6 +33,12 @@
     get(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch (e) { return null; } },
     set(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
   };
+  // The host's choices (options, own words, music) carry over to the next room on this computer.
+  const prefs = {
+    get() { try { return JSON.parse(localStorage.getItem('ww_host_opts')) || {}; } catch (e) { return {}; } },
+    merge(v) { try { localStorage.setItem('ww_host_opts', JSON.stringify({ ...this.get(), ...v })); } catch (e) { /* private mode */ } },
+  };
+  Music.on = prefs.get().music !== false;
 
   // ---- connection ----------------------------------------------------
   socket.on('connect', async () => {
@@ -52,10 +63,63 @@
       p.kills = k.kills;
       if (state.round >= 0) p.roundScores[state.round] = k.roundScore;
     }
-    arena.kill(k.id, k.by, k.points);
-    Sfx.play('shoot');
+    arena.kill(k.id, k.by, k.points, k);
+    if (!k.bomb) Sfx.play('shoot');
+    announce(k.by, k);
     scheduleBoard();
   });
+  socket.on('word:retime', (list) => arena.retime(list));
+  socket.on('fx:ice', ({ until }) => arena.setIce(until));
+  socket.on('player:streak', ({ id, streak }) => {
+    const p = players.find((pl) => pl.id === id);
+    if (p) p.streak = streak;
+  });
+  socket.on('player:emote', ({ id, e }) => {
+    arena.emote(id, e);
+    Sfx.play('emote');
+    const tile = document.querySelector(`.hero-tile[data-id="${id}"]`);
+    if (tile) {
+      const bubble = el('span', { class: 'emo', text: EMOTES[e] || '' });
+      tile.append(bubble);
+      setTimeout(() => bubble.remove(), 1800);
+    }
+  });
+  socket.on('boss:hit', ({ hp, dmg }) => {
+    if (boss) boss.hp = hp;
+    arena.bossHit(hp, dmg);
+    Sfx.play('bosshit');
+  });
+  socket.on('boss:down', ({ by }) => {
+    if (boss) Object.assign(boss, { hp: 0, down: true });
+    arena.bossDown();
+    const name = players.find((pl) => pl.id === by)?.name || 'Someone';
+    arena.callout('VICTORY!', '#ffd23f', `${name} slew the Dragon King!`);
+    Sfx.play('roar');
+    Sfx.play('boom');
+    setTimeout(() => Sfx.play('win'), 700);
+  });
+
+  // Streak milestones, ice and bombs get a callout across the field.
+  const STREAK_CALLS = { 3: ['ON FIRE!', '#ff7b1c'], 6: ['UNSTOPPABLE!', '#7fd4ff'], 10: ['LEGENDARY!', '#bb8cff'] };
+  function announce(by, k) {
+    const p = players.find((pl) => pl.id === by);
+    if (p && k.streak !== undefined) p.streak = k.streak;
+    const name = p ? p.name : 'Someone';
+    const call = STREAK_CALLS[k.streak] || (k.streak > 10 && k.streak % 5 === 0 ? STREAK_CALLS[10] : null);
+    if (call) {
+      arena.callout(call[0], call[1], `${name} · ${k.streak} in a row${k.mult > 1 ? ` · x${k.mult}` : ''}`);
+      Sfx.play('streak');
+    }
+    if (k.special === 'ice') {
+      arena.callout('FREEZE!', '#7fd4ff', `${name} slowed everything down`);
+      Sfx.play('freeze');
+    } else if (k.special === 'bomb') {
+      arena.callout('BOOM!', '#ff7b1c', `${name} blasted the field`);
+      Sfx.play('boom');
+    } else if (k.special === 'gold') {
+      Sfx.play('award');
+    }
+  }
 
   // Team battle ---------------------------------------------------------
   const setScore = (id, score, roundScore, kills) => {
@@ -76,13 +140,15 @@
     void bar.offsetWidth;
     bar.classList.add('hit');
   };
-  socket.on('duel:launch', ({ slot, missile }) => {
-    arena.duelLaunch(slot, missile);
+  socket.on('duel:launch', (d) => {
+    arena.duelLaunch(d.slot, d.missile);
     Sfx.play('shoot');
+    announce(d.missile.by, d);
   });
   socket.on('duel:block', (b) => {
     setScore(b.by, b.score, b.roundScore, b.kills);
     arena.duelBlock(b.id, b.by);
+    announce(b.by, b);
   });
   socket.on('duel:hit', (h) => {
     setScore(h.by, h.score, h.roundScore);
@@ -101,6 +167,7 @@
     arena.duelPower(pw.id, pw.by, pw.team, pw.power, label);
     renderFx();
     Sfx.play('join');
+    announce(pw.by, pw);
   });
   socket.on('duel:retime', (list) => arena.retime(list));
   socket.on('room:closed', () => {
@@ -174,6 +241,12 @@
     return el('img', { class: cls, src: heroDataURL(p), alt: '' });
   }
 
+  // A name, with a red tag in front when the server thinks an auto-typer is doing the typing.
+  const nameParts = (p) => [
+    p.flagged ? el('span', { class: 'flag', text: 'AUTO? ', title: 'Typing looks machine-made: those words were blocked and this score stays out of the Hall of Fame' }) : null,
+    p.name,
+  ];
+
   // Lobby tile. Team battle: click moves the hero to the other team. Free for all: click removes them.
   // The X always removes.
   function heroTile(p) {
@@ -184,11 +257,12 @@
     };
     return el('div', {
       class: `hero-tile${p.connected ? '' : ' off'}`,
+      'data-id': p.id,
       title: teamsOn ? `Move ${p.name} to ${TEAMS[1 - p.team].name}` : `Remove ${p.name}`,
       onclick: teamsOn ? () => socket.emit('host:move', { id: p.id }) : remove,
     }, [
       heroImg(p, 'px-sprite bob'),
-      el('div', { class: 'nm', text: p.name }),
+      el('div', { class: 'nm' }, nameParts(p)),
       teamsOn ? el('div', { class: 'mv', text: p.team === 0 ? 'MOVE >' : '< MOVE' }) : null,
       el('button', { class: 'x', type: 'button', title: `Remove ${p.name}`, text: 'X', onclick: remove }),
     ]);
@@ -277,7 +351,7 @@
       list.append(el('li', { class: `row r${i + 1}${bumped ? ' bump' : ''}` }, [
         el('span', { class: 'rk', text: `${i + 1}.` }),
         heroImg(p),
-        el('span', { class: 'nm', text: p.name }),
+        el('span', { class: 'nm' }, nameParts(p)),
         el('span', { class: 'sc', text: p.score }),
       ]));
     });
@@ -288,17 +362,32 @@
   }
 
   // ---- phases --------------------------------------------------------
-  const DIFF_CLASS = ['d-easy', 'd-medium', 'd-hard'];
-  const ROUND_OUTRO = [
-    'The slime swarm has been squished!',
-    'The bat storm has been grounded!',
-    'The skull inferno is extinguished!',
-  ];
+  const ROUND_OUTRO = {
+    easy: 'The slime swarm has been squished!',
+    medium: 'The bat storm has been grounded!',
+    hard: 'The skull inferno is extinguished!',
+    boss: 'The Dragon King has fallen!',
+  };
+
+  // The soundtrack follows the game: calm in the lobby and breaks, a track per round, quiet during the
+  // podium's drumroll.
+  let revealing = false;
+  function musicFor(st, r) {
+    if (st === 'countdown' || st === 'playing') return r ? r.key : 'lobby';
+    if (st === 'finished' && revealing) return null;
+    return 'lobby';
+  }
 
   function applyState(s) {
     const prev = state.state;
     state = { state: s.state, round: s.round, phaseEndsAt: s.phaseEndsAt };
     if (s.records) records = s.records;
+    if (s.rounds) rounds = s.rounds;
+    if (s.options) options = s.options;
+    summary = s.summary || null;
+    boss = s.boss || null;
+    arena.setBoss(boss);
+    arena.setIce(s.iceUntil);
     mode = s.mode || 'ffa';
     teams = s.teams || null;
     winner = s.winner ?? null;
@@ -307,6 +396,9 @@
     arena.setEffects(effects);
     if (s.players) setPlayers(s.players);
     else renderRoster();
+    renderOptions();
+    renderRoundChips();
+    if (!pushedOptions && s.state === 'lobby') pushSavedOptions();
     const r = rounds[s.round];
     const st = s.state;
     const fighting = st === 'countdown' || st === 'playing';
@@ -340,10 +432,12 @@
       arena.setTheme(r.monster);
       $('#hudRound').textContent = `ROUND ${s.round + 1} · ${r.name}`;
       $('#hudTitle').textContent = `${r.title} · x${r.multiplier} ${teamsOn ? 'damage' : 'points'}`;
-      $('#bRound').textContent = `ROUND ${s.round + 1}`;
+      $('#bRound').textContent = r.key === 'boss' ? 'FINAL ROUND' : `ROUND ${s.round + 1}`;
       $('#bDiff').textContent = r.name;
-      $('#bDiff').className = `b-diff ${DIFF_CLASS[s.round] || ''}`;
-      $('#bTitle').textContent = `${r.title} — words worth x${r.multiplier}`;
+      $('#bDiff').className = `b-diff d-${r.key}`;
+      $('#bTitle').textContent = r.key === 'boss'
+        ? `${r.title} — every word you type hurts it!`
+        : `${r.title} — words worth x${r.multiplier}`;
     }
 
     if (st === 'countdown' && prev !== 'countdown') {
@@ -357,21 +451,91 @@
       show('#banner', true);
       $('#bCount').textContent = 'FIGHT!';
       setTimeout(() => { if (state.state === 'playing') show('#banner', false); }, 700);
+      if (r && r.key === 'boss') {
+        Sfx.play('roar');
+        arena.shake(3, 700);
+      }
     }
     if (st === 'intermission') renderInter();
-    if (st === 'finished' && prev !== 'finished') {
-      renderFinal();
-      arena.confetti();
-      Sfx.play('win');
-    }
+    if (st === 'finished' && prev !== 'finished') renderFinal();
+    Music.play(musicFor(st, r));
   }
+
+  function renderRoundChips() {
+    const box = $('#roundChips');
+    box.innerHTML = '';
+    rounds.forEach((r, i) => box.append(el('div', { class: `round-chip ${r.key}` }, [
+      `${i + 1} · ${r.name}`, el('small', { text: `${r.title} · x${r.multiplier}` }),
+    ])));
+  }
+
+  // ---- game options --------------------------------------------------
+  function renderOptions() {
+    for (const b of document.querySelectorAll('.opt[data-opt]')) b.classList.toggle('on', Boolean(options[b.dataset.opt]));
+    const bossBtn = $('.opt[data-opt="boss"]');
+    bossBtn.title = mode === 'teams' ? 'The boss finale is for free for all; a team battle is its own fight.' : '';
+    $('#wordCount').textContent = options.wordCount || 0;
+    $('#musicState').textContent = Music.on ? 'ON' : 'OFF';
+    $('#btnMusic').textContent = Music.on ? 'MUSIC ON' : 'MUSIC OFF';
+  }
+
+  function setOptions(change) {
+    socket.emit('host:options', change);
+    prefs.merge(change);
+  }
+
+  // A new room starts with the switches (and words) this host used last time.
+  function pushSavedOptions() {
+    pushedOptions = true;
+    const { music, ...saved } = prefs.get();
+    if (Object.keys(saved).length) socket.emit('host:options', saved);
+  }
+
+  for (const b of document.querySelectorAll('.opt[data-opt]')) {
+    b.onclick = () => setOptions({ [b.dataset.opt]: !options[b.dataset.opt] });
+  }
+
+  // Same rules as the server: letters only, 3 to 13 long, no repeats.
+  const cleanWords = (text) => [...new Set(String(text).toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && w.length <= 13))];
+  function countWords() {
+    const list = cleanWords($('#wordsText').value);
+    const n = (f) => list.filter((w) => f(w.length)).length;
+    $('#wordsCount').textContent = `${list.length} word${list.length === 1 ? '' : 's'} · ${n((l) => l <= 5)} easy · `
+      + `${n((l) => l >= 6 && l <= 8)} medium · ${n((l) => l >= 8)} hard`;
+  }
+  $('#btnWords').onclick = () => {
+    $('#wordsText').value = prefs.get().words || '';
+    $('#wordsOnly').checked = Boolean(options.onlyMine);
+    countWords();
+    show('#wordsDlg', true);
+    $('#wordsText').focus();
+  };
+  $('#wordsText').oninput = countWords;
+  $('#btnWordsClear').onclick = () => {
+    $('#wordsText').value = '';
+    countWords();
+  };
+  $('#btnWordsCancel').onclick = () => show('#wordsDlg', false);
+  $('#btnWordsSave').onclick = () => {
+    setOptions({ words: $('#wordsText').value, onlyMine: $('#wordsOnly').checked });
+    show('#wordsDlg', false);
+  };
+
+  function toggleMusic() {
+    Sfx.unlock();
+    Music.on = !Music.on;
+    prefs.merge({ music: Music.on });
+    renderOptions();
+  }
+  $('#btnMusic').onclick = toggleMusic;
+  $('#btnMusicLobby').onclick = toggleMusic;
 
   function renderInter() {
     const r = state.round;
     $('#iTitle').textContent = `ROUND ${r + 1} COMPLETE!`;
     $('#iSub').textContent = teams
       ? `${TEAMS[0].name} ${teams[0].hp} HP  ·  ${TEAMS[1].name} ${teams[1].hp} HP`
-      : ROUND_OUTRO[r] || '';
+      : ROUND_OUTRO[rounds[r]?.key] || '';
     const table = $('#iTable');
     table.innerHTML = '';
     table.append(el('div', { class: 'row head' }, [
@@ -382,7 +546,7 @@
       table.append(el('div', { class: `row r${i + 1}${teams ? ` team${p.team}` : ''}` }, [
         el('span', { class: 'rk', text: `${i + 1}.` }),
         heroImg(p),
-        el('span', { class: 'nm', text: p.name }),
+        el('span', { class: 'nm' }, nameParts(p)),
         el('span', { class: 'rs', text: `+${p.roundScores[r] || 0}` }),
         el('span', { class: 'sc', text: p.score }),
       ]));
@@ -392,6 +556,8 @@
     while (table.children.length > 4 && card.scrollHeight > card.clientHeight) table.lastChild.remove();
   }
 
+  // The podium fills in from third to first under a drumroll; the rest of the field and the awards follow.
+  let revealTimers = [];
   function renderFinal() {
     const ranked = rankPlayers(players);
     // Team battle: the winning side takes the title; the podium shows the top damage dealers from both sides.
@@ -403,23 +569,29 @@
       $('#finalSub').textContent = ko && winner >= 0
         ? `K.O.! ${TEAMS[1 - winner].name} ran out of HP`
         : `${TEAMS[0].name} ${teams[0].hp} HP  ·  ${TEAMS[1].name} ${teams[1].hp} HP`;
+    } else if (boss) {
+      $('#finalSub').textContent = boss.down ? 'The Dragon King has fallen!' : 'The Dragon King got away... this time.';
     }
-    show('#finalSub', tb);
+    show('#finalSub', tb || Boolean(boss));
     const podium = $('#podium');
     podium.innerHTML = '';
+    const pods = [];
     const order = [[1, 'p2'], [0, 'p1'], [2, 'p3']];
     for (const [idx, cls] of order) {
       const p = ranked[idx];
       if (!p) continue;
       const rec = records[p.id];
-      podium.append(el('div', { class: `pod ${cls}` }, [
+      const pod = el('div', { class: `pod ${cls} hide` }, [
+        idx === 0 ? el('img', { class: 'crown', src: crownDataURL(), alt: '' }) : null,
         heroImg(p),
-        el('div', { class: 'nm', text: p.name, style: teamStyle(p) }),
+        el('div', { class: 'nm', style: teamStyle(p) }, nameParts(p)),
         rec ? el('div', { class: 'rec blink', text: rec.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${rec.rank}` }) : null,
         el('div', { class: 'sc', text: `${p.score} PTS` }),
-        el('div', { class: 'ko', text: `${p.kills} MONSTERS SLAIN` }),
+        el('div', { class: 'ko', text: `${p.kills} ${tb ? 'WORDS' : 'MONSTERS SLAIN'}` }),
         el('div', { class: 'block', text: idx + 1 }),
-      ]));
+      ]);
+      pods[idx] = pod;
+      podium.append(pod);
     }
     const rest = $('#finalRest');
     rest.innerHTML = '';
@@ -427,9 +599,50 @@
       rest.append(el('div', { class: `row${tb ? ` team${p.team}` : ''}` }, [
         el('span', { class: 'rk', text: `${i + 4}.` }),
         heroImg(p),
-        el('span', { class: 'nm', text: p.name }),
+        el('span', { class: 'nm' }, nameParts(p)),
         el('span', { class: 'sc', text: p.score }),
       ]));
+    });
+    const awards = $('#awards');
+    awards.innerHTML = '';
+    for (const a of summary?.awards || []) {
+      const p = players.find((pl) => pl.id === a.id);
+      if (!p) continue;
+      awards.append(el('div', { class: 'award', title: a.desc }, [
+        heroImg(p),
+        el('div', { class: 'at', text: a.title }),
+        el('div', { class: 'an', text: p.name }),
+        el('div', { class: 'av', text: `${a.desc} · ${a.value}` }),
+      ]));
+    }
+    rest.classList.add('hide');
+    awards.classList.add('hide');
+
+    for (const id of revealTimers) clearTimeout(id);
+    revealing = true;
+    Music.stop();
+    Sfx.play('drumroll');
+    const at = (ms, fn) => revealTimers.push(setTimeout(fn, ms));
+    const reveal = (idx) => {
+      if (!pods[idx]) return;
+      pods[idx].classList.remove('hide');
+      if (idx > 0) Sfx.play('reveal');
+    };
+    at(500, () => reveal(2));
+    at(1200, () => reveal(1));
+    at(2000, () => {
+      reveal(0);
+      arena.confetti();
+      Sfx.play('win');
+    });
+    at(3000, () => {
+      rest.classList.remove('hide');
+      awards.classList.remove('hide');
+      if (awards.children.length) Sfx.play('award');
+    });
+    at(5000, () => {
+      revealing = false;
+      if (state.state === 'finished') Music.play('lobby');
     });
   }
 
@@ -446,6 +659,13 @@
       $('#bCount').textContent = label;
     }
     const r = rounds[state.round];
+    // The last ten seconds of a round: red edges, a ticking clock, faster music.
+    const tense = state.state === 'playing' && Boolean(r) && left > 0 && left <= 10000 && !(boss && boss.down);
+    show('#tension', tense);
+    Music.setFast(tense);
+    const sec = Math.ceil(left / 1000);
+    if (tense && sec !== lastTick) Sfx.play('tick');
+    lastTick = tense ? sec : null;
     if (r && (state.state === 'playing' || state.state === 'countdown')) {
       const frac = state.state === 'countdown' ? 1 : left / r.duration;
       $('#timeFill').style.width = `${frac * 100}%`;
@@ -490,12 +710,15 @@
     show('#hof', true);
     renderHofList($('#hofBattle'), null);
     renderHofList($('#hofSolo'), null);
-    let hof = { battle: [], solo: [] };
+    renderHofList($('#hofDaily'), null);
+    let hof = { battle: [], solo: [], daily: [] };
     try {
       hof = await fetch('/api/highscores', { cache: 'no-store' }).then((r) => r.json());
     } catch (e) { /* show empty boards */ }
     renderHofList($('#hofBattle'), hof.battle, 'No battles recorded yet. Win one to get your name up here!');
     renderHofList($('#hofSolo'), hof.solo, 'No solo quests yet.');
+    renderHofList($('#hofDaily'), hof.daily || [], "Nobody has played today's daily quest yet.");
+    if (hof.day) $('#hofDay').textContent = `Today's quest · ${hof.day}`;
   }
 
   // ---- controls ------------------------------------------------------

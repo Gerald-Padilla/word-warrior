@@ -48,12 +48,63 @@ const HAIR_COUNT = 8; // 0 = the class's own hair color
 const TRIM_COUNT = 6;
 const PET_COUNT = 6; // 0 = no pet
 
-const ROUNDS_PUBLIC = ROUNDS.map(({ key, name, title, monster, duration, multiplier }) =>
-  ({ key, name, title, monster, duration, multiplier }));
+// Auto-type guard: every claim carries the gaps between the player's keystrokes for that word.
+const KEY_MIN_MS = 25; // a word typed faster than this per letter on average (~400+ WPM) is a machine
+const KEY_EVEN_CV = 0.2; // recent gaps this even (spread / average) are a machine; people sit around 0.4+
+const KEY_SAMPLE = 30; // recent gaps kept per player for that check
+const KEY_SAMPLE_MIN = 12; // ...and how many it needs before judging
+const KEY_CLOCK_SLACK_MS = 500; // typing can't take longer than the word has been on screen, give or take this
+const FLAG_AFTER = 3; // blocked words before a player is marked as a suspected auto-typer
+
+// Boss finale (a host option): a fourth round against the Dragon King. Every word typed hurts it.
+const BOSS_ROUND = { key: 'boss', name: 'BOSS', title: 'The Dragon King', monster: 'boss', pool: 'hard', duration: 60000,
+  spawnEvery: [1150, 1650], fall: [8000, 9500], maxActive: 6, multiplier: 3 };
+const BOSS_HP = 5000; // for one hero; it grows with the crowd
+const BOSS_FINISH_BONUS = 1000; // for the hero who lands the final blow
+const BOSS_CLEAR_BONUS = 500; // for everyone who hurt the boss, when it goes down
+const BOSS_DOWN_MS = 3000; // the boss's fall plays out before the results
+
+// Streaks (option): words in a row without a typo multiply their points.
+const STREAK_STEPS = [[10, 3], [6, 2], [3, 1.5]];
+const TEAM_STREAK_MAX = 2; // team battle damage multiplier tops out here
+
+// Special words (option, free for all and solo): now and then a falling word is gold, ice or a bomb.
+const SPECIALS = ['gold', 'ice', 'bomb'];
+const SPECIAL_CHANCE = 0.12; // share of new words that are special, one on screen at a time
+const GOLD_FACTOR = 3; // gold words are worth this many times their points
+const ICE_MS = 6000; // ice slows every word on screen for this long
+const ICE_FACTOR = 1.8; // ...by this much
+const BOMB_SHARE = 0.5; // a bomb blasts every word on screen and pays this share of their points
+
+// Class perks (option): each class earns a bonus on one kind of word. `p` is how far the word has fallen
+// or flown (0..1), or null for words that don't move.
+const PERKS = {
+  knight: { bonus: 0.3, test: (w) => w.text.length <= 5 },
+  barbarian: { bonus: 0.3, test: (w) => w.text.length >= 6 && w.text.length <= 7 },
+  wizard: { bonus: 0.3, test: (w) => w.text.length >= 8 },
+  archer: { bonus: 0.4, test: (w, p) => p !== null && p < 1 / 3 },
+  rogue: { bonus: 0.5, test: (w, p) => p !== null && p > 0.75 },
+  cleric: { bonus: 0.5, test: (w) => Boolean(w.special) || w.kind === 'power' },
+};
+const CLERIC_POWER_BOOST = 1.5; // team battle: a cleric's power-ups last (or heal) this much more
+const CLUTCH_PROGRESS = 0.85; // a word typed past this far down counts as a clutch save
+
+// Host options. Solo quests always play with the defaults.
+const OPTION_KEYS = ['streaks', 'specials', 'boss', 'perks', 'awards', 'emotes'];
+const DEFAULT_OPTIONS = { streaks: true, specials: true, boss: true, perks: true, awards: true, emotes: true, onlyMine: false };
+const MY_WORDS_MAX = 300; // custom words the host can add
+const MY_WORDS_MIN = 6; // "only my words" needs at least this many for a round, or the built-in words fill in
+const EMOTE_COUNT = 6;
+const EMOTE_GAP_MS = 1200; // per player
+
+// Daily quest: one seeded run a day, the same words for everyone. The day turns over at midnight here.
+const DAILY_TZ = process.env.DAILY_TZ || 'Asia/Manila';
+const dayKey = () => new Intl.DateTimeFormat('en-CA', { timeZone: DAILY_TZ, year: 'numeric', month: '2-digit', day: '2-digit' })
+  .format(new Date());
 
 // ---- Hall of fame ----------------------------------------------------------
 // Best scores survive restarts. Solo and battle are ranked separately because in a
-// battle the words are split between everyone on the field.
+// battle the words are split between everyone on the field. The daily board starts over each day.
 const HALL_FILE = path.join(__dirname, 'data', 'highscores.json');
 const HALL_SIZE = 100; // entries kept per board
 const hall = loadHall();
@@ -61,11 +112,19 @@ const hall = loadHall();
 function loadHall() {
   try {
     const data = JSON.parse(fs.readFileSync(HALL_FILE, 'utf8'));
-    return { solo: [].concat(data.solo || []), battle: [].concat(data.battle || []) };
+    const daily = data.daily && data.daily.date ? { date: data.daily.date, list: [].concat(data.daily.list || []) } : { date: '', list: [] };
+    return { solo: [].concat(data.solo || []), battle: [].concat(data.battle || []), daily };
   } catch (err) {
     if (err.code !== 'ENOENT') console.warn(`Could not read ${HALL_FILE}: ${err.message}`);
-    return { solo: [], battle: [] };
+    return { solo: [], battle: [], daily: { date: '', list: [] } };
   }
+}
+
+function boardList(board) {
+  if (board !== 'daily') return hall[board];
+  const today = dayKey();
+  if (hall.daily.date !== today) hall.daily = { date: today, list: [] };
+  return hall.daily.list;
 }
 
 function saveHall() {
@@ -79,7 +138,7 @@ function saveHall() {
 
 // Returns the entry's 1-based rank, or null if it didn't make the board. Ties go to whoever got there first.
 function addToHall(board, entry) {
-  const list = hall[board];
+  const list = boardList(board);
   let i = list.findIndex((e) => entry.score > e.score || (entry.score === e.score && entry.kills > e.kills));
   if (i < 0) i = list.length;
   if (i >= HALL_SIZE) return null;
@@ -104,7 +163,9 @@ app.get('/api/network', (req, res) => {
 });
 
 app.get('/api/highscores', (req, res) => {
-  res.set('Cache-Control', 'no-store').json({ solo: hall.solo.slice(0, 10), battle: hall.battle.slice(0, 10) });
+  res.set('Cache-Control', 'no-store').json({
+    solo: hall.solo.slice(0, 10), battle: hall.battle.slice(0, 10), daily: boardList('daily').slice(0, 10), day: dayKey(),
+  });
 });
 
 app.get('/api/qr', async (req, res) => {
@@ -146,6 +207,24 @@ const rand = (lo, hi) => lo + Math.random() * (hi - lo);
 const token = () => crypto.randomBytes(12).toString('hex');
 const shortId = () => crypto.randomBytes(4).toString('hex');
 const clampInt = (v, max) => Math.min(max - 1, Math.max(0, Math.floor(Number(v) || 0)));
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+const hashStr = (s) => [...String(s)].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7);
+// Repeatable random numbers for the daily quest (mulberry32).
+function seeded(seed) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const roll = (room, lo, hi) => lo + room.rng() * (hi - lo); // spawn randomness; seeded in a daily quest
+
+// The host's own words: letters only, 3 to 13 long, no repeats.
+function cleanWords(text) {
+  const words = String(text || '').toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && w.length <= 13);
+  return [...new Set(words)].slice(0, MY_WORDS_MAX);
+}
 
 function makeCode() {
   const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
@@ -171,11 +250,15 @@ function cleanLook(data) {
   };
 }
 
+// Per-game typing stats, for the end-of-game awards.
+const newStats = () => ({ words: 0, chars: 0, gapChars: 0, typeMs: 0, typos: 0, bestStreak: 0, clutch: 0, specials: 0, bossDmg: 0, bossKill: false });
+
 function newPlayer(data) {
   return {
     id: shortId(), token: token(), name: cleanName(data.name) || 'Hero', ...cleanLook(data),
-    score: 0, kills: 0, roundScores: ROUNDS.map(() => 0), team: 0,
+    score: 0, kills: 0, roundScores: ROUNDS.map(() => 0), team: 0, streak: 0, stats: newStats(),
     socketId: null, connected: true, joinedAt: Date.now(), bot: Boolean(data.bot),
+    keyGaps: [], strikes: 0, flagged: false, // auto-type guard
   };
 }
 
@@ -183,11 +266,19 @@ function newPlayer(data) {
 const newStream = (nextSpawnAt = 0) => ({ nextSpawnAt, lastSpawnAt: 0, used: new Set() });
 const crowdFactor = (heroes) => Math.min(2.2, 1 + 0.12 * (heroes - 1));
 
-// Solo rooms run the same rounds with one player and no host screen.
-function createRoom(solo = false) {
+// Solo rooms run the same rounds with one player and no host screen. A daily quest is a solo room with
+// seeded spawns.
+function createRoom(solo = false, daily = false) {
   const room = {
     code: makeCode(),
     solo,
+    daily: daily ? dayKey() : null,
+    rng: Math.random,
+    options: { ...DEFAULT_OPTIONS, words: [] },
+    rounds: ROUNDS,
+    boss: null, // boss round: { hp, max, down }
+    iceUntil: 0, // special words: everything falls slower until then
+    summary: null, // finished: { stats, awards }
     mode: 'ffa', // or 'teams'
     hostToken: token(),
     hostSocketId: null,
@@ -209,30 +300,39 @@ function createRoom(solo = false) {
     ticker: null,
     lastActive: Date.now(),
   };
+  room.rounds = roundsFor(room);
   rooms.set(room.code, room);
   return room;
 }
+
+// The boss finale only fits free for all and solo; a team battle is its own fight.
+const roundsFor = (room) => (room.options.boss && room.mode !== 'teams' ? ROUNDS.concat(BOSS_ROUND) : ROUNDS);
 
 const channel = (room) => `room:${room.code}`;
 
 function publicPlayer(p) {
   return { id: p.id, name: p.name, cls: p.cls, color: p.color, skin: p.skin, hair: p.hair, trim: p.trim, pet: p.pet, team: p.team,
-    score: p.score, kills: p.kills, roundScores: p.roundScores, connected: p.connected };
+    score: p.score, kills: p.kills, roundScores: p.roundScores, connected: p.connected, flagged: p.flagged, streak: p.streak };
+}
+
+function publicOptions(room) {
+  const o = room.options;
+  return { ...Object.fromEntries(OPTION_KEYS.map((k) => [k, o[k]])), onlyMine: o.onlyMine, wordCount: o.words.length };
+}
+
+// Everything about the room's phase that clients redraw from; the snapshot adds what a newcomer needs.
+function stateOf(room) {
+  return {
+    state: room.state, round: room.round, phaseEndsAt: room.phaseEndsAt,
+    rounds: room.rounds.map(({ key, name, title, monster, duration, multiplier }) => ({ key, name, title, monster, duration, multiplier })),
+    players: [...room.players.values()].map(publicPlayer), records: room.records,
+    mode: room.mode, teams: room.teams, winner: room.winner, ko: room.ko, effects: room.effects,
+    options: publicOptions(room), boss: room.boss, iceUntil: room.iceUntil, summary: room.summary, daily: room.daily,
+  };
 }
 
 function snapshot(room) {
-  return {
-    code: room.code,
-    solo: room.solo,
-    state: room.state,
-    round: room.round,
-    rounds: ROUNDS_PUBLIC,
-    phaseEndsAt: room.phaseEndsAt,
-    players: [...room.players.values()].map(publicPlayer),
-    words: [...room.words.values()],
-    records: room.records,
-    mode: room.mode, teams: room.teams, winner: room.winner, ko: room.ko, effects: room.effects,
-  };
+  return { ...stateOf(room), code: room.code, solo: room.solo, words: [...room.words.values()] };
 }
 
 function broadcastPlayers(room) {
@@ -240,11 +340,7 @@ function broadcastPlayers(room) {
 }
 
 function broadcastState(room) {
-  io.to(channel(room)).emit('room:state', {
-    state: room.state, round: room.round, phaseEndsAt: room.phaseEndsAt,
-    players: [...room.players.values()].map(publicPlayer), records: room.records,
-    mode: room.mode, teams: room.teams, winner: room.winner, ko: room.ko, effects: room.effects,
-  });
+  io.to(channel(room)).emit('room:state', stateOf(room));
 }
 
 // ---- Teams -----------------------------------------------------------------
@@ -284,7 +380,7 @@ function knockOut(room, winner) {
   room.timer = setTimeout(() => {
     room.words.clear();
     io.to(channel(room)).emit('word:clear');
-    setPhase(room, 'finished', 0, null);
+    finishGame(room);
   }, KO_DELAY_MS);
 }
 
@@ -310,14 +406,22 @@ function setPhase(room, state, ms, next) {
   if (next) room.timer = setTimeout(next, ms);
 }
 
-function startGame(room) {
-  stopTimers(room);
-  room.records = {};
+function resetPlayers(room) {
   for (const p of room.players.values()) {
     p.score = 0;
     p.kills = 0;
-    p.roundScores = ROUNDS.map(() => 0);
+    p.roundScores = room.rounds.map(() => 0);
+    p.streak = 0;
+    p.stats = newStats();
   }
+}
+
+function startGame(room) {
+  stopTimers(room);
+  room.records = {};
+  room.summary = null;
+  room.rounds = roundsFor(room);
+  resetPlayers(room);
   room.winner = null;
   room.ko = false;
   room.teams = null;
@@ -337,11 +441,31 @@ function nextRound(room) {
 }
 
 function beginPlaying(room) {
+  const cfg = room.rounds[room.round];
   room.words.clear();
   room.recentKills.clear();
+  room.iceUntil = 0;
   room.stream = newStream(Date.now() + 200);
+  room.stream.pool = poolFor(room, cfg);
+  if (room.daily) {
+    // Same words, places and timings for everyone today: a fixed word order and a fresh seed each round.
+    const seed = hashStr(`${room.daily}:${room.round}`);
+    const shuffle = seeded(seed);
+    room.stream.order = room.stream.pool.slice();
+    for (let i = room.stream.order.length - 1; i > 0; i--) {
+      const j = Math.floor(shuffle() * (i + 1));
+      [room.stream.order[i], room.stream.order[j]] = [room.stream.order[j], room.stream.order[i]];
+    }
+    room.rng = seeded(seed ^ 0x9e3779b9);
+  }
+  room.boss = null;
+  if (cfg.key === 'boss') {
+    const heroes = Math.max(1, [...room.players.values()].filter((p) => p.connected).length);
+    const max = Math.round((BOSS_HP * crowdFactor(heroes) ** 1.5) / 100) * 100;
+    room.boss = { hp: max, max, down: false };
+  }
   if (room.mode === 'teams') startDuel(room, Date.now());
-  setPhase(room, 'playing', ROUNDS[room.round].duration, () => endRound(room));
+  setPhase(room, 'playing', cfg.duration, () => endRound(room));
   clearInterval(room.ticker);
   room.ticker = setInterval(() => tick(room), 100);
 }
@@ -351,26 +475,72 @@ function endRound(room) {
   room.ticker = null;
   room.words.clear();
   io.to(channel(room)).emit('word:clear');
-  if (room.round >= ROUNDS.length - 1) {
+  if (room.round >= room.rounds.length - 1) {
     if (room.teams) {
       const [a, b] = room.teams.map((t) => t.hp);
       room.winner = a === b ? -1 : a > b ? 0 : 1;
     }
-    recordScores(room);
-    setPhase(room, 'finished', 0, null);
+    finishGame(room);
   } else {
     setPhase(room, 'intermission', room.solo ? SOLO_INTERMISSION_MS : INTERMISSION_MS, () => nextRound(room));
   }
 }
 
+function finishGame(room) {
+  room.summary = summarize(room);
+  recordScores(room);
+  setPhase(room, 'finished', 0, null);
+}
+
+// Each hero's typing stats, plus (when the host has them on) the awards: one hero per award.
+function summarize(room) {
+  const list = [...room.players.values()];
+  const stats = {};
+  for (const p of list) {
+    const s = p.stats;
+    stats[p.id] = {
+      wpm: s.typeMs > 0 && s.gapChars >= 5 ? Math.round(s.gapChars / 5 / (s.typeMs / 60000)) : 0,
+      acc: s.chars ? Math.round((100 * s.chars) / (s.chars + s.typos)) : 0,
+      best: s.bestStreak,
+      words: s.words,
+    };
+  }
+  const awards = [];
+  if (room.options.awards && !room.solo) {
+    const give = (key, title, desc, value, show, min = 1, minWords = 1) => {
+      let best = null;
+      for (const p of list) {
+        const v = value(p);
+        if (stats[p.id].words < minWords || v < min) continue;
+        if (!best || v > best.v || (v === best.v && p.score > best.p.score)) best = { p, v };
+      }
+      if (best) awards.push({ key, title, desc, id: best.p.id, value: show(best.v) });
+    };
+    give('speed', 'SPEED DEMON', 'Fastest typing', (p) => stats[p.id].wpm, (v) => `${v} WPM`, 1, 3);
+    give('sharp', 'SHARPSHOOTER', 'Fewest typos', (p) => stats[p.id].acc, (v) => `${v}% accuracy`, 1, 5);
+    if (room.options.streaks) give('streak', 'STREAK MASTER', 'Longest streak', (p) => p.stats.bestStreak, (v) => `${v} in a row`, 3);
+    give('clutch', 'CLUTCH SAVER', 'Saved words at the last second', (p) => p.stats.clutch, (v) => `${v} close call${v === 1 ? '' : 's'}`);
+    give('slayer', room.mode === 'teams' ? 'WORDSMITH' : 'MONSTER SLAYER', room.mode === 'teams' ? 'Most words typed' : 'Most monsters slain',
+      (p) => p.kills, (v) => `${v} word${v === 1 ? '' : 's'}`);
+    if (room.options.specials && room.mode !== 'teams') {
+      give('treasure', 'TREASURE HUNTER', 'Most special words', (p) => p.stats.specials, (v) => `${v} special${v === 1 ? '' : 's'}`);
+    }
+    const slayer = list.find((p) => p.stats.bossKill);
+    if (slayer) awards.push({ key: 'dragon', title: 'DRAGON SLAYER', desc: 'Landed the final blow', id: slayer.id, value: 'K.O.!' });
+  }
+  return { stats, awards };
+}
+
 function recordScores(room) {
   if (room.mode === 'teams') return; // team damage isn't comparable with free-for-all scores
-  const board = room.solo ? 'solo' : 'battle';
+  // A daily run counts only on the day it was for.
+  if (room.daily && room.daily !== dayKey()) return;
+  const board = room.daily ? 'daily' : room.solo ? 'solo' : 'battle';
   const ranked = [...room.players.values()]
     .sort((a, b) => b.score - a.score || b.kills - a.kills || a.name.localeCompare(b.name));
   room.records = {};
   ranked.forEach((p, i) => {
-    if (p.bot || p.score <= 0) return;
+    if (p.bot || p.flagged || p.score <= 0) return;
     const entry = { id: shortId(), name: p.name, cls: p.cls, color: p.color, skin: p.skin, hair: p.hair, trim: p.trim,
       pet: p.pet, score: p.score, kills: p.kills, at: Date.now() };
     if (!room.solo) Object.assign(entry, { place: i + 1, of: ranked.length });
@@ -383,17 +553,16 @@ function recordScores(room) {
 function backToLobby(room) {
   stopTimers(room);
   room.records = {};
+  room.summary = null;
+  room.boss = null;
   room.teams = null;
   room.winner = null;
   room.ko = false;
   room.effects = [{}, {}];
   room.round = -1;
   room.words.clear();
-  for (const p of room.players.values()) {
-    p.score = 0;
-    p.kills = 0;
-    p.roundScores = ROUNDS.map(() => 0);
-  }
+  room.rounds = roundsFor(room);
+  resetPlayers(room);
   io.to(channel(room)).emit('word:clear');
   setPhase(room, 'lobby', 0, null);
 }
@@ -405,13 +574,17 @@ function tick(room) {
     duelTick(room, now);
     return;
   }
-  const cfg = ROUNDS[room.round];
+  const cfg = room.rounds[room.round];
 
   for (const w of room.words.values()) {
     if (now >= w.spawn + w.dur) {
       room.words.delete(w.id);
       io.to(channel(room)).emit('word:escape', { id: w.id });
     }
+  }
+  if (room.iceUntil && now >= room.iceUntil) {
+    room.iceUntil = 0;
+    retimeFalling(room, (w) => w.iced, 1 / ICE_FACTOR, now, false);
   }
 
   if (now >= room.phaseEndsAt - STOP_SPAWN_BEFORE_END_MS) return;
@@ -426,26 +599,41 @@ function tick(room) {
   if (now >= stream.nextSpawnAt || fieldEmpty) {
     if (room.words.size < maxActive) {
       spawnWord(room, cfg, now);
-      stream.nextSpawnAt = now + rand(cfg.spawnEvery[0], cfg.spawnEvery[1]) / crowd;
+      stream.nextSpawnAt = now + roll(room, cfg.spawnEvery[0], cfg.spawnEvery[1]) / crowd;
     } else {
       stream.nextSpawnAt = now + 300;
     }
   }
 }
 
+// A round's words: the built-in list for its difficulty plus the host's own words that fit it (twice, so
+// they come up often). "Only my words" drops the built-ins when there are enough of the host's.
+const FITS = { easy: (n) => n <= 5, medium: (n) => n >= 6 && n <= 8, hard: (n) => n >= 8 };
+function poolFor(room, cfg) {
+  const key = cfg.pool || cfg.key;
+  const mine = room.options.words.filter((w) => FITS[key](w.length));
+  if (room.options.onlyMine && mine.length >= MY_WORDS_MIN) return mine;
+  return mine.length ? WORDS[key].concat(mine, mine) : WORDS[key];
+}
+
 function pickWord(room, cfg) {
-  const pool = WORDS[cfg.key];
-  const { used } = room.stream;
+  const pool = room.stream.pool || poolFor(room, cfg);
+  const { used, order } = room.stream;
   const active = [...room.words.values()].map((w) => w.text);
   // Never let one active word be a prefix of another - typing would auto-hit the shorter one.
   const ok = (t) => !used.has(t) && !active.some((a) => a.startsWith(t) || t.startsWith(a));
-  let choices = pool.filter(ok);
-  if (!choices.length) {
+  // A daily quest takes the next word in its fixed order; otherwise any word that fits.
+  const take = (list) => {
+    if (order) return list.find(ok);
+    const choices = list.filter(ok);
+    return choices[Math.floor(Math.random() * choices.length)];
+  };
+  let text = take(order || pool);
+  if (!text) {
     used.clear();
-    choices = pool.filter(ok);
+    text = take(order || pool);
   }
-  if (!choices.length) return null;
-  const text = choices[Math.floor(Math.random() * choices.length)];
+  if (!text) return null;
   used.add(text);
   return text;
 }
@@ -458,8 +646,8 @@ function pickX(room, now) {
   let best = 0.5;
   let bestScore = -1;
   for (let i = 0; i < 10; i++) {
-    const x = rand(0.12, 0.88);
-    const score = near.length ? Math.min(...near.map((n) => Math.abs(n - x))) : Math.random();
+    const x = roll(room, 0.12, 0.88);
+    const score = near.length ? Math.min(...near.map((n) => Math.abs(n - x))) : room.rng();
     if (score > bestScore) {
       best = x;
       bestScore = score;
@@ -471,17 +659,125 @@ function pickX(room, now) {
 function spawnWord(room, cfg, now) {
   const text = pickWord(room, cfg);
   if (!text) return;
+  const iced = room.iceUntil > now;
   const word = {
     id: room.nextWordId++,
     text,
     x: pickX(room, now),
     spawn: now + SPAWN_LEAD_MS,
-    dur: Math.round(rand(cfg.fall[0], cfg.fall[1]) + Math.max(0, text.length - 5) * 220),
+    at: now + SPAWN_LEAD_MS, // when it appeared; `spawn` moves when ice retimes it
+    dur: Math.round((roll(room, cfg.fall[0], cfg.fall[1]) + Math.max(0, text.length - 5) * 220) * (iced ? ICE_FACTOR : 1)),
     points: text.length * 10 * cfg.multiplier,
   };
+  if (iced) word.iced = true;
+  const specialRoll = room.rng();
+  const kindRoll = room.rng();
+  if (room.options.specials && specialRoll < SPECIAL_CHANCE && ![...room.words.values()].some((w) => w.special)) {
+    word.special = SPECIALS[Math.floor(kindRoll * SPECIALS.length)];
+  }
   room.words.set(word.id, word);
   room.stream.lastSpawnAt = now;
   io.to(channel(room)).emit('word:spawn', word);
+}
+
+// Stretch or squeeze the falling words that match, keeping them where they are on screen.
+function retimeFalling(room, match, factor, now, iced) {
+  const changed = [];
+  for (const w of room.words.values()) {
+    if (!match(w)) continue;
+    const p = clamp01((now - w.spawn) / w.dur);
+    w.dur = Math.round(w.dur * factor);
+    w.spawn = Math.round(now - p * w.dur);
+    w.iced = iced;
+    changed.push({ id: w.id, spawn: w.spawn, dur: w.dur });
+  }
+  if (changed.length) io.to(channel(room)).emit('word:retime', changed);
+}
+
+// Ice: every word on screen (and every new one) falls slower for a while.
+function freeze(room, now) {
+  if (room.iceUntil <= now) retimeFalling(room, (w) => !w.iced, ICE_FACTOR, now, true);
+  room.iceUntil = now + ICE_MS;
+  io.to(channel(room)).emit('fx:ice', { until: room.iceUntil });
+}
+
+// Bomb: blasts every other word on screen; the hero who typed it gets a share of their points.
+function blast(room, player, now) {
+  let total = 0;
+  for (const w of [...room.words.values()]) {
+    if (now < w.spawn) continue; // not on screen yet
+    const points = Math.round(w.points * BOMB_SHARE);
+    room.words.delete(w.id);
+    room.recentKills.set(w.id, { by: player.id, at: now });
+    total += points;
+    player.score += points;
+    player.kills += 1;
+    player.roundScores[room.round] += points;
+    io.to(channel(room)).emit('word:kill', {
+      id: w.id, by: player.id, points, score: player.score, kills: player.kills,
+      roundScore: player.roundScores[room.round], bomb: true,
+    });
+  }
+  return total;
+}
+
+// What a claim is worth on top of the word's own points: the hero's streak (which this word extends),
+// their class perk and a gold word's bonus. `p` is how far the word had come (0..1), or null.
+function boost(room, player, w, p) {
+  const o = room.options;
+  let factor = 1;
+  let mult = 1;
+  if (o.streaks) {
+    player.streak += 1;
+    const step = STREAK_STEPS.find(([n]) => player.streak >= n);
+    mult = step ? step[1] : 1;
+    if (room.mode === 'teams') mult = Math.min(TEAM_STREAK_MAX, mult);
+    factor *= mult;
+  }
+  const perkDef = o.perks && PERKS[player.cls];
+  const perk = Boolean(perkDef && perkDef.test(w, p));
+  if (perk) factor *= 1 + perkDef.bonus;
+  if (w.special === 'gold') factor *= GOLD_FACTOR;
+  return { factor, mult, perk, streak: o.streaks ? player.streak : 0 };
+}
+
+function trackStats(player, w, keys, p) {
+  const s = player.stats;
+  s.words += 1;
+  s.chars += w.text.length;
+  s.gapChars += w.text.length - 1;
+  s.typeMs += keys.reduce((a, b) => a + Number(b), 0);
+  s.bestStreak = Math.max(s.bestStreak, player.streak);
+  if (p !== null && p > CLUTCH_PROGRESS) s.clutch += 1;
+  if (w.special) s.specials += 1;
+}
+
+// Boss round: every point scored is damage. When it falls, everyone who hurt it gets a bonus and the
+// round ends after the fall plays out.
+function hurtBoss(room, player, dmg) {
+  const b = room.boss;
+  if (!b || b.down || dmg <= 0) return;
+  b.hp = Math.max(0, b.hp - dmg);
+  player.stats.bossDmg += dmg;
+  if (b.hp > 0) {
+    io.to(channel(room)).emit('boss:hit', { hp: b.hp, by: player.id, dmg });
+    return;
+  }
+  b.down = true;
+  player.stats.bossKill = true;
+  player.score += BOSS_FINISH_BONUS;
+  player.roundScores[room.round] += BOSS_FINISH_BONUS;
+  for (const p of room.players.values()) {
+    if (p.stats.bossDmg <= 0) continue;
+    p.score += BOSS_CLEAR_BONUS;
+    p.roundScores[room.round] += BOSS_CLEAR_BONUS;
+  }
+  clearInterval(room.ticker);
+  room.ticker = null;
+  room.words.clear();
+  io.to(channel(room)).emit('boss:down', { by: player.id, finish: BOSS_FINISH_BONUS, clear: BOSS_CLEAR_BONUS });
+  broadcastPlayers(room);
+  setPhase(room, 'playing', BOSS_DOWN_MS, () => endRound(room));
 }
 
 // ---- Team battle (duel) ----------------------------------------------------
@@ -498,13 +794,13 @@ function slotCount(room, team) {
 function addSlot(room, team, cfg) {
   const text = pickWord(room, cfg);
   if (!text) return;
-  const slot = { id: room.nextWordId++, kind: 'attack', team, text, points: text.length * 10 * cfg.multiplier };
+  const slot = { id: room.nextWordId++, kind: 'attack', team, text, points: text.length * 10 * cfg.multiplier, at: Date.now() };
   room.words.set(slot.id, slot);
   io.to(channel(room)).emit('word:spawn', slot);
 }
 
 function startDuel(room, now) {
-  const cfg = ROUNDS[room.round];
+  const cfg = room.rounds[room.round];
   room.effects = [{}, {}];
   room.nextPowerAt = now + rand(POWER_FIRST_MS[0], POWER_FIRST_MS[1]);
   for (const team of [0, 1]) for (let i = 0; i < slotCount(room, team); i++) addSlot(room, team, cfg);
@@ -542,13 +838,14 @@ function spawnPower(room, cfg, now) {
   io.to(channel(room)).emit('word:spawn', w);
 }
 
-function applyPower(room, team, power, now) {
+// strength > 1: a cleric's perk makes the potion heal more and the effect last longer.
+function applyPower(room, team, power, now, strength = 1) {
   if (power === 'potion') {
     const t = room.teams[team];
-    t.hp = Math.min(t.max, t.hp + Math.round((t.max * POTION_HEAL) / 10) * 10);
+    t.hp = Math.min(t.max, t.hp + Math.round((t.max * POTION_HEAL * strength) / 10) * 10);
     return;
   }
-  room.effects[team][power] = now + EFFECT_MS[power];
+  room.effects[team][power] = now + Math.round(EFFECT_MS[power] * strength);
   if (power === 'slow') retime(room, (w) => w.team !== team, SLOW_FACTOR, now);
   if (power === 'haste') retime(room, (w) => w.team === team, HASTE_FACTOR, now);
 }
@@ -584,46 +881,90 @@ function duelTick(room, now) {
   }
   const hasPower = [...room.words.values()].some((w) => w.kind === 'power');
   if (!hasPower && now >= room.nextPowerAt && now < room.phaseEndsAt - POWER_LIFE_MS / 2) {
-    spawnPower(room, ROUNDS[room.round], now);
+    spawnPower(room, room.rounds[room.round], now);
   }
 }
 
-// Returns the reply for a team battle claim.
+// Returns the reply for a team battle claim; `p` (how far an attack had flown) feeds the stats.
 function duelClaim(room, player, w, now) {
-  const cfg = ROUNDS[room.round];
+  const cfg = room.rounds[room.round];
   if (w.kind === 'attack') {
     if (w.team !== player.team) return { ok: false, reason: 'other-team' };
+    const g = boost(room, player, w, null);
     room.words.delete(w.id);
+    const fury = effectOn(room, w.team, 'fury', now) ? 2 : 1;
     const m = {
-      id: room.nextWordId++, kind: 'missile', team: w.team, by: player.id, text: w.text,
-      launch: now, dur: flightMs(room, w.team, now), dmg: w.points * (effectOn(room, w.team, 'fury', now) ? 2 : 1),
+      id: room.nextWordId++, kind: 'missile', team: w.team, by: player.id, text: w.text, at: now,
+      launch: now, dur: flightMs(room, w.team, now), dmg: Math.round(w.points * fury * g.factor),
     };
     room.words.set(m.id, m);
     player.kills += 1;
-    io.to(channel(room)).emit('duel:launch', { slot: w.id, missile: m });
+    io.to(channel(room)).emit('duel:launch', { slot: w.id, missile: m, streak: g.streak, mult: g.mult, perk: g.perk });
     addSlot(room, w.team, cfg);
-    return { ok: true };
+    return { ok: true, p: null };
   }
   if (w.kind === 'missile') {
     if (w.team === player.team) return { ok: false, reason: 'own-attack' };
+    const p = clamp01((now - w.launch) / w.dur);
+    const g = boost(room, player, w, p);
+    const gained = Math.round(w.dmg * g.factor);
     room.words.delete(w.id);
-    player.score += w.dmg; // blocked damage counts toward your score
+    player.score += gained; // blocked damage counts toward your score
     player.kills += 1;
-    player.roundScores[room.round] += w.dmg;
+    player.roundScores[room.round] += gained;
     io.to(channel(room)).emit('duel:block', {
       id: w.id, by: player.id, score: player.score, kills: player.kills, roundScore: player.roundScores[room.round],
+      gained, streak: g.streak, mult: g.mult, perk: g.perk,
     });
-    return { ok: true };
+    return { ok: true, p };
   }
   // Power-up: first team to type it gets it.
+  const g = boost(room, player, w, null);
   room.words.delete(w.id);
-  applyPower(room, player.team, w.power, now);
+  applyPower(room, player.team, w.power, now, g.perk ? CLERIC_POWER_BOOST : 1);
   player.kills += 1;
   room.nextPowerAt = now + rand(POWER_EVERY_MS[0], POWER_EVERY_MS[1]);
   io.to(channel(room)).emit('duel:power', {
     id: w.id, by: player.id, team: player.team, power: w.power, effects: room.effects, hp: room.teams.map((x) => x.hp),
+    streak: g.streak, perk: g.perk,
   });
-  return { ok: true };
+  return { ok: true, p: null };
+}
+
+// ---- Auto-type guard -------------------------------------------------------
+// Auto-typer programs press real keys, so the phone can't tell them apart from a person. What gives them
+// away is timing: they type faster than anyone can, or with gaps that are far too even. Returns why a
+// claim looks machine-typed, or null if it looks human.
+function autoTyped(player, word, keys, now) {
+  const n = word.text.length;
+  if (!Array.isArray(keys) || keys.length !== n - 1) return 'no-keys';
+  const gaps = keys.map(Number);
+  if (gaps.some((g) => !Number.isFinite(g) || g < 0 || g > 60000)) return 'no-keys';
+  player.keyGaps = player.keyGaps.concat(gaps).slice(-KEY_SAMPLE);
+  const total = gaps.reduce((a, b) => a + b, 0);
+  if (total < KEY_MIN_MS * (n - 1)) return 'too-fast';
+  // Attack slots and attacks in the air carry `at`; falling words and power-ups `spawn`.
+  const shownAt = word.at ?? word.spawn;
+  if (total > now - shownAt + KEY_CLOCK_SLACK_MS) return 'clock';
+  const recent = player.keyGaps;
+  if (recent.length >= KEY_SAMPLE_MIN) {
+    const mean = recent.reduce((a, b) => a + b, 0) / recent.length;
+    const spread = Math.sqrt(recent.reduce((a, b) => a + (b - mean) ** 2, 0) / recent.length);
+    if (spread / mean < KEY_EVEN_CV) return 'too-even';
+  }
+  return null;
+}
+
+// A blocked word stays on the field for everyone else. Enough of them and the host sees a warning and the
+// player's scores stay out of the hall of fame.
+function blockClaim(room, player, why) {
+  player.strikes += 1;
+  if (player.strikes >= FLAG_AFTER && !player.flagged) {
+    player.flagged = true;
+    console.log(`Room ${room.code}: ${player.name} flagged as a suspected auto-typer (${why})`);
+    broadcastPlayers(room);
+  }
+  return { ok: false, reason: 'auto', why };
 }
 
 // ---- Sockets ---------------------------------------------------------------
@@ -669,6 +1010,18 @@ io.on('connection', (socket) => {
     const { room, isHost } = ctx();
     if (!isHost || room.state !== 'lobby') return;
     room.mode = data?.mode === 'teams' ? 'teams' : 'ffa';
+    room.rounds = roundsFor(room);
+    broadcastState(room);
+  });
+
+  // Game options: on/off switches plus the host's own word list (sent as the text they typed).
+  socket.on('host:options', (data) => {
+    const { room, isHost } = ctx();
+    if (!isHost || !['lobby', 'finished'].includes(room.state)) return;
+    for (const k of OPTION_KEYS) if (typeof data?.[k] === 'boolean') room.options[k] = data[k];
+    if (typeof data?.onlyMine === 'boolean') room.options.onlyMine = data.onlyMine;
+    if (typeof data?.words === 'string') room.options.words = cleanWords(data.words);
+    room.rounds = roundsFor(room);
     broadcastState(room);
   });
 
@@ -760,6 +1113,7 @@ io.on('connection', (socket) => {
       name = `${name.slice(0, 10)}${n}`;
     }
     const p = newPlayer({ ...data, name });
+    p.roundScores = room.rounds.map(() => 0); // may include the boss round
     p.team = smallerTeam(room);
     room.players.set(p.id, p);
     attachPlayer(room, p);
@@ -776,7 +1130,7 @@ io.on('connection', (socket) => {
 
   socket.on('solo:start', (data, cb) => {
     leaveRoom();
-    const room = createRoom(true);
+    const room = createRoom(true, Boolean(data?.daily));
     const p = newPlayer(data || {});
     room.players.set(p.id, p);
     attachPlayer(room, p);
@@ -823,22 +1177,56 @@ io.on('connection', (socket) => {
       return reply(cb, { ok: false, reason: 'taken', by: by ? by.name : null });
     }
     if (String(data?.text || '').toLowerCase().trim() !== word.text) return reply(cb, { ok: false, reason: 'mismatch' });
+    const now = Date.now();
+    const why = autoTyped(player, word, data?.keys, now);
+    if (why) return reply(cb, blockClaim(room, player, why));
     if (room.mode === 'teams') {
-      const res = duelClaim(room, player, word, Date.now());
-      if (res.ok) room.recentKills.set(id, { by: player.id, at: Date.now() });
+      const res = duelClaim(room, player, word, now);
+      if (res.ok) {
+        room.recentKills.set(id, { by: player.id, at: now });
+        trackStats(player, word, data.keys, res.p);
+      }
       return reply(cb, res);
     }
 
+    const p = clamp01((now - word.spawn) / word.dur);
+    const g = boost(room, player, word, p);
+    const points = Math.round(word.points * g.factor);
     room.words.delete(id);
-    room.recentKills.set(id, { by: player.id, at: Date.now() });
-    player.score += word.points;
+    room.recentKills.set(id, { by: player.id, at: now });
+    player.score += points;
     player.kills += 1;
-    player.roundScores[room.round] += word.points;
+    player.roundScores[room.round] += points;
+    trackStats(player, word, data.keys, p);
     io.to(channel(room)).emit('word:kill', {
-      id, by: player.id, points: word.points, score: player.score, kills: player.kills,
-      roundScore: player.roundScores[room.round],
+      id, by: player.id, points, score: player.score, kills: player.kills, roundScore: player.roundScores[room.round],
+      streak: g.streak, mult: g.mult, perk: g.perk, special: word.special || null,
     });
-    reply(cb, { ok: true, points: word.points });
+    let dealt = points;
+    if (word.special === 'ice') freeze(room, now);
+    if (word.special === 'bomb') dealt += blast(room, player, now);
+    hurtBoss(room, player, dealt);
+    reply(cb, { ok: true, points });
+  });
+
+  // A wrong key: counts against accuracy and ends the hero's streak.
+  socket.on('player:typo', () => {
+    const { room, player } = ctx();
+    if (!player || room.state !== 'playing') return;
+    player.stats.typos += 1;
+    if (!player.streak) return;
+    const lost = player.streak;
+    player.streak = 0;
+    if (room.options.streaks) io.to(channel(room)).emit('player:streak', { id: player.id, streak: 0, lost });
+  });
+
+  socket.on('player:emote', (data) => {
+    const { room, player } = ctx();
+    if (!player || room.solo || !room.options.emotes) return;
+    const t = Date.now();
+    if (t - (player.lastEmote || 0) < EMOTE_GAP_MS) return;
+    player.lastEmote = t;
+    io.to(channel(room)).emit('player:emote', { id: player.id, e: clampInt(data?.e, EMOTE_COUNT) });
   });
 
   socket.on('disconnect', () => {

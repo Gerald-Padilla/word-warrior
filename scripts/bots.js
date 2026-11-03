@@ -24,6 +24,15 @@ for (let i = 0; i < count; i++) {
     const p = players && players.find((pl) => pl.id === me);
     if (p) team = p.team;
   };
+  // Claims carry the gaps between keystrokes, uneven like a person's, adding up to the time spent typing.
+  const claim = (w) => {
+    const weights = Array.from({ length: w.text.length - 1 }, () => 0.25 + Math.random() * 1.5);
+    const mean = weights.reduce((a, b) => a + b, 0) / weights.length;
+    const keys = weights.map((x) => Math.round(((x / mean) * 1000) / cps));
+    socket.emit('player:claim', { id: w.id, text: w.text, keys }, (res) => {
+      if (res && res.reason === 'auto') console.log(`${name} was blocked as an auto-typer (${res.why})`);
+    });
+  };
 
   socket.on('connect', () => {
     const hero = { code, name, cls: CLASSES[i % CLASSES.length], color: i % 8, skin: i % 4, bot: true }; // bots stay out of the hall of fame
@@ -36,7 +45,13 @@ for (let i = 0; i < count; i++) {
     });
   });
   socket.on('room:players', trackTeam);
-  socket.on('room:state', (s) => trackTeam(s.players));
+  socket.on('room:state', (s) => {
+    trackTeam(s.players);
+    // Now and then a bot sends an emote between rounds.
+    if (['intermission', 'finished'].includes(s.state) && Math.random() < 0.4) {
+      setTimeout(() => socket.emit('player:emote', { e: Math.floor(Math.random() * 6) }), 500 + Math.random() * 4000);
+    }
+  });
 
   const duel = new Map(); // team battle words: attack slots, attacks in the air, power-ups
   let busyUntil = 0;
@@ -50,7 +65,7 @@ for (let i = 0; i < count; i++) {
     // Wait until the word is visible, "read" it, then type it.
     const delay = Math.max(0, w.spawn - Date.now()) + 500 + Math.random() * 1500 + (w.text.length / cps) * 1000;
     setTimeout(() => {
-      if (alive.has(w.id) && Math.random() < 0.85) socket.emit('player:claim', { id: w.id, text: w.text }, () => {});
+      if (alive.has(w.id) && Math.random() < 0.85) claim(w);
     }, delay);
   });
   socket.on('duel:launch', ({ slot, missile }) => {
@@ -88,7 +103,7 @@ for (let i = 0; i < count; i++) {
     const ms = typeMs(target);
     busyUntil = now + ms;
     setTimeout(() => {
-      if (duel.has(target.id) && Math.random() < 0.9) socket.emit('player:claim', { id: target.id, text: target.text }, () => {});
+      if (duel.has(target.id) && Math.random() < 0.9) claim(target);
     }, ms);
   }, 150);
 }

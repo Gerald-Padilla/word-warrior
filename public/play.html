@@ -31,6 +31,7 @@
     .cls-info .nm { font-size: 14px; color: var(--gold); }
     .cls-info .atk { font-size: 10px; color: var(--cream); }
     .cls-info .blurb { font-size: 8px; color: var(--muted); line-height: 1.8; }
+    .cls-info .perk { font-size: 7px; color: #8be36b; line-height: 1.8; }
     .cls-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .cls-btn { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 2px; background: var(--panel-2); border: 0; color: var(--cream); font-size: 7px; cursor: pointer; box-shadow: inset 0 0 0 3px transparent; }
     .cls-btn img { width: 48px; height: 48px; }
@@ -63,7 +64,16 @@
     .mini.me span { color: var(--gold); }
     .mini.team0 img { box-shadow: 0 3px 0 #ff5a4d; } .mini.team1 img { box-shadow: 0 3px 0 #4da6ff; }
     .team-badge { font-size: 12px; padding: 8px 12px; color: var(--ink); }
-    .mode-line { text-align: center; font-size: 9px; color: var(--muted); margin: 0; }
+    .mode-line { text-align: center; font-size: 9px; color: var(--muted); margin: 0; line-height: 1.8; }
+    .opt-line { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+    .opt-line span { font-size: 7px; padding: 4px 6px; background: var(--ink); color: #8be36b; }
+    .you .pk { font-size: 7px; color: #8be36b; line-height: 1.7; max-width: 300px; }
+    /* Emotes: tap one and it pops up over your hero on the big screen */
+    .emotes { display: flex; justify-content: center; gap: 6px; }
+    .emotes button { font-size: 22px; line-height: 1; padding: 6px 8px; border: 0; background: var(--panel-2); cursor: pointer; box-shadow: 0 3px 0 var(--ink); }
+    .emotes button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+    .emotes.cool button { opacity: 0.4; }
+    .field .emotes { position: absolute; left: 0; right: 0; bottom: 12px; z-index: 3; }
 
     /* Team battle HP strip under the top bar */
     .hpstrip { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 6px 10px 8px; background: var(--panel); box-shadow: 0 3px 0 var(--ink); z-index: 2; }
@@ -92,6 +102,15 @@
     .topbar .t.low { color: var(--red); animation: blink 0.6s steps(2) infinite; }
     .topbar .s { text-align: right; }
     .topbar .s b { color: var(--gold); font-weight: normal; }
+    .quit.music { margin: 0 0 0 6px; }
+    .quit.music.off { opacity: 0.45; text-decoration: line-through; }
+    /* Your streak, top-left of the battlefield */
+    .streak { position: absolute; left: 8px; top: 8px; font-size: 8px; padding: 5px 7px; background: var(--ink); color: var(--muted); z-index: 3; pointer-events: none; }
+    .streak.hot { color: #ff7b1c; } .streak.blue { color: #7fd4ff; } .streak.max { color: #bb8cff; }
+    .streak.bump { animation: steal-in 0.3s steps(5); }
+    /* The last ten seconds: the field's edges glow red */
+    .field.tense::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 8px rgba(232, 55, 28, 0.6); animation: pulse 1s steps(4) infinite; z-index: 2; }
+    @keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
     .field { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; }
     .field canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
     .field-banner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; background: rgba(27, 20, 38, 0.55); padding: 16px; pointer-events: none; }
@@ -99,7 +118,7 @@
     .fb-2 { font-size: 30px; text-shadow: 4px 4px 0 var(--ink); }
     .fb-3 { font-size: 9px; color: var(--cream); text-shadow: 2px 2px 0 var(--ink); line-height: 1.8; }
     .fb-4 { font-size: 40px; color: var(--gold); text-shadow: 4px 4px 0 var(--ink); }
-    .d-easy { color: #8be36b; } .d-medium { color: #b99cff; } .d-hard { color: #ff7b4a; }
+    .d-easy { color: #8be36b; } .d-medium { color: #b99cff; } .d-hard { color: #ff7b4a; } .d-boss { color: #ff4d4d; }
     .toast { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); padding: 8px 12px; font-size: 9px; background: var(--ink); white-space: nowrap; opacity: 0; transition: opacity 0.15s steps(2); pointer-events: none; z-index: 3; }
     .toast.show { opacity: 1; }
     .toast.bad { color: var(--red); } .toast.good { color: #8be36b; }
@@ -141,6 +160,12 @@
     .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
     .stat { background: var(--ink); padding: 12px 6px; font-size: 8px; color: var(--muted); }
     .stat b { display: block; font-size: 16px; color: var(--gold); font-weight: normal; margin-top: 8px; }
+    .stats.small { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .stats.small .stat { padding: 8px 4px; font-size: 7px; }
+    .stats.small .stat b { font-size: 12px; margin-top: 6px; color: var(--cream); }
+    .my-awards { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+    .my-award { font-size: 9px; color: var(--ink); background: var(--gold); padding: 8px; line-height: 1.7; }
+    .my-award small { display: block; font-size: 7px; }
     .rounds-line { font-size: 8px; color: var(--muted); line-height: 2; }
     .top3 { width: 100%; display: flex; flex-direction: column; gap: 6px; }
     .t3 { display: grid; grid-template-columns: 28px 32px 1fr auto; gap: 8px; align-items: center; font-size: 9px; text-align: left; background: rgba(27, 20, 38, 0.6); padding: 4px 8px; }
@@ -153,7 +178,7 @@
     .hof-empty { font-size: 9px; color: var(--muted); text-align: center; line-height: 2; margin: 6px 0; }
 
     /* Hall of fame */
-    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .tabs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
     .tab { font: inherit; font-size: 11px; padding: 12px; border: 0; background: var(--panel-2); color: var(--muted); cursor: pointer; }
     .tab.on { background: var(--gold); color: var(--ink); }
     .msg { align-items: center; justify-content: center; text-align: center; }
@@ -224,6 +249,7 @@
           <div class="nm" id="clsName">Knight</div>
           <div class="atk" id="clsAttack">Sword Beam</div>
           <div class="blurb" id="clsBlurb"></div>
+          <div class="perk" id="clsPerk"></div>
         </div>
         <div class="label">CLASS</div>
         <div class="cls-grid" id="clsGrid"></div>
@@ -244,6 +270,7 @@
       <p id="joinErr" class="err"></p>
       <button id="btnJoin" class="px-btn big">JOIN BATTLE</button>
       <button id="btnSolo" class="px-btn big green">PLAY SOLO</button>
+      <button id="btnDaily" class="px-btn">DAILY QUEST<small style="display:block;font-size:7px;margin-top:6px">Same words for everyone today</small></button>
       <button id="btnHof" class="px-btn ghost">HALL OF FAME</button>
     </section>
 
@@ -251,6 +278,7 @@
       <h1 class="logo sm">HALL OF<br>FAME</h1>
       <div class="tabs">
         <button class="tab on" type="button" data-board="solo">SOLO</button>
+        <button class="tab" type="button" data-board="daily">DAILY</button>
         <button class="tab" type="button" data-board="battle">BATTLE</button>
       </div>
       <div class="px-box top3" id="hofList"></div>
@@ -266,11 +294,14 @@
         </div>
         <div class="nm" id="lobbyName"></div>
         <div class="cl" id="lobbyClass"></div>
+        <div class="pk hidden" id="lobbyPerk"></div>
         <div class="team-badge hidden" id="lobbyTeam"></div>
       </div>
       <p class="lobby-note hidden" id="lobbyNote"></p>
       <p class="wait blink">Waiting for the host to start...</p>
       <p class="mode-line" id="lobbyMode"></p>
+      <div class="opt-line" id="lobbyOpts"></div>
+      <div class="emotes hidden" id="emoteLobby"></div>
       <div class="px-box">
         <h3>HEROES IN THE TAVERN: <span id="lobbyCount">0</span></h3>
         <div class="mini-roster" id="lobbyRoster"></div>
@@ -283,7 +314,7 @@
       <div class="topbar">
         <div class="r"><button id="btnQuit" class="quit hidden" type="button" aria-label="Quit this solo quest">X</button><span id="gRound">R1 EASY</span></div>
         <div class="t" id="gTime">0:45</div>
-        <div class="s"><b id="gScore">0</b> · <span id="gRank">#1</span></div>
+        <div class="s"><b id="gScore">0</b> · <span id="gRank">#1</span><button id="btnMusic" class="quit music hidden" type="button" aria-label="Music on or off">♪</button></div>
       </div>
       <div class="hpstrip hidden" id="hpStrip">
         <div class="hp-side left" id="hpSide0">
@@ -306,6 +337,8 @@
           <div class="fb-4" id="fb4"></div>
         </div>
         <div class="toast" id="toast"></div>
+        <div class="streak hidden" id="streakChip"></div>
+        <div class="emotes hidden" id="emoteGame"></div>
         <div class="tap-hint hidden" id="tapHint">TAP HERE TO TYPE</div>
         <div class="type-hint hidden" id="typeHint">TYPO! BACKSPACE TO FIX · ENTER TO CLEAR</div>
         <div class="steal hidden" id="steal">
@@ -329,8 +362,14 @@
       <img id="fHero" class="px-sprite hero" alt="">
       <div class="stats">
         <div class="stat"><span id="fScoreLbl">SCORE</span><b id="fScore">0</b></div>
-        <div class="stat">MONSTERS SLAIN<b id="fKills">0</b></div>
+        <div class="stat"><span id="fKillsLbl">MONSTERS SLAIN</span><b id="fKills">0</b></div>
       </div>
+      <div class="stats small" id="fTyping">
+        <div class="stat">SPEED<b id="fWpm">-</b></div>
+        <div class="stat">ACCURACY<b id="fAcc">-</b></div>
+        <div class="stat">BEST STREAK<b id="fBest">-</b></div>
+      </div>
+      <div class="my-awards" id="fAwards"></div>
       <div class="rounds-line" id="fRounds"></div>
       <div class="px-box top3" id="fTop"></div>
       <div class="final-foot">
@@ -339,6 +378,7 @@
           <button id="btnMenu" class="px-btn ghost">MENU</button>
         </div>
         <p class="wait blink" id="fWait">Waiting for the host...</p>
+        <div class="emotes hidden" id="emoteFinal"></div>
       </div>
     </section>
   </div>

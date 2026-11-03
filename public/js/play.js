@@ -1,6 +1,6 @@
 // Phone controller: hero creator, lobby, typing battle and results.
 (function () {
-  const { $, el, syncClock, rankPlayers, TEAMS, Sfx } = window.WW;
+  const { $, el, syncClock, rankPlayers, TEAMS, Sfx, Music, EMOTES } = window.WW;
   const { CLASSES, COLORS, SKINS, HAIRS, TRIMS, PETS, POWERS } = window.Art;
   const { heroDataURL, petDataURL, powerDataURL, classByKey, classHasHair } = window.Art;
 
@@ -31,6 +31,10 @@
   let winner = null; // team battle: 0, 1, or -1 for a draw
   let ko = false;
   let effects = [{}, {}]; // team battle power-ups: per team, name -> active until (server ms)
+  let daily = null; // the date of the daily quest you're playing
+  let options = {}; // the room's game options
+  let summary = null; // finished: { stats, awards }
+  let boss = null; // boss round: { hp, max, down }
   const toasted = new Set();
 
   const pick = (n) => Math.floor(Math.random() * n);
@@ -157,6 +161,7 @@
     $('#clsName').textContent = cls.name;
     $('#clsAttack').textContent = `ATTACK: ${cls.attack}`;
     $('#clsBlurb').textContent = cls.blurb;
+    $('#clsPerk').textContent = `PERK: ${cls.perk} (when class perks are on)`;
     stage.setPlayers([{ id: 'you', ...look, name: look.name || 'You', connected: true }]);
     if (animate) stage.heroHop.set('you', performance.now());
   }
@@ -172,7 +177,9 @@
     $('#joinFields').classList.toggle('hidden', isEdit);
     $('#btnJoin').textContent = isEdit ? 'SAVE HERO' : 'JOIN BATTLE';
     $('#btnSolo').classList.toggle('hidden', isEdit);
+    $('#btnDaily').classList.toggle('hidden', isEdit);
     $('#btnHof').classList.toggle('hidden', isEdit);
+    Music.stop();
     $('#inCode').value = code;
     $('#inName').value = look.name;
     $('#joinErr').textContent = '';
@@ -215,20 +222,24 @@
     onJoined(res);
   };
 
-  $('#btnSolo').onclick = async () => {
+  // PLAY SOLO, or the daily quest (the same words for everyone today, with its own Hall of Fame).
+  async function startSolo(isDaily) {
     Sfx.unlock();
     if (!saveLook()) return;
     battleCode = $('#inCode').value.trim().toUpperCase();
-    $('#btnSolo').disabled = true;
-    const res = await ack('solo:start', look);
-    $('#btnSolo').disabled = false;
+    const btn = isDaily ? $('#btnDaily') : $('#btnSolo');
+    btn.disabled = true;
+    const res = await ack('solo:start', { ...look, daily: isDaily });
+    btn.disabled = false;
     if (!res || !res.ok) {
       $('#joinErr').textContent = 'Could not start a solo quest. Try again.';
       return;
     }
     code = res.snapshot.code;
     onJoined(res);
-  };
+  }
+  $('#btnSolo').onclick = () => startSolo(false);
+  $('#btnDaily').onclick = () => startSolo(true);
 
   $('#btnEdit').onclick = () => openCreator(true);
   $('#msgBtn').onclick = () => openCreator(false);
@@ -239,6 +250,7 @@
     store.del(`ww_token_${code}`);
     you = null;
     solo = false;
+    daily = null;
     records = {};
     code = battleCode;
     arena.clearWords();
@@ -273,9 +285,9 @@
   }
 
   function renderHofList(box, board, mineId) {
-    const list = hof ? hof[board] : null;
+    const list = hof ? hof[board] || [] : null;
     if (!list || !list.length) {
-      const empty = board === 'solo' ? 'No solo legends yet. Be the first!' : 'No battles recorded yet.';
+      const empty = { solo: 'No solo legends yet. Be the first!', daily: "Nobody has finished today's daily quest yet.", battle: 'No battles recorded yet.' }[board];
       box.append(el('p', { class: 'hof-empty', text: list ? empty : 'Loading...' }));
       return;
     }
@@ -325,6 +337,8 @@
   function onJoined(res) {
     you = res.you;
     solo = Boolean(res.snapshot.solo);
+    daily = res.snapshot.daily || null;
+    $('#btnMusic').classList.toggle('hidden', !solo);
     if (!solo) battleCode = code;
     else if (battleCode === code) battleCode = ''; // resumed a solo quest after a reload
     records = res.snapshot.records || {};
@@ -360,6 +374,60 @@
   });
   socket.on('room:state', (s) => applyState(s));
   socket.on('word:spawn', (w) => arena.addWord(w));
+  socket.on('word:retime', (list) => arena.retime(list));
+  socket.on('fx:ice', ({ until }) => arena.setIce(until));
+  socket.on('player:streak', ({ id, streak }) => {
+    const p = players.find((pl) => pl.id === id);
+    if (p) p.streak = streak;
+    if (id === you) renderStreak();
+  });
+  socket.on('player:emote', ({ id, e }) => arena.emote(id, e));
+  socket.on('boss:hit', ({ hp, by, dmg }) => {
+    if (boss) boss.hp = hp;
+    arena.bossHit(hp, dmg);
+    if (by === you) Sfx.play('bosshit');
+  });
+  socket.on('boss:down', ({ by }) => {
+    if (boss) Object.assign(boss, { hp: 0, down: true });
+    clearTyping();
+    arena.bossDown();
+    arena.callout('VICTORY!', '#ffd23f', by === you ? 'You slew the Dragon King!' : `${nameOf(by)} slew the Dragon King!`);
+    Sfx.play('roar');
+    Sfx.play('boom');
+    if (navigator.vibrate) navigator.vibrate([80, 40, 160]);
+  });
+
+  // Streak milestones of your own get a callout; the chip in the corner keeps count.
+  const STREAK_CALLS = { 3: ['ON FIRE!', '#ff7b1c'], 6: ['UNSTOPPABLE!', '#7fd4ff'], 10: ['LEGENDARY!', '#bb8cff'] };
+  function noteStreak(by, k) {
+    const p = players.find((pl) => pl.id === by);
+    if (p && k.streak !== undefined) p.streak = k.streak;
+    if (by !== you) return;
+    const call = STREAK_CALLS[k.streak] || (k.streak > 10 && k.streak % 5 === 0 ? STREAK_CALLS[10] : null);
+    if (call) {
+      arena.callout(call[0], call[1], `${k.streak} in a row${k.mult > 1 ? ` · x${k.mult} points` : ''}`);
+      Sfx.play('streak');
+    }
+    renderStreak(true);
+  }
+
+  function renderStreak(bump) {
+    const chip = $('#streakChip');
+    const s = (options.streaks && me()?.streak) || 0;
+    const on = state.state === 'playing' && s >= 2;
+    if (!on) {
+      chip.classList.add('hidden');
+      return;
+    }
+    let mult = s >= 10 ? 3 : s >= 6 ? 2 : s >= 3 ? 1.5 : 1;
+    if (teamBattle()) mult = Math.min(2, mult);
+    chip.textContent = `STREAK ${s}${mult > 1 ? ` · x${mult}` : ''}`;
+    chip.className = `streak${s >= 10 ? ' max' : s >= 6 ? ' blue' : s >= 3 ? ' hot' : ''}`;
+    if (bump) {
+      void chip.offsetWidth;
+      chip.classList.add('bump');
+    }
+  }
 
   // Team battle ---------------------------------------------------------
   const setScore = (id, score, roundScore, kills) => {
@@ -377,20 +445,23 @@
   };
   const nameOf = (id) => players.find((p) => p.id === id)?.name || 'Someone';
 
-  socket.on('duel:launch', ({ slot, missile }) => {
+  socket.on('duel:launch', (d) => {
+    const { slot, missile } = d;
     if (missile.by !== you) lostWord(missile.text, 'TOO SLOW!', `${nameOf(missile.by)} launched "${missile.text}"`);
     arena.duelLaunch(slot, missile);
     if (missile.by === you) {
       Sfx.play('shoot');
       if (navigator.vibrate) navigator.vibrate(25);
     }
+    noteStreak(missile.by, d);
   });
   socket.on('duel:block', (b) => {
     const w = arena.words.get(b.id);
     if (w && b.by !== you) lostWord(w.text, 'TOO SLOW!', `${nameOf(b.by)} blocked "${w.text}"`);
     setScore(b.by, b.score, b.roundScore, b.kills);
     arena.duelBlock(b.id, b.by);
-    if (b.by === you) showToast('BLOCKED!', 'good');
+    if (b.by === you) showToast(`BLOCKED! +${b.gained}${b.perk ? ' PERK' : ''}`, 'good');
+    noteStreak(b.by, b);
   });
   socket.on('duel:hit', (h) => {
     const w = arena.words.get(h.id);
@@ -424,6 +495,7 @@
     const ours = pw.team === myTeam();
     showToast(`${ours ? (pw.by === you ? 'YOU' : nameOf(pw.by)) : TEAMS[pw.team].short} GOT ${info.name}!`, ours ? 'good' : 'bad', 1800);
     Sfx.play(ours ? 'join' : 'miss');
+    noteStreak(pw.by, pw);
   });
   socket.on('duel:retime', (list) => arena.retime(list));
   socket.on('word:escape', ({ id }) => {
@@ -501,6 +573,12 @@
     const prev = state.state;
     state = { state: s.state, round: s.round, phaseEndsAt: s.phaseEndsAt };
     if (s.records) records = s.records;
+    if (s.rounds) rounds = s.rounds;
+    if (s.options) options = s.options;
+    summary = s.summary || null;
+    boss = s.boss || null;
+    arena.setBoss(boss);
+    arena.setIce(s.iceUntil);
     mode = s.mode || 'ffa';
     teams = s.teams || null;
     winner = s.winner ?? null;
@@ -548,11 +626,59 @@
       if (st === 'playing' && prev === 'countdown') {
         Sfx.play('go');
         flashBanner();
+        if (rounds[state.round]?.key === 'boss') {
+          Sfx.play('roar');
+          arena.shake(2, 600);
+        }
       }
       if (typing) $('#typeIn').focus();
     }
     updateBanner();
     updateTapHint();
+    renderStreak();
+    renderEmotes();
+    syncMusic();
+  }
+
+  // Solo quests have their own soundtrack (battles leave the music to the big screen).
+  Music.on = store.get('ww_music') !== false;
+  function syncMusic() {
+    $('#btnMusic').classList.toggle('off', !Music.on);
+    if (!solo || !you) {
+      Music.stop();
+      return;
+    }
+    const st = state.state;
+    const r = rounds[state.round];
+    Music.play(st === 'countdown' || st === 'playing' ? r?.key : st === 'intermission' ? 'lobby' : null);
+  }
+  $('#btnMusic').onclick = () => {
+    Sfx.unlock();
+    Music.on = !Music.on;
+    store.set('ww_music', Music.on);
+    syncMusic();
+  };
+
+  // ---- emotes --------------------------------------------------------
+  let emoteAt = 0;
+  function sendEmote(i) {
+    const t = performance.now();
+    if (t - emoteAt < 1200) return;
+    emoteAt = t;
+    socket.emit('player:emote', { e: i });
+    const bars = document.querySelectorAll('.emotes');
+    bars.forEach((b) => b.classList.add('cool'));
+    setTimeout(() => bars.forEach((b) => b.classList.remove('cool')), 1200);
+    if (navigator.vibrate) navigator.vibrate(15);
+  }
+  for (const box of document.querySelectorAll('.emotes')) {
+    EMOTES.forEach((e, i) => box.append(el('button', { type: 'button', text: e, 'aria-label': `Send ${e}`, onclick: () => sendEmote(i) })));
+  }
+  function renderEmotes() {
+    const on = Boolean(options.emotes) && !solo && Boolean(you);
+    $('#emoteLobby').classList.toggle('hidden', !on);
+    $('#emoteGame').classList.toggle('hidden', !on || state.state !== 'intermission');
+    $('#emoteFinal').classList.toggle('hidden', !on);
   }
 
   let fightUntil = 0;
@@ -569,12 +695,12 @@
     if (st === 'countdown' && r) {
       const n = Math.ceil(left / 1000);
       banner.classList.remove('hidden');
-      $('#fb1').textContent = `ROUND ${state.round + 1}`;
+      $('#fb1').textContent = r.key === 'boss' ? 'FINAL ROUND' : `ROUND ${state.round + 1}`;
       $('#fb2').textContent = r.name;
-      $('#fb2').className = `fb-2 ${['d-easy', 'd-medium', 'd-hard'][state.round] || ''}`;
+      $('#fb2').className = `fb-2 d-${r.key}`;
       $('#fb3').textContent = teamBattle()
         ? `${r.title} · x${r.multiplier} damage · you're ${TEAMS[myTeam()].name}`
-        : `${r.title} · x${r.multiplier} pts`;
+        : r.key === 'boss' ? `${r.title} · every word you type hurts it!` : `${r.title} · x${r.multiplier} pts`;
       $('#fb4').textContent = n > 3 ? 'READY?' : String(Math.max(1, n));
     } else if (st === 'playing' && performance.now() < fightUntil) {
       banner.classList.remove('hidden');
@@ -613,7 +739,7 @@
 
   function updateTopbar() {
     const r = rounds[state.round];
-    $('#gRound').textContent = r ? `R${state.round + 1} ${r.name}` : '';
+    $('#gRound').textContent = r ? `${daily ? 'DAILY ' : ''}R${state.round + 1} ${r.name}` : '';
     const mine = me();
     $('#gScore').textContent = mine ? mine.score : 0;
     $('#gRank').style.color = '';
@@ -623,7 +749,8 @@
       return;
     }
     if (solo) {
-      const best = hof && hof.solo[0] ? hof.solo[0].score : 0;
+      const board = hof && hof[daily ? 'daily' : 'solo'];
+      const best = board && board[0] ? board[0].score : 0;
       $('#gRank').textContent = `HI ${Math.max(best, mine ? mine.score : 0)}`;
       return;
     }
@@ -642,19 +769,37 @@
       $('#gTime').textContent = 'BREAK';
       $('#gTime').classList.remove('low');
     }
+    // The last ten seconds: red edges (and in solo, a ticking clock and faster music).
+    const left = Math.max(0, state.phaseEndsAt - now());
+    const tense = state.state === 'playing' && left > 0 && left <= 10000 && !(boss && boss.down);
+    $('#field').classList.toggle('tense', tense);
+    if (solo) {
+      Music.setFast(tense);
+      const sec = Math.ceil(left / 1000);
+      if (tense && sec !== lastTick) Sfx.play('tick');
+      lastTick = tense ? sec : null;
+    }
     if (!$('#scrGame').classList.contains('hidden')) updateBanner();
     if (teams) renderFx();
   }
+  let lastTick = null;
   setInterval(tick, 100);
 
   // ---- typing --------------------------------------------------------
   const typeIn = $('#typeIn');
   const normalize = (s) => s.toLowerCase().replace(/[^a-z]/g, '');
   const visibleWords = () => arena.typeable(now());
+  // The longest start of s that some word on screen still begins with.
+  const matchPrefix = (s, words) => {
+    let ok = s;
+    while (ok && !words.some((w) => w.text.startsWith(ok))) ok = ok.slice(0, -1);
+    return ok;
+  };
 
   const typeShow = $('#typeShow');
   let shown = ''; // normalized text in the box after the last edit
-  let lastCleared = null; // { text, t } of the last text we wiped
+  let keyTimes = []; // when each letter of `shown` was typed; the gaps go with each claim (auto-type guard)
+  let lastCleared = null; // { text, kept }: the last text we cut back to `kept` ('' when wiped)
 
   // The box shows the part that still matches a word in gold and anything after it white on red.
   function showTyped(v, ok) {
@@ -679,40 +824,75 @@
 
   function clearTyping() {
     const v = normalize(typeIn.value);
-    if (v) lastCleared = { text: v, t: performance.now() };
+    if (v) lastCleared = { text: v, kept: '' };
     typeIn.value = '';
     shown = '';
+    keyTimes = [];
     arena.typed = '';
     showTyped('', '');
     setTypo(false);
   }
 
-  typeIn.addEventListener('input', () => {
-    let v = normalize(typeIn.value);
-    // Some phone keyboards re-insert the text we just wiped (plus the next key) when composition ends.
-    // Only strip that exact replay so a word swiped in one go isn't cut short.
-    const lc = lastCleared;
-    if (lc && !shown && performance.now() - lc.t < 1500 && lc.text.length >= 2
-      && v.startsWith(lc.text) && v.length <= lc.text.length + 1) {
-      v = v.slice(lc.text.length);
+  // Nothing gets into the box except by typing it.
+  for (const ev of ['paste', 'drop']) typeIn.addEventListener(ev, (e) => e.preventDefault());
+
+  typeIn.addEventListener('input', (e) => {
+    // Text put in by a script on the page doesn't count.
+    if (!e.isTrusted) {
+      typeIn.value = shown;
+      return;
     }
-    const grew = v.length > shown.length;
-    shown = v;
-    if (typeIn.value !== v) typeIn.value = v; // keep the real text lined up with the colored copy on top
+    let v = normalize(typeIn.value);
+    // Some phone keyboards re-insert the text we just wiped or cut back (plus the next key) in one go when
+    // composition ends. Strip that replay and keep the new key.
+    const lc = lastCleared;
+    if (lc && shown === lc.kept && v.length > shown.length + 1
+      && v.startsWith(lc.text) && v.length <= lc.text.length + 1) {
+      v = lc.kept + v.slice(lc.text.length);
+    }
+    // One key, one letter: a word landing all at once (swipe, a keyboard suggestion, an auto-typer pasting)
+    // is thrown away.
+    if (v.length > shown.length + 1) {
+      lastCleared = { text: v, kept: shown };
+      typeIn.value = shown;
+      showSteal('TYPE IT!', 'No swipe, paste or suggestions');
+      return;
+    }
     const playing = state.state === 'playing';
     const words = playing ? visibleWords() : [];
+    // One Backspace throws away every red letter, back to the part that still matches a word.
+    if (playing && v.length < shown.length && shown.startsWith(v)) {
+      const good = matchPrefix(shown, words);
+      if (v.length > good.length) {
+        lastCleared = { text: v, kept: good };
+        v = good;
+      }
+    }
+    const grew = v.length > shown.length;
+    let same = 0;
+    while (same < v.length && v[same] === shown[same]) same++;
+    keyTimes.length = Math.min(keyTimes.length, same);
+    while (keyTimes.length < v.length) keyTimes.push(performance.now());
+    shown = v;
+    if (typeIn.value !== v) typeIn.value = v; // keep the real text lined up with the colored copy on top
     const hit = words.find((w) => w.text === v);
     if (hit) return claim(hit);
-    let ok = v;
-    if (playing) while (ok && !words.some((w) => w.text.startsWith(ok))) ok = ok.slice(0, -1);
+    const ok = playing ? matchPrefix(v, words) : v;
     arena.typed = ok;
     showTyped(v, ok);
     const typo = ok !== v;
     if (typo && grew) {
-      // Every wrong key gets a shake, a buzz and a red flash.
+      // Every wrong key gets a shake, a buzz and a red flash - and ends your streak.
       flashTypebar();
       Sfx.play('miss');
       if (navigator.vibrate) navigator.vibrate(30);
+      if (playing) {
+        socket.emit('player:typo');
+        const mine = me();
+        if (mine && options.streaks && mine.streak >= 3) showToast(`STREAK LOST (${mine.streak} IN A ROW)`, 'bad');
+        if (mine) mine.streak = 0;
+        renderStreak();
+      }
     }
     setTypo(typo);
   });
@@ -741,7 +921,8 @@
     if (navigator.vibrate) navigator.vibrate([70, 40, 70]);
   }
 
-  // Enter (the keyboard's Done key on phones) throws the whole word away; Backspace deletes one letter.
+  // Enter (the keyboard's Done key on phones) throws the whole word away. Backspace deletes one letter,
+  // or all the red ones at once (see the input handler).
   typeIn.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.keyCode === 13) {
       e.preventDefault();
@@ -750,9 +931,13 @@
   });
 
   function claim(word) {
+    const keys = keyTimes.slice(1).map((t, i) => Math.round(t - keyTimes[i]));
     clearTyping();
-    socket.emit('player:claim', { id: word.id, text: word.text }, (res) => {
-      if (res && !res.ok && res.reason === 'taken' && !toasted.has(word.id)) {
+    socket.emit('player:claim', { id: word.id, text: word.text, keys }, (res) => {
+      if (res && !res.ok && res.reason === 'auto') {
+        // The server thought a machine typed it; the word stays up for everyone else.
+        showSteal('BLOCKED!', 'That looked like an auto-typer');
+      } else if (res && !res.ok && res.reason === 'taken' && !toasted.has(word.id)) {
         // You finished it, but someone's claim reached the server first.
         toasted.add(word.id);
         showSteal('TOO SLOW!', `${res.by || 'Someone'} got "${word.text}" first`);
@@ -768,14 +953,27 @@
       p.kills = k.kills;
       if (state.round >= 0) p.roundScores[state.round] = k.roundScore;
     }
+    const name = p ? p.name : 'Someone';
     if (k.by === you) {
-      Sfx.play('shoot');
+      if (!k.bomb) Sfx.play('shoot');
       if (navigator.vibrate) navigator.vibrate(25);
     } else if (word) {
       toasted.add(k.id);
-      lostWord(word.text, 'TOO SLOW!', `${p ? p.name : 'Someone'} got "${word.text}"`);
+      if (k.bomb) lostWord(word.text, 'BOOM!', `${name}'s bomb blasted "${word.text}"`);
+      else lostWord(word.text, 'TOO SLOW!', `${name} got "${word.text}"`);
     }
-    arena.kill(k.id, k.by, k.points);
+    arena.kill(k.id, k.by, k.points, k);
+    if (!k.bomb) noteStreak(k.by, k);
+    if (k.special === 'ice') {
+      arena.callout('FREEZE!', '#7fd4ff', k.by === you ? 'Everything falls slower' : `${name} slowed everything`);
+      Sfx.play('freeze');
+    } else if (k.special === 'bomb') {
+      arena.callout('BOOM!', '#ff7b1c', k.by === you ? 'You blasted the field!' : `${name} blasted the field`);
+      Sfx.play('boom');
+    } else if (k.special === 'gold' && k.by === you) {
+      arena.callout('GOLD!', '#ffd23f', 'x3 points');
+      Sfx.play('award');
+    }
     updateTopbar();
   }
 
@@ -793,10 +991,12 @@
   // Tapping the battlefield keeps (or brings back) the keyboard.
   const field = $('#field');
   field.addEventListener('touchstart', (e) => {
+    if (e.target.closest('.emotes')) return; // let emote taps through
     e.preventDefault();
     if (!typeIn.disabled) typeIn.focus();
   }, { passive: false });
   field.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.emotes')) return;
     e.preventDefault();
     if (!typeIn.disabled) typeIn.focus();
   });
@@ -833,6 +1033,17 @@
       ? "TEAM BATTLE: type your side's words to hit the other team!"
       : 'FREE FOR ALL: first to type a word gets the points!';
     $('#lobbyCount').textContent = players.length;
+    // What the host has switched on, and your class's perk when perks are on.
+    const opts = $('#lobbyOpts');
+    opts.innerHTML = '';
+    const names = { streaks: 'STREAKS', specials: 'SPECIAL WORDS', boss: 'BOSS FINALE', perks: 'CLASS PERKS', awards: 'AWARDS' };
+    for (const [k, label] of Object.entries(names)) {
+      if (options[k] && !(tb && (k === 'boss' || k === 'specials'))) opts.append(el('span', { text: label }));
+    }
+    if (options.wordCount) opts.append(el('span', { text: `${options.wordCount} HOST WORDS` }));
+    const perk = options.perks && mine ? classByKey(mine.cls).perk : '';
+    $('#lobbyPerk').textContent = perk ? `PERK: ${perk}` : '';
+    $('#lobbyPerk').classList.toggle('hidden', !perk);
     const roster = $('#lobbyRoster');
     roster.innerHTML = '';
     for (const p of players) {
@@ -854,7 +1065,21 @@
     $('#fSoloActions').classList.toggle('hidden', !solo);
     $('#fWait').classList.toggle('hidden', solo);
     $('#fScoreLbl').textContent = 'SCORE';
+    $('#fKillsLbl').textContent = teamBattle() ? 'WORDS TYPED' : 'MONSTERS SLAIN';
     $('#fPlace').style.color = '';
+    // Your typing stats, and any awards you won.
+    const st = summary?.stats?.[you];
+    $('#fTyping').classList.toggle('hidden', !st || !st.words);
+    if (st) {
+      $('#fWpm').textContent = st.wpm ? `${st.wpm} WPM` : '-';
+      $('#fAcc').textContent = `${st.acc}%`;
+      $('#fBest').textContent = options.streaks ? st.best : '-';
+    }
+    const won = $('#fAwards');
+    won.innerHTML = '';
+    for (const a of (summary?.awards || []).filter((x) => x.id === you)) {
+      won.append(el('div', { class: 'my-award' }, [`★ ${a.title}`, el('small', { text: `${a.desc} · ${a.value}` })]));
+    }
     const top = $('#fTop');
     top.innerHTML = '';
     const topHeroes = (colorByTeam) => {
@@ -882,13 +1107,16 @@
     }
 
     if (solo) {
-      $('#fTitle').textContent = rec && rec.rank === 1 ? 'NEW HIGH SCORE!' : 'QUEST COMPLETE!';
-      if (rec) $('#fPlace').textContent = `#${rec.rank} in the Hall of Fame`;
+      const board = daily ? 'daily' : 'solo';
+      if (daily) $('#fTitle').textContent = rec && rec.rank === 1 ? 'BEST TODAY!' : 'DAILY QUEST DONE!';
+      else $('#fTitle').textContent = rec && rec.rank === 1 ? 'NEW HIGH SCORE!' : 'QUEST COMPLETE!';
+      if (rec) $('#fPlace').textContent = `#${rec.rank} ${daily ? 'today' : 'in the Hall of Fame'}`;
       else $('#fPlace').textContent = mine.score ? 'Not in the Hall of Fame... yet!' : 'No monsters slain this time!';
+      if (boss) $('#fPlace').textContent += boss.down ? ' · Dragon King slain!' : ' · The Dragon King got away';
       $('#fRecord').classList.add('hidden');
-      top.append(el('h3', { text: 'HALL OF FAME · SOLO' }));
-      renderHofList(top, 'solo', rec && rec.entryId);
-      if (hof && rec && rec.rank > hof.solo.length) {
+      top.append(el('h3', { text: daily ? `DAILY QUEST · ${daily}` : 'HALL OF FAME · SOLO' }));
+      renderHofList(top, board, rec && rec.entryId);
+      if (hof && rec && rec.rank > (hof[board] || []).length) {
         top.append(el('p', { class: 'hof-empty', text: '...' }), hofRow({ ...mine, at: Date.now() }, rec.rank, true));
       }
       return;

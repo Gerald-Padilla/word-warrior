@@ -16,24 +16,66 @@ Players scan the QR code on it. Phones must be able to reach this laptop (see *N
 
 ## How a game works
 
-| Round | Monsters | Words | Points |
-|-------|----------|-------|--------|
-| 1 · EASY | Slime Swarm | 3–5 letters (`orc`, `sword`) | 10 per letter |
-| 2 · MEDIUM | Bat Storm | 6–8 letters (`dragon`, `gauntlet`) | 20 per letter |
-| 3 · HARD | Skull Inferno | 8–13 letters (`necromancer`) | 30 per letter |
+| Round | Monsters | Words | Points | Sky |
+|-------|----------|-------|--------|-----|
+| 1 · EASY | Slime Swarm | 3–5 letters (`orc`, `sword`) | 10 per letter | sunny morning, drifting clouds |
+| 2 · MEDIUM | Bat Storm | 6–8 letters (`dragon`, `gauntlet`) | 20 per letter | dusk, setting sun, bats |
+| 3 · HARD | Skull Inferno | 8–13 letters (`necromancer`) | 30 per letter | burning night, rising embers |
+| 4 · BOSS | The Dragon King | 8–13 letters | 30 per letter | volcano lair, lightning (option) |
 
 - Free-for-all: whoever finishes typing a word first gets it. Nobody else can score that word.
 - No Enter key needed. The word fires the moment it's spelled correctly. Enter clears the whole word;
-  Backspace deletes one letter.
+  Backspace deletes one letter, or every red (wrong) letter at once.
 - On phones, every hero stands on the battlefield: yours big in the middle, the rest beside you. When someone
   gets a word, their hero attacks it and their name pops up above them.
 - As you type, the letters that still match a word show gold (in the box and on the word itself). A typo
   shows white on red in the box, marks the exact letter you missed on the word you were going for, shakes
-  and buzzes, and a "TYPO!" hint shows how to fix it.
+  and buzzes, and a "TYPO!" hint shows how to fix it. One Backspace erases all the red letters, so you're
+  straight back to the part you got right.
 - If someone else gets the word you were halfway through (or it escapes), a big "TOO SLOW!" / "TOO LATE!"
   says who got it, and your input clears.
 - Words that reach the ground escape and nobody scores them.
 - More players means more words on screen at once.
+- Each monster goes out its own way: slimes splat, bats burst into feathers, skulls shatter. Long words shake
+  the screen, points float up with any bonus (`x2 STREAK`, `PERK`, `GOLD x3`), and in the last ten seconds of
+  a round the edges glow red, the clock ticks and the music speeds up.
+
+## Game options
+
+The host flips these on or off in the lobby (they're all on to start). The host's choices are remembered on
+that computer for the next game.
+
+| Option | What it does |
+|--------|--------------|
+| **STREAKS** | Words in a row without a typo multiply your points: x1.5 from 3, x2 from 6, x3 from 10 (team battle tops out at x2). Your hero catches fire, the big screen calls out **ON FIRE!** / **UNSTOPPABLE!** / **LEGENDARY!**, and your phone shows your streak. One wrong key ends it. |
+| **SPECIAL WORDS** | Now and then a falling word is special (free for all and solo). **Gold** (a coin) is worth x3. **Ice** (a snowflake) slows every word on screen for 6 seconds. **Bomb** blasts every word on screen and pays you half their points. |
+| **BOSS FINALE** | A fourth round against the Dragon King (free for all and solo). It has an HP bar that grows with the crowd, and every point anyone scores hurts it. Bring it down and everyone who hit it gets +500, and the final blow is worth +1000. If time runs out, it gets away. |
+| **CLASS PERKS** | Each class scores more on some words: Knight +30% on 3–5 letter words, Barbarian +30% on 6–7, Wizard +30% on 8+, Elf Archer +40% on words hit high up (or attacks blocked early), Rogue +50% on words about to land, Cleric +50% on special words (in a team battle, the power-ups a Cleric grabs last or heal 50% more). The phone shows your perk in the hero creator and the lobby. |
+| **AWARDS** | After the podium: Speed Demon (fastest WPM), Sharpshooter (fewest typos), Streak Master, Clutch Saver (words saved at the last second), Monster Slayer, Treasure Hunter (most special words) and Dragon Slayer. Everyone's phone shows their own WPM, accuracy and best streak. |
+| **EMOTES** | Players tap 👍 😂 😮 🔥 👏 😭 on their phones in the lobby, between rounds and on the results screen; the emoji pops up over their hero on the big screen. |
+| **MY WORDS** | Paste your own words (team names, product names, in-jokes). They're sorted by length into the rounds and come up often. Tick *Only use my words* to drop the built-in words for any round you've given at least 6 words. |
+| **MUSIC** | A chiptune soundtrack on the big screen: calm in the lobby and breaks, a track per round, a boss theme. |
+
+The podium fills in under a drumroll (third, then second, then the crowned winner), then the rest of the field
+and the awards.
+
+## Fair play (auto-typers)
+
+Auto-typer programs press real keys, so they can't be blocked by the page alone. The game catches them by
+timing instead:
+
+- Every word a player finishes is sent with the gaps between their keystrokes. The server refuses the word
+  if it was typed faster than any person can (under 25 ms a letter on average, about 400+ WPM), or if the
+  player's recent gaps are machine-even (people's gaps vary a lot), or if the typing took longer than the
+  word has been on screen (made-up timings).
+- A refused word stays on the field for everyone else, and the player sees **BLOCKED!**.
+- After 3 refused words the player is flagged: the host screen shows a red **AUTO?** in front of their name
+  (lobby, leaderboard, podium), and their score stays out of the Hall of Fame. The host can remove them with
+  the **X** in the lobby.
+- In the typing box, one key adds one letter. Paste, drag and drop, swipe typing and tapping a keyboard
+  suggestion are thrown away with a **TYPE IT!** message, and text put in by a script on the page is ignored.
+
+An auto-typer set to type slowly with random gaps can still pass, but it's no faster than a good human typist.
 
 ## Team battle
 
@@ -80,7 +122,7 @@ colors (archer, wizard, barbarian), 6 trims (the gold accents) and a companion p
 dragon or fox) that follows your hero into battle. The creator shows your hero on a mini battlefield doing
 their attack (tap it to attack again), and has **RANDOM LOOK** and a random-name button.
 
-**Host controls:** FREE FOR ALL / TEAM BATTLE, START BATTLE, SHUFFLE TEAMS, HALL OF FAME, SKIP ▶ (jump to the next phase), SOUND ON/OFF,
+**Host controls:** FREE FOR ALL / TEAM BATTLE, the game options, START BATTLE, SHUFFLE TEAMS, HALL OF FAME, SKIP ▶ (jump to the next phase), MUSIC ON/OFF, SOUND ON/OFF,
 PLAY AGAIN / BACK TO LOBBY on the podium screen. In the lobby, a hero's **X** removes them; in free for all
 clicking the hero also removes them, in a team battle it moves them to the other team.
 
@@ -91,16 +133,24 @@ Players who lose connection (phone locked, Wi-Fi blip) rejoin automatically with
 Anyone can practice alone, without a host screen: open `/play` (for example `http://192.168.1.20:3000/play`),
 build a hero and tap **PLAY SOLO**. It works on a laptop with a keyboard too.
 
-- Same three rounds as a battle, with shorter breaks (5 seconds instead of 9).
+- Same rounds as a battle with every game option on (streaks, special words, the boss, perks), and shorter
+  breaks (5 seconds instead of 9).
 - When you clear every monster, the next one appears right away, so faster typists score more.
 - The top bar shows **HI**, the best solo score so far. Tap **X** to abandon a run; abandoned runs aren't saved.
-- At the end you see your place in the solo Hall of Fame, then **PLAY AGAIN** or **MENU**.
+  **♪** turns the solo soundtrack on or off.
+- At the end you see your place in the solo Hall of Fame, your WPM, accuracy and best streak, then
+  **PLAY AGAIN** or **MENU**.
+
+**DAILY QUEST** is a solo run with the same words, in the same order and places, for everyone that day. It has
+its own Hall of Fame board that starts over at midnight (Philippine time; set `DAILY_TZ`, for example
+`DAILY_TZ=UTC`, to change it). Play it as often as you like; your best run counts.
 
 ## Hall of Fame
 
-Every finished game is recorded on one of two boards:
+Every finished game is recorded on one of three boards:
 
 - **Solo**: best solo quests.
+- **Daily**: today's daily quest.
 - **Battle**: best individual scores from multiplayer battles, with the place and player count of that battle.
 
 They're kept separate because in a battle the words are shared between everyone, so scores aren't comparable.
@@ -165,7 +215,10 @@ npm run bots -- ABCD 6
 Round length, fall speed, spawn rate and points multipliers are in the `ROUNDS` table at the top of
 `server.js`, next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings
 sit there too: `TEAM_HP`, how long attacks take to fly (`FLIGHT_MS`), how often power-ups appear and how long
-their effects last. Word lists are in `words.js`.
+their effects last. The game options have their own settings: the boss round (`BOSS_ROUND`, `BOSS_HP`, bonuses),
+streak steps (`STREAK_STEPS`), special words (`SPECIAL_CHANCE`, `GOLD_FACTOR`, `ICE_MS`, `BOMB_SHARE`) and class
+perks (`PERKS`). The auto-typer limits are the `KEY_*` and `FLAG_AFTER` settings. Word lists are in `words.js`.
+The music tracks are the `TRACKS` table in `public/js/common.js`.
 
 ## Files
 
@@ -175,6 +228,6 @@ their effects last. Word lists are in `words.js`.
 - `public/host.html`, `public/js/host.js`: big screen (QR lobby, battlefield, leaderboard, podium)
 - `public/play.html`, `public/js/play.js`: phone (hero creator, lobby, solo, typing, results, Hall of Fame)
 - `public/js/arena.js`: shared pixel battlefield renderer (monsters, attacks, particles)
-- `public/js/art.js`: pixel sprites and palettes (heroes, monsters, power-ups)
-- `public/js/common.js`: clock sync, DOM helper, 8-bit sound effects
+- `public/js/art.js`: pixel sprites and palettes (heroes, monsters, the Dragon King, special words, power-ups)
+- `public/js/common.js`: clock sync, DOM helper, 8-bit sound effects and the chiptune music
 - `scripts/bots.js`: test bots

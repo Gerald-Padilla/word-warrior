@@ -78,6 +78,7 @@
   const CLASSES = [
     {
       key: 'knight', name: 'Knight', attack: 'Sword Beam', blurb: 'Hurls a shining crescent of steel.',
+      perk: 'SWIFT BLADE: +30% on short words (3-5 letters)',
       pal: {},
       rows: [
         '......KPPK......',
@@ -100,6 +101,7 @@
     },
     {
       key: 'wizard', name: 'Wizard', attack: 'Fireball', blurb: 'Lobs a roaring ball of flame.',
+      perk: 'ARCANE MIND: +30% on long words (8+ letters)',
       pal: { F: '#5ee0ff', H: '#f4f4f8', h: '#c9cfdc' },
       rows: [
         '..........KK....',
@@ -122,6 +124,7 @@
     },
     {
       key: 'archer', name: 'Elf Archer', attack: 'Piercing Arrow', blurb: 'Never misses. Probably.',
+      perk: 'EAGLE EYE: +40% on words hit high up, or attacks blocked early',
       pal: { H: '#f2d16b', h: '#c9a43a' },
       rows: [
         '................',
@@ -144,6 +147,7 @@
     },
     {
       key: 'rogue', name: 'Rogue', attack: 'Dagger Volley', blurb: 'Three blades, zero hesitation.',
+      perk: 'LAST SECOND: +50% on words about to land',
       pal: {},
       rows: [
         '................',
@@ -166,6 +170,7 @@
     },
     {
       key: 'cleric', name: 'Cleric', attack: 'Holy Light', blurb: 'Smites from afar with radiance.',
+      perk: 'BLESSED: +50% on special words; power-ups last longer',
       pal: {},
       rows: [
         '......KKKK......',
@@ -188,6 +193,7 @@
     },
     {
       key: 'barbarian', name: 'Barbarian', attack: 'Spinning Axe', blurb: 'Throws first. Asks never.',
+      perk: 'CLEAVE: +30% on 6-7 letter words',
       pal: { H: '#d9682b', h: '#9c4317' },
       rows: [
         '................',
@@ -214,6 +220,7 @@
     slime: {
       pal: { A: '#6fd34f', a: '#3c8f2a', W: '#e9ffd9' },
       fx: ['#6fd34f', '#3c8f2a', '#b6f59a'],
+      death: 'splat',
       frameMs: 380,
       frames: [
         [
@@ -245,6 +252,7 @@
     bat: {
       pal: { A: '#7a55b0', a: '#45306b', R: '#ff3b3b', W: '#ffffff' },
       fx: ['#7a55b0', '#45306b', '#ff3b3b'],
+      death: 'feathers',
       frameMs: 160,
       frames: [
         [
@@ -274,6 +282,7 @@
     skull: {
       pal: { W: '#efe6d0', R: '#e8371c', Y: '#ffd23f', O: '#ff7b1c' },
       fx: ['#ff7b1c', '#ffd23f', '#efe6d0', '#e8371c'],
+      death: 'shatter',
       frameMs: 120,
       frames: [
         [
@@ -308,6 +317,103 @@
         ],
       ],
     },
+    // The boss round's minions: fire spirits that carry the Dragon King's words.
+    boss: {
+      pal: { Y: '#ffd23f', O: '#ff7b1c', R: '#e8371c', W: '#ffffff' },
+      fx: ['#ff7b1c', '#ffd23f', '#e8371c', '#7a1010'],
+      death: 'burst',
+      frameMs: 110,
+      frames: [
+        [
+          '....Y.......',
+          '...YO..Y....',
+          '..YOOY.OY...',
+          '..YOROYOOY..',
+          '.YORRROROY..',
+          '.YORWRRWROY.',
+          '.YORKRRKROY.',
+          '.YORRRRRROY.',
+          '..YORRRROY..',
+          '...YOOOOY...',
+          '....YYYY....',
+        ],
+        [
+          '.......Y....',
+          '....Y..OY...',
+          '...YOY.OOY..',
+          '..YOOYYORY..',
+          '.YORRROROY..',
+          '.YORWRRWROY.',
+          '.YORKRRKROY.',
+          '.YORRRRRROY.',
+          '..YORRRROY..',
+          '...YOOOOY...',
+          '....YYYY....',
+        ],
+      ],
+    },
+  };
+
+  // The Dragon King, drawn as the left half of the face and mirrored. Frame 1 roars.
+  const mirror = (rows) => rows.map((r) => r + [...r].reverse().join(''));
+  const BOSS_TOP = [
+    '............G..G',
+    '.H.........GGGGG',
+    '.HH........GYGGG',
+    '..HH......Kggggg',
+    '...HH...KKKRRRRR',
+    '...hHH.KRRRRRRRR',
+    '....hHKRRrRRRRRR',
+    '.....KRRrRRRRRRR',
+    '....KRRKKKRRRRRR',
+    '....KRKYWYKRRRRR',
+    '....KRKYYYKRRRRR',
+    '....KRRKKKRRRrRR',
+    '.....KRRRRRRrRRR',
+    '.....KRRRRRRRRRR',
+    '......KRRRRRKRRR',
+    '......KRRRROOOOO',
+    '.......KRROOOOOO',
+  ];
+  const BOSS = {
+    pal: { R: '#c0262e', r: '#7a1418', O: '#ff9a3c', Y: '#ffd23f', H: '#efe6d0', h: '#a89c80' },
+    frames: [
+      mirror(BOSS_TOP.concat([
+        '.......KRKKKKKKK',
+        '........KROOOOOO',
+        '.........KKKKKKK',
+        '................',
+        '................',
+      ])),
+      mirror(BOSS_TOP.concat([
+        '.......KRWKWKWKW',
+        '........KrrrrrOO',
+        '........KWKWKWKW',
+        '.........KROOOOO',
+        '..........KKKKKK',
+      ])),
+    ],
+  };
+
+  // Special falling words carry one of these instead of a monster.
+  const SPECIAL_ART = {
+    gold: {
+      name: 'GOLD', color: '#ffd23f', pal: {},
+      rows: ['...KKKK...', '.KKGGGGKK.', '.KGGWGGgK.', 'KGGWGGGGgK', 'KGGGKKGGgK', 'KGGGKKGGgK', 'KGGGGGGGgK', '.KGGGGGgK.', '.KKggggKK.', '...KKKK...'],
+    },
+    ice: {
+      name: 'ICE', color: '#7fd4ff', pal: { I: '#bfe9ff', i: '#5fb8ff' },
+      rows: ['....KK....', '...KIiK...', '.K.KIiK.K.', 'KIKKIiKKIK', '.KIIWWIIK.', '.KiiWWiiK.', 'KIKKIiKKIK', '.K.KIiK.K.', '...KIiK...', '....KK....'],
+    },
+    bomb: {
+      name: 'BOMB', color: '#ff7b1c', pal: { Y: '#ffd23f', O: '#ff7b1c' },
+      rows: ['......Y.O.', '.....O.Y..', '....KB....', '...KKKK...', '..KLLLLK..', '.KLWLLLLK.', '.KLWLLLLK.', '.KLLLLLLK.', '.KLLLLLlK.', '..KLLLlK..', '...KKKK...'],
+    },
+  };
+
+  const CROWN = {
+    pal: { R: '#e8374a', Y: '#4da6ff' },
+    rows: ['K....K....K', 'GK..KGK..KG', 'GGKKGGGKKGG', 'GGGGGGGGGGG', 'GRGGGYGGGRG', 'ggggggggggg', 'KKKKKKKKKKK'],
   };
 
   // Small rotatable axe used by the barbarian's projectile.
@@ -492,9 +598,26 @@
     return cache.get(`powurl:${key}`);
   }
 
+  function bossSprite(frame) {
+    const key = `boss:${frame % 2}`;
+    if (!cache.has(key)) cache.set(key, paint(BOSS.frames[frame % 2], { ...BASE, ...BOSS.pal }));
+    return cache.get(key);
+  }
+
+  function specialSprite(kind) {
+    const s = SPECIAL_ART[kind] || SPECIAL_ART.gold;
+    if (!cache.has(`sp:${kind}`)) cache.set(`sp:${kind}`, paint(s.rows, { ...BASE, ...s.pal }));
+    return cache.get(`sp:${kind}`);
+  }
+
+  function crownDataURL() {
+    if (!cache.has('crown')) cache.set('crown', paint(CROWN.rows, { ...BASE, ...CROWN.pal }).toDataURL());
+    return cache.get('crown');
+  }
+
   window.Art = {
-    BASE, COLORS, SKINS, HAIRS, TRIMS, PETS, CLASSES, MONSTERS, POWERS,
+    BASE, COLORS, SKINS, HAIRS, TRIMS, PETS, CLASSES, MONSTERS, POWERS, SPECIAL_ART,
     classByKey, classHasHair, heroSprite, heroDataURL, petSprite, petDataURL,
-    monsterSprite, axeSprite, powerSprite, powerDataURL,
+    monsterSprite, axeSprite, powerSprite, powerDataURL, bossSprite, specialSprite, crownDataURL,
   };
 })();
