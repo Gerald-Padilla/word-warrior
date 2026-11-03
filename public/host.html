@@ -46,7 +46,7 @@
     .round-chip small { display: block; font-size: 8px; color: var(--muted); }
     .round-chip.easy { color: #8be36b; } .round-chip.medium { color: #b99cff; } .round-chip.hard { color: #ff7b4a; } .round-chip.boss { color: #ff4d4d; }
     /* Game options: on/off switches the host flips before a game */
-    .opts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .opts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
     .opt { font: inherit; font-size: 9px; padding: 7px 6px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); text-align: left; line-height: 1.6; }
     .opt small { display: block; font-size: 6px; line-height: 1.6; }
     .opt::before { content: 'OFF '; color: var(--red); }
@@ -257,6 +257,7 @@
           <button class="opt" type="button" data-opt="specials">SPECIAL WORDS<small>Gold x3, ice slows all, bombs blast all</small></button>
           <button class="opt" type="button" data-opt="boss">BOSS FINALE<small>Round 4: everyone vs the Dragon King</small></button>
           <button class="opt" type="button" data-opt="perks">CLASS PERKS<small>Each class scores more on some words</small></button>
+          <button class="opt" type="button" data-opt="skills">SKILLS<small>Every 8 words charges a class skill</small></button>
           <button class="opt" type="button" data-opt="awards">AWARDS<small>Speed Demon, Sharpshooter and more</small></button>
           <button class="opt" type="button" data-opt="emotes">EMOTES<small>Players send emojis from their phones</small></button>
           <button class="opt words" type="button" id="btnWords">MY WORDS: <b id="wordCount">0</b><small>Add your own words to the mix</small></button>
@@ -351,6 +352,7 @@
   </section>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/build.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/art.js"></script>
   <script src="/js/arena.js"></script>

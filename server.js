@@ -41,7 +41,7 @@ const SLOW_FACTOR = 1.6; // Slow Time: attacks coming at your team take this muc
 const HASTE_FACTOR = 0.6; // Haste: your team's attacks fly this much faster
 const POTION_HEAL = 0.15; // Health Potion: share of max HP restored
 const MAX_PLAYERS = 60;
-const CLASSES = ['knight', 'wizard', 'archer', 'rogue', 'cleric', 'barbarian'];
+const CLASSES = ['knight', 'wizard', 'archer', 'rogue', 'cleric', 'barbarian', 'ninja', 'necromancer', 'druid', 'pirate', 'bard', 'valkyrie'];
 const COLOR_COUNT = 8;
 const SKIN_COUNT = 4;
 const HAIR_COUNT = 8; // 0 = the class's own hair color
@@ -76,22 +76,56 @@ const ICE_MS = 6000; // ice slows every word on screen for this long
 const ICE_FACTOR = 1.8; // ...by this much
 const BOMB_SHARE = 0.5; // a bomb blasts every word on screen and pays this share of their points
 
-// Class perks (option): each class earns a bonus on one kind of word. `p` is how far the word has fallen
-// or flown (0..1), or null for words that don't move.
+// Class perks (option): each class scores more on one kind of word. The bonuses are sized so that every
+// perk adds about 10% to an average game: they were measured over simulated games with the real word
+// lists, and a perk that fires on less of your points gets a bigger bonus. Only things about the word
+// (and your own typing) count, never when you hit it, so a perk is worth the same in solo, in a crowd
+// and in a team battle. test(word, player, room) runs before the claim updates the player.
+const vowels = (t) => (t.match(/[aeiou]/g) || []).length;
+const specialsOn = (room) => room.options.specials && room.mode !== 'teams';
 const PERKS = {
-  knight: { bonus: 0.3, test: (w) => w.text.length <= 5 },
-  barbarian: { bonus: 0.3, test: (w) => w.text.length >= 6 && w.text.length <= 7 },
-  wizard: { bonus: 0.3, test: (w) => w.text.length >= 8 },
-  archer: { bonus: 0.4, test: (w, p) => p !== null && p < 1 / 3 },
-  rogue: { bonus: 0.5, test: (w, p) => p !== null && p > 0.75 },
-  cleric: { bonus: 0.5, test: (w) => Boolean(w.special) || w.kind === 'power' },
+  knight: { bonus: 0.4, test: (w) => w.text.length <= 7 }, // 24% of a game's points
+  barbarian: { bonus: 0.2, test: (w) => w.text.length >= 8 && w.text.length <= 10 }, // 46%
+  wizard: { bonus: 0.35, test: (w) => w.text.length >= 11 }, // 30%
+  archer: { bonus: 0.25, test: (w) => /[jkqvwxyz]/.test(w.text) }, // 44%
+  rogue: { bonus: 0.2, test: (w) => w.text.includes('s') }, // 47%
+  necromancer: { bonus: 0.5, test: (w) => /(.)\1/.test(w.text) }, // 21%
+  druid: { bonus: 0.3, test: (w) => vowels(w.text) >= 4 }, // 35%
+  valkyrie: { bonus: 0.55, test: (w) => /^[aeiou]/.test(w.text) }, // 19%
+  bard: { bonus: 0.35, test: (w, pl) => pl.lastLen === w.text.length }, // 27%
+  pirate: { bonus: 0.5, test: (w, pl) => (pl.typed + 1) % 5 === 0 }, // 20%
+  ninja: { bonus: 0.12, test: (w, pl) => !pl.typoSince }, // ~80% for most typists
+  // Special words fall only in free for all and solo; without them the cleric gets a little on everything.
+  cleric: { bonus: (room) => (specialsOn(room) ? 0.6 : 0.1), test: (w, pl, room) => !specialsOn(room) || Boolean(w.special) }, // ~16%
 };
 const CLERIC_POWER_BOOST = 1.5; // team battle: a cleric's power-ups last (or heal) this much more
+
+// Skills (option): every SKILL_WORDS words you type charge your class's skill; then you can use it once.
+// Each is worth about three words' points: boosts add to your next words' base points (not on top of
+// your streak), strikes hit words on screen for their base points, so no class pulls ahead by its skill.
+const SKILL_WORDS = 8;
+const SKILLS = {
+  knight: { name: 'RALLY', kind: 'empower', count: 3, mult: 2 },
+  barbarian: { name: 'BERSERK', kind: 'empower', count: 2, mult: 2.5 },
+  cleric: { name: 'DIVINE FAVOR', kind: 'empower', count: 4, mult: 1.75 },
+  druid: { name: 'OVERGROWTH', kind: 'empower', count: 6, mult: 1.5 },
+  wizard: { name: 'METEOR', kind: 'strike', pick: 'rich', count: 2, share: 1.2 },
+  rogue: { name: 'BACKSTAB', kind: 'strike', pick: 'low', count: 3, share: 1 },
+  archer: { name: 'ARROW RAIN', kind: 'strike', pick: 'high', count: 3, share: 1 },
+  ninja: { name: 'SHURIKEN STORM', kind: 'strike', pick: 'random', count: 3, share: 1 },
+  pirate: { name: 'CANNON BARRAGE', kind: 'strike', pick: 'random', count: 4, share: 0.75 },
+  valkyrie: { name: 'THUNDERCLAP', kind: 'strike', pick: 'low', count: 6, share: 0.5 },
+  necromancer: { name: 'RAISE DEAD', kind: 'raise', count: 3 },
+  bard: { name: 'ENCORE', kind: 'encore', count: 3 },
+};
+const SKILL_LAUNCHES = 3; // team battle: a strike with nothing to block fires up to this many attacks
 const CLUTCH_PROGRESS = 0.85; // a word typed past this far down counts as a clutch save
 
 // Host options. Solo quests always play with the defaults.
-const OPTION_KEYS = ['streaks', 'specials', 'boss', 'perks', 'awards', 'emotes'];
-const DEFAULT_OPTIONS = { streaks: true, specials: true, boss: true, perks: true, awards: true, emotes: true, onlyMine: false };
+const OPTION_KEYS = ['streaks', 'specials', 'boss', 'perks', 'skills', 'awards', 'emotes'];
+const DEFAULT_OPTIONS = {
+  streaks: true, specials: true, boss: true, perks: true, skills: true, awards: true, emotes: true, onlyMine: false,
+};
 const MY_WORDS_MAX = 300; // custom words the host can add
 const MY_WORDS_MIN = 6; // "only my words" needs at least this many for a round, or the built-in words fill in
 const EMOTE_COUNT = 6;
@@ -151,6 +185,26 @@ function addToHall(board, entry) {
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { pingInterval: 10000, pingTimeout: 20000 });
+
+// A fingerprint of the code phones and the big screen run. Pages compare it with the server's on every
+// (re)connect, so a page left open across an update reloads itself instead of running old code against
+// the new server (which, for one, refuses claims without keystroke timings).
+const BUILD = (() => {
+  const hash = crypto.createHash('sha1');
+  const walk = (dir) => {
+    for (const name of fs.readdirSync(dir).sort()) {
+      const p = path.join(dir, name);
+      if (fs.statSync(p).isDirectory()) walk(p);
+      else hash.update(fs.readFileSync(p));
+    }
+  };
+  walk(path.join(__dirname, 'public'));
+  hash.update(fs.readFileSync(__filename));
+  return hash.digest('hex').slice(0, 12);
+})();
+app.get('/build.js', (req, res) => {
+  res.type('js').set('Cache-Control', 'no-store').send(`window.WW_BUILD = ${JSON.stringify(BUILD)};`);
+});
 
 const fontDir = path.dirname(require.resolve('@fontsource/press-start-2p/package.json'));
 app.use('/vendor/press-start-2p', express.static(fontDir));
@@ -252,11 +306,14 @@ function cleanLook(data) {
 
 // Per-game typing stats, for the end-of-game awards.
 const newStats = () => ({ words: 0, chars: 0, gapChars: 0, typeMs: 0, typos: 0, bestStreak: 0, clutch: 0, specials: 0, bossDmg: 0, bossKill: false });
+// Per-game state for perks and skills: words typed, the last word's length, a typo since the last word,
+// skill charge, an active boost ({ left, extra }) and the base points of the last few words.
+const newKit = () => ({ typed: 0, lastLen: 0, typoSince: false, charge: 0, empower: null, recent: [] });
 
 function newPlayer(data) {
   return {
     id: shortId(), token: token(), name: cleanName(data.name) || 'Hero', ...cleanLook(data),
-    score: 0, kills: 0, roundScores: ROUNDS.map(() => 0), team: 0, streak: 0, stats: newStats(),
+    score: 0, kills: 0, roundScores: ROUNDS.map(() => 0), team: 0, streak: 0, stats: newStats(), ...newKit(),
     socketId: null, connected: true, joinedAt: Date.now(), bot: Boolean(data.bot),
     keyGaps: [], strikes: 0, flagged: false, // auto-type guard
   };
@@ -413,6 +470,8 @@ function resetPlayers(room) {
     p.roundScores = room.rounds.map(() => 0);
     p.streak = 0;
     p.stats = newStats();
+    Object.assign(p, newKit());
+    sendCharge(room, p);
   }
 }
 
@@ -445,6 +504,8 @@ function beginPlaying(room) {
   room.words.clear();
   room.recentKills.clear();
   room.iceUntil = 0;
+  room.escaped = []; // base points of words that got away this round (Raise Dead brings them back)
+  room.hits = [[], []]; // team battle: damage each team took this round, latest last
   room.stream = newStream(Date.now() + 200);
   room.stream.pool = poolFor(room, cfg);
   if (room.daily) {
@@ -579,6 +640,7 @@ function tick(room) {
   for (const w of room.words.values()) {
     if (now >= w.spawn + w.dur) {
       room.words.delete(w.id);
+      room.escaped.push(w.points);
       io.to(channel(room)).emit('word:escape', { id: w.id });
     }
   }
@@ -721,9 +783,11 @@ function blast(room, player, now) {
   return total;
 }
 
-// What a claim is worth on top of the word's own points: the hero's streak (which this word extends),
-// their class perk and a gold word's bonus. `p` is how far the word had come (0..1), or null.
-function boost(room, player, w, p) {
+// What a typed word is worth on top of its own points: `factor` (the hero's streak, which this word
+// extends, their class perk and a gold word's bonus) multiplies them; `extra` (a skill boost) adds a share
+// of the base points on top, so a boost isn't multiplied by a streak. Also moves the hero's perk and skill
+// bookkeeping on by one word.
+function boost(room, player, w) {
   const o = room.options;
   let factor = 1;
   let mult = 1;
@@ -735,10 +799,149 @@ function boost(room, player, w, p) {
     factor *= mult;
   }
   const perkDef = o.perks && PERKS[player.cls];
-  const perk = Boolean(perkDef && perkDef.test(w, p));
-  if (perk) factor *= 1 + perkDef.bonus;
+  const perk = Boolean(perkDef && perkDef.test(w, player, room));
+  if (perk) factor *= 1 + (typeof perkDef.bonus === 'function' ? perkDef.bonus(room) : perkDef.bonus);
   if (w.special === 'gold') factor *= GOLD_FACTOR;
-  return { factor, mult, perk, streak: o.streaks ? player.streak : 0 };
+  let extra = 0;
+  if (player.empower) {
+    extra = player.empower.extra;
+    player.empower.left -= 1;
+    if (player.empower.left <= 0) player.empower = null;
+  }
+  player.typed += 1;
+  player.lastLen = w.text.length;
+  player.typoSince = false;
+  const base = w.points ?? w.dmg ?? 0;
+  if (base) player.recent = player.recent.concat(base).slice(-3);
+  if (o.skills && player.charge < SKILL_WORDS) player.charge += 1;
+  sendCharge(room, player);
+  return { factor, mult, perk, extra, streak: o.streaks ? player.streak : 0 };
+}
+
+// ---- Skills ----------------------------------------------------------------
+// Only the hero's own phone needs to know how charged their skill is.
+function sendCharge(room, player) {
+  if (!player.socketId) return;
+  io.to(player.socketId).emit('skill:charge', {
+    on: room.options.skills, charge: player.charge, max: SKILL_WORDS, boost: player.empower ? player.empower.left : 0,
+  });
+}
+
+function addScore(room, player, points) {
+  player.score += points;
+  player.roundScores[room.round] += points;
+}
+
+// Order words (or attacks in the air) for a strike: closest to the ground, newest, most valuable or random.
+function pickTargets(list, pick, progress, value) {
+  if (pick === 'low') return list.sort((a, b) => progress(b) - progress(a));
+  if (pick === 'high') return list.sort((a, b) => progress(a) - progress(b));
+  if (pick === 'rich') return list.sort((a, b) => value(b) - value(a));
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list;
+}
+
+// Free for all and solo: the hero's attack hits words on screen for (a share of) their points. Hits that
+// find nothing (a nearly empty field in a crowded game) carry over as a boost on the hero's next words,
+// so a strike is worth the same however busy the field is.
+function strikeWords(room, player, pick, count, share, now) {
+  const list = [...room.words.values()].filter((w) => now >= w.spawn);
+  const targets = pickTargets(list, pick, (x) => (now - x.spawn) / x.dur, (x) => x.points).slice(0, count);
+  const missed = count - targets.length;
+  if (missed > 0) {
+    const had = player.empower;
+    player.empower = { left: (had ? had.left : 0) + missed, extra: Math.max(share, had ? had.extra : 0) };
+  }
+  let total = 0;
+  for (const w of targets) {
+    const points = Math.round(w.points * (w.special === 'gold' ? GOLD_FACTOR : 1) * share);
+    room.words.delete(w.id);
+    room.recentKills.set(w.id, { by: player.id, at: now });
+    addScore(room, player, points);
+    player.kills += 1;
+    total += points;
+    io.to(channel(room)).emit('word:kill', {
+      id: w.id, by: player.id, points, score: player.score, kills: player.kills,
+      roundScore: player.roundScores[room.round], skill: true,
+    });
+  }
+  return total;
+}
+
+// Team battle: a strike blocks attacks flying at the hero's team; with fewer to block, it fires the
+// team's own attack words instead (up to SKILL_LAUNCHES).
+function strikeDuel(room, player, pick, count, share, now) {
+  const cfg = room.rounds[room.round];
+  const incoming = [...room.words.values()].filter((w) => w.kind === 'missile' && w.team !== player.team);
+  const blocks = pickTargets(incoming, pick, (x) => (now - x.launch) / x.dur, (x) => x.dmg).slice(0, count);
+  for (const w of blocks) {
+    const gained = Math.round(w.dmg * share);
+    room.words.delete(w.id);
+    room.recentKills.set(w.id, { by: player.id, at: now });
+    addScore(room, player, gained);
+    player.kills += 1;
+    io.to(channel(room)).emit('duel:block', {
+      id: w.id, by: player.id, score: player.score, kills: player.kills, roundScore: player.roundScores[room.round],
+      gained, skill: true,
+    });
+  }
+  const launches = Math.min(SKILL_LAUNCHES, Math.max(0, count - blocks.length));
+  const slots = [...room.words.values()].filter((w) => w.kind === 'attack' && w.team === player.team).sort((a, b) => a.id - b.id);
+  for (const slot of slots.slice(0, launches)) {
+    room.words.delete(slot.id);
+    const m = {
+      id: room.nextWordId++, kind: 'missile', team: slot.team, by: player.id, text: slot.text, at: now,
+      launch: now, dur: flightMs(room, slot.team, now), dmg: Math.round(slot.points * share),
+    };
+    room.words.set(m.id, m);
+    io.to(channel(room)).emit('duel:launch', { slot: slot.id, missile: m, skill: true });
+    addSlot(room, slot.team, cfg);
+  }
+}
+
+function useSkill(room, player, now) {
+  const s = SKILLS[player.cls] || SKILLS.knight;
+  const teams = room.mode === 'teams';
+  let total = 0;
+  if (s.kind === 'empower') {
+    player.empower = { left: s.count, extra: s.mult - 1 };
+  } else if (s.kind === 'strike') {
+    if (teams) strikeDuel(room, player, s.pick, s.count, s.share, now);
+    else total = strikeWords(room, player, s.pick, s.count, s.share, now);
+  } else if (s.kind === 'raise') {
+    // Words that got away this round come back as points; in a team battle, the last hits your team took
+    // are healed. If there aren't enough, the rest strike like a Rogue's Backstab.
+    const pool = teams ? room.hits[player.team] : room.escaped;
+    const back = pool.splice(Math.max(0, pool.length - s.count));
+    total = back.reduce((a, b) => a + b, 0);
+    if (teams) {
+      const t = room.teams[player.team];
+      t.hp = Math.min(t.max, t.hp + total);
+    } else {
+      addScore(room, player, total);
+    }
+    const rest = s.count - back.length;
+    if (rest > 0 && teams) strikeDuel(room, player, 'low', rest, 1, now);
+    else if (rest > 0) total += strikeWords(room, player, 'low', rest, 1, now);
+  } else if (s.kind === 'encore') {
+    // Your last few words score again; in a team battle they hit the other team directly.
+    total = player.recent.reduce((a, b) => a + b, 0);
+    addScore(room, player, total);
+    if (teams) {
+      const t = room.teams[1 - player.team];
+      t.hp = Math.max(0, t.hp - total);
+    }
+  }
+  if (!teams) hurtBoss(room, player, total);
+  io.to(channel(room)).emit('skill:use', {
+    id: player.id, cls: player.cls, name: s.name, kind: s.kind, total,
+    score: player.score, roundScore: player.roundScores[room.round], kills: player.kills,
+    hp: room.teams ? room.teams.map((t) => t.hp) : null,
+  });
+  if (teams && s.kind === 'encore' && room.teams[1 - player.team].hp === 0) knockOut(room, player.team);
 }
 
 function trackStats(player, w, keys, p) {
@@ -857,6 +1060,7 @@ function land(room, m, now) {
   const dmg = shielded ? 0 : m.dmg;
   const t = room.teams[target];
   t.hp = Math.max(0, t.hp - dmg);
+  if (dmg) room.hits[target].push(dmg);
   const p = room.players.get(m.by);
   if (p) {
     p.score += dmg;
@@ -890,12 +1094,12 @@ function duelClaim(room, player, w, now) {
   const cfg = room.rounds[room.round];
   if (w.kind === 'attack') {
     if (w.team !== player.team) return { ok: false, reason: 'other-team' };
-    const g = boost(room, player, w, null);
+    const g = boost(room, player, w);
     room.words.delete(w.id);
     const fury = effectOn(room, w.team, 'fury', now) ? 2 : 1;
     const m = {
       id: room.nextWordId++, kind: 'missile', team: w.team, by: player.id, text: w.text, at: now,
-      launch: now, dur: flightMs(room, w.team, now), dmg: Math.round(w.points * fury * g.factor),
+      launch: now, dur: flightMs(room, w.team, now), dmg: Math.round(w.points * fury * g.factor) + Math.round(w.points * g.extra),
     };
     room.words.set(m.id, m);
     player.kills += 1;
@@ -906,8 +1110,8 @@ function duelClaim(room, player, w, now) {
   if (w.kind === 'missile') {
     if (w.team === player.team) return { ok: false, reason: 'own-attack' };
     const p = clamp01((now - w.launch) / w.dur);
-    const g = boost(room, player, w, p);
-    const gained = Math.round(w.dmg * g.factor);
+    const g = boost(room, player, w);
+    const gained = Math.round(w.dmg * g.factor) + Math.round(w.dmg * g.extra);
     room.words.delete(w.id);
     player.score += gained; // blocked damage counts toward your score
     player.kills += 1;
@@ -919,7 +1123,7 @@ function duelClaim(room, player, w, now) {
     return { ok: true, p };
   }
   // Power-up: first team to type it gets it.
-  const g = boost(room, player, w, null);
+  const g = boost(room, player, w);
   room.words.delete(w.id);
   applyPower(room, player.team, w.power, now, g.perk ? CLERIC_POWER_BOOST : 1);
   player.kills += 1;
@@ -979,6 +1183,7 @@ io.on('connection', (socket) => {
     return { room, player, isHost };
   };
 
+  socket.emit('build', BUILD);
   socket.on('time', (cb) => reply(cb, Date.now()));
 
   // Host ---------------------------------------------------------------
@@ -1119,6 +1324,7 @@ io.on('connection', (socket) => {
     attachPlayer(room, p);
     broadcastPlayers(room);
     reply(cb, { ok: true, token: p.token, you: p.id, snapshot: snapshot(room) });
+    sendCharge(room, p);
   });
 
   socket.on('player:team', () => {
@@ -1155,6 +1361,7 @@ io.on('connection', (socket) => {
     attachPlayer(room, p);
     broadcastPlayers(room);
     reply(cb, { ok: true, token: p.token, you: p.id, snapshot: snapshot(room) });
+    sendCharge(room, p);
   });
 
   socket.on('player:update', (data) => {
@@ -1190,8 +1397,8 @@ io.on('connection', (socket) => {
     }
 
     const p = clamp01((now - word.spawn) / word.dur);
-    const g = boost(room, player, word, p);
-    const points = Math.round(word.points * g.factor);
+    const g = boost(room, player, word);
+    const points = Math.round(word.points * g.factor) + Math.round(word.points * g.extra);
     room.words.delete(id);
     room.recentKills.set(id, { by: player.id, at: now });
     player.score += points;
@@ -1200,7 +1407,7 @@ io.on('connection', (socket) => {
     trackStats(player, word, data.keys, p);
     io.to(channel(room)).emit('word:kill', {
       id, by: player.id, points, score: player.score, kills: player.kills, roundScore: player.roundScores[room.round],
-      streak: g.streak, mult: g.mult, perk: g.perk, special: word.special || null,
+      streak: g.streak, mult: g.mult, perk: g.perk, boosted: g.extra > 0, special: word.special || null,
     });
     let dealt = points;
     if (word.special === 'ice') freeze(room, now);
@@ -1214,10 +1421,22 @@ io.on('connection', (socket) => {
     const { room, player } = ctx();
     if (!player || room.state !== 'playing') return;
     player.stats.typos += 1;
+    player.typoSince = true; // the ninja's perk is for words typed clean
     if (!player.streak) return;
     const lost = player.streak;
     player.streak = 0;
     if (room.options.streaks) io.to(channel(room)).emit('player:streak', { id: player.id, streak: 0, lost });
+  });
+
+  socket.on('player:skill', (_data, cb) => {
+    const { room, player } = ctx();
+    const live = player && room.options.skills && room.state === 'playing' && !room.ko && !(room.boss && room.boss.down);
+    if (!live) return reply(cb, { ok: false, reason: 'not-now' });
+    if (player.charge < SKILL_WORDS) return reply(cb, { ok: false, reason: 'charging' });
+    player.charge = 0;
+    useSkill(room, player, Date.now());
+    sendCharge(room, player);
+    reply(cb, { ok: true });
   });
 
   socket.on('player:emote', (data) => {

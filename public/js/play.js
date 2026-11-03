@@ -1,6 +1,6 @@
 // Phone controller: hero creator, lobby, typing battle and results.
 (function () {
-  const { $, el, syncClock, rankPlayers, TEAMS, Sfx, Music, EMOTES } = window.WW;
+  const { $, el, syncClock, watchBuild, rankPlayers, TEAMS, Sfx, Music, EMOTES } = window.WW;
   const { CLASSES, COLORS, SKINS, HAIRS, TRIMS, PETS, POWERS } = window.Art;
   const { heroDataURL, petDataURL, powerDataURL, classByKey, classHasHair } = window.Art;
 
@@ -11,6 +11,7 @@
   };
 
   const socket = io();
+  watchBuild(socket);
   let offset = 0;
   const now = () => Date.now() + offset;
   const arena = new Arena($('#arena'), { mode: 'phone', now });
@@ -162,6 +163,7 @@
     $('#clsAttack').textContent = `ATTACK: ${cls.attack}`;
     $('#clsBlurb').textContent = cls.blurb;
     $('#clsPerk').textContent = `PERK: ${cls.perk} (when class perks are on)`;
+    $('#clsSkill').textContent = `SKILL: ${cls.skill} (charges every 8 words, when skills are on)`;
     stage.setPlayers([{ id: 'you', ...look, name: look.name || 'You', connected: true }]);
     if (animate) stage.heroHop.set('you', performance.now());
   }
@@ -397,6 +399,65 @@
     if (navigator.vibrate) navigator.vibrate([80, 40, 160]);
   });
 
+  // ---- skills -------------------------------------------------------
+  // Typing words charges your class's skill; when it's full, tap the button (or press Space) to use it.
+  let skill = { on: false, charge: 0, max: 8, boost: 0 };
+  const skillOf = (p) => {
+    const [name, desc] = classByKey(p ? p.cls : look.cls).skill.split(': ');
+    return { name, desc };
+  };
+  socket.on('skill:charge', (s) => {
+    const was = skill.charge >= skill.max;
+    skill = s;
+    const ready = skill.charge >= skill.max;
+    if (ready && !was && state.state === 'playing') {
+      Sfx.play('reveal');
+      showToast(`${skillOf(me()).name} READY! TAP IT OR PRESS SPACE`, 'good', 2000);
+    }
+    renderSkill();
+  });
+  socket.on('skill:use', (u) => {
+    setScore(u.id, u.score, u.roundScore, u.kills);
+    if (u.hp) setHp(u.hp);
+    const p = players.find((pl) => pl.id === u.id);
+    const s = skillOf(p);
+    if (u.id === you) {
+      arena.callout(`${u.name}!`, '#7fd4ff', u.total ? `+${u.total}` : s.desc);
+      arena.heroHop.set(you, performance.now());
+      Sfx.play('award');
+      if (navigator.vibrate) navigator.vibrate([30, 30, 60]);
+    } else {
+      showToast(`${p ? p.name : 'Someone'} USED ${u.name}!`, '', 1600);
+    }
+  });
+
+  function renderSkill() {
+    const btn = $('#btnSkill');
+    const st = state.state;
+    const on = Boolean(skill.on && options.skills && you && (st === 'countdown' || st === 'playing' || st === 'intermission'));
+    btn.classList.toggle('hidden', !on);
+    if (!on) return;
+    const { name } = skillOf(me());
+    const ready = skill.charge >= skill.max;
+    btn.className = `skill${ready ? ' ready' : ''}${skill.boost ? ' boost' : ''}`;
+    btn.innerHTML = '';
+    btn.append(el('b', { text: name }),
+      ready ? 'READY! (SPACE)' : skill.boost ? `BOOST x${skill.boost} LEFT` : `${skill.charge}/${skill.max} WORDS`,
+      el('span', { class: 'fill', style: `width:${Math.min(100, (skill.charge / skill.max) * 100)}%` }));
+  }
+
+  function useSkill() {
+    if (skill.charge < skill.max || state.state !== 'playing') return;
+    skill.charge = 0;
+    renderSkill();
+    socket.emit('player:skill', {}, (res) => {
+      if (res && !res.ok && res.reason === 'charging') showToast('SKILL STILL CHARGING', 'bad');
+    });
+  }
+  // Keep the keyboard up: the button acts on press without taking focus from the typing box.
+  $('#btnSkill').addEventListener('pointerdown', (e) => e.preventDefault());
+  $('#btnSkill').addEventListener('click', useSkill);
+
   // Streak milestones of your own get a callout; the chip in the corner keeps count.
   const STREAK_CALLS = { 3: ['ON FIRE!', '#ff7b1c'], 6: ['UNSTOPPABLE!', '#7fd4ff'], 10: ['LEGENDARY!', '#bb8cff'] };
   function noteStreak(by, k) {
@@ -453,7 +514,7 @@
       Sfx.play('shoot');
       if (navigator.vibrate) navigator.vibrate(25);
     }
-    noteStreak(missile.by, d);
+    if (!d.skill) noteStreak(missile.by, d);
   });
   socket.on('duel:block', (b) => {
     const w = arena.words.get(b.id);
@@ -461,7 +522,7 @@
     setScore(b.by, b.score, b.roundScore, b.kills);
     arena.duelBlock(b.id, b.by);
     if (b.by === you) showToast(`BLOCKED! +${b.gained}${b.perk ? ' PERK' : ''}`, 'good');
-    noteStreak(b.by, b);
+    if (!b.skill) noteStreak(b.by, b);
   });
   socket.on('duel:hit', (h) => {
     const w = arena.words.get(h.id);
@@ -637,6 +698,7 @@
     updateTapHint();
     renderStreak();
     renderEmotes();
+    renderSkill();
     syncMusic();
   }
 
@@ -927,6 +989,10 @@
     if (e.key === 'Enter' || e.keyCode === 13) {
       e.preventDefault();
       clearTyping();
+    } else if (e.key === ' ' || e.code === 'Space') {
+      // No word has a space, so Space is free for the class skill.
+      e.preventDefault();
+      useSkill();
     }
   });
 
@@ -941,6 +1007,10 @@
         // You finished it, but someone's claim reached the server first.
         toasted.add(word.id);
         showSteal('TOO SLOW!', `${res.by || 'Someone'} got "${word.text}" first`);
+      } else if (res && !res.ok && res.reason !== 'taken' && res.reason !== 'not-playing') {
+        // Anything else the server refused: say so rather than leave the word sitting there.
+        showToast(res.reason === 'other-team' ? "THAT'S THE OTHER TEAM'S WORD" : res.reason === 'own-attack'
+          ? 'THAT ONE IS YOUR TEAM\'S ATTACK' : "THAT WORD DIDN'T COUNT", 'bad', 1800);
       }
     });
   }
@@ -960,10 +1030,11 @@
     } else if (word) {
       toasted.add(k.id);
       if (k.bomb) lostWord(word.text, 'BOOM!', `${name}'s bomb blasted "${word.text}"`);
+      else if (k.skill) lostWord(word.text, 'ZAP!', `${name}'s skill hit "${word.text}"`);
       else lostWord(word.text, 'TOO SLOW!', `${name} got "${word.text}"`);
     }
     arena.kill(k.id, k.by, k.points, k);
-    if (!k.bomb) noteStreak(k.by, k);
+    if (!k.bomb && !k.skill) noteStreak(k.by, k);
     if (k.special === 'ice') {
       arena.callout('FREEZE!', '#7fd4ff', k.by === you ? 'Everything falls slower' : `${name} slowed everything`);
       Sfx.play('freeze');
@@ -1036,7 +1107,7 @@
     // What the host has switched on, and your class's perk when perks are on.
     const opts = $('#lobbyOpts');
     opts.innerHTML = '';
-    const names = { streaks: 'STREAKS', specials: 'SPECIAL WORDS', boss: 'BOSS FINALE', perks: 'CLASS PERKS', awards: 'AWARDS' };
+    const names = { streaks: 'STREAKS', specials: 'SPECIAL WORDS', boss: 'BOSS FINALE', perks: 'CLASS PERKS', skills: 'SKILLS', awards: 'AWARDS' };
     for (const [k, label] of Object.entries(names)) {
       if (options[k] && !(tb && (k === 'boss' || k === 'specials'))) opts.append(el('span', { text: label }));
     }
@@ -1044,6 +1115,9 @@
     const perk = options.perks && mine ? classByKey(mine.cls).perk : '';
     $('#lobbyPerk').textContent = perk ? `PERK: ${perk}` : '';
     $('#lobbyPerk').classList.toggle('hidden', !perk);
+    const skl = options.skills && mine ? classByKey(mine.cls).skill : '';
+    $('#lobbySkill').textContent = skl ? `SKILL: ${skl} (every 8 words; tap it or press Space)` : '';
+    $('#lobbySkill').classList.toggle('hidden', !skl);
     const roster = $('#lobbyRoster');
     roster.innerHTML = '';
     for (const p of players) {

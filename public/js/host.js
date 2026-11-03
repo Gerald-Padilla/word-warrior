@@ -1,9 +1,10 @@
 // Host / big-screen controller: QR lobby, live battlefield, leaderboard and podium.
 (function () {
-  const { $, el, syncClock, rankPlayers, TEAMS, Sfx, Music, EMOTES } = window.WW;
+  const { $, el, syncClock, watchBuild, rankPlayers, TEAMS, Sfx, Music, EMOTES } = window.WW;
   const { heroDataURL, powerDataURL, crownDataURL, POWERS } = window.Art;
 
   const socket = io();
+  watchBuild(socket);
   let offset = 0;
   const now = () => Date.now() + offset;
   const arena = new Arena($('#arena'), { mode: 'host', now });
@@ -99,9 +100,22 @@
     setTimeout(() => Sfx.play('win'), 700);
   });
 
+  // A hero used their class skill.
+  socket.on('skill:use', (u) => {
+    setScore(u.id, u.score, u.roundScore, u.kills);
+    if (u.hp) setHp(u.hp);
+    const p = players.find((pl) => pl.id === u.id);
+    const desc = window.Art.classByKey(p ? p.cls : u.cls).skill.split(': ')[1] || '';
+    arena.callout(`${u.name}!`, '#7fd4ff', `${p ? p.name : 'Someone'} · ${u.total ? `+${u.total}` : desc}`);
+    arena.heroHop.set(u.id, performance.now());
+    Sfx.play('award');
+    scheduleBoard();
+  });
+
   // Streak milestones, ice and bombs get a callout across the field.
   const STREAK_CALLS = { 3: ['ON FIRE!', '#ff7b1c'], 6: ['UNSTOPPABLE!', '#7fd4ff'], 10: ['LEGENDARY!', '#bb8cff'] };
   function announce(by, k) {
+    if (k.skill) return; // the skill's own callout covers it
     const p = players.find((pl) => pl.id === by);
     if (p && k.streak !== undefined) p.streak = k.streak;
     const name = p ? p.name : 'Someone';

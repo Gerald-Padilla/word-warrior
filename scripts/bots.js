@@ -11,7 +11,7 @@ if (!code) {
 }
 
 const NAMES = ['Aria', 'Borin', 'Cyra', 'Dax', 'Elora', 'Fenn', 'Gwyn', 'Hale', 'Iris', 'Jarek', 'Kael', 'Lyra'];
-const CLASSES = ['knight', 'wizard', 'archer', 'rogue', 'cleric', 'barbarian'];
+const CLASSES = ['knight', 'wizard', 'archer', 'rogue', 'cleric', 'barbarian', 'ninja', 'necromancer', 'druid', 'pirate', 'bard', 'valkyrie'];
 
 for (let i = 0; i < count; i++) {
   const socket = io(url, { transports: ['websocket'] });
@@ -45,6 +45,10 @@ for (let i = 0; i < count; i++) {
     });
   });
   socket.on('room:players', trackTeam);
+  // Use the class skill a moment after it's charged.
+  socket.on('skill:charge', ({ on, charge, max }) => {
+    if (on && charge >= max) setTimeout(() => socket.emit('player:skill', {}, () => {}), 500 + Math.random() * 2500);
+  });
   socket.on('room:state', (s) => {
     trackTeam(s.players);
     // Now and then a bot sends an emote between rounds.

@@ -50,7 +50,8 @@ that computer for the next game.
 | **STREAKS** | Words in a row without a typo multiply your points: x1.5 from 3, x2 from 6, x3 from 10 (team battle tops out at x2). Your hero catches fire, the big screen calls out **ON FIRE!** / **UNSTOPPABLE!** / **LEGENDARY!**, and your phone shows your streak. One wrong key ends it. |
 | **SPECIAL WORDS** | Now and then a falling word is special (free for all and solo). **Gold** (a coin) is worth x3. **Ice** (a snowflake) slows every word on screen for 6 seconds. **Bomb** blasts every word on screen and pays you half their points. |
 | **BOSS FINALE** | A fourth round against the Dragon King (free for all and solo). It has an HP bar that grows with the crowd, and every point anyone scores hurts it. Bring it down and everyone who hit it gets +500, and the final blow is worth +1000. If time runs out, it gets away. |
-| **CLASS PERKS** | Each class scores more on some words: Knight +30% on 3–5 letter words, Barbarian +30% on 6–7, Wizard +30% on 8+, Elf Archer +40% on words hit high up (or attacks blocked early), Rogue +50% on words about to land, Cleric +50% on special words (in a team battle, the power-ups a Cleric grabs last or heal 50% more). The phone shows your perk in the hero creator and the lobby. |
+| **CLASS PERKS** | Each class scores more on one kind of word (see *Classes* below). The phone shows your perk in the hero creator and the lobby. |
+| **SKILLS** | Every 8 words you type charges your class's skill. A button next to the typing box fills up; when it glows, tap it (or press Space on a keyboard) to use it. |
 | **AWARDS** | After the podium: Speed Demon (fastest WPM), Sharpshooter (fewest typos), Streak Master, Clutch Saver (words saved at the last second), Monster Slayer, Treasure Hunter (most special words) and Dragon Slayer. Everyone's phone shows their own WPM, accuracy and best streak. |
 | **EMOTES** | Players tap 👍 😂 😮 🔥 👏 😭 on their phones in the lobby, between rounds and on the results screen; the emoji pops up over their hero on the big screen. |
 | **MY WORDS** | Paste your own words (team names, product names, in-jokes). They're sorted by length into the rounds and come up often. Tick *Only use my words* to drop the built-in words for any round you've given at least 6 words. |
@@ -116,11 +117,42 @@ width; the join, lobby and results screens switch to two columns. On a phone hel
 moves into the top row (and team HP bars float over the battlefield) so there's room to play with the
 keyboard open.
 
-**Heroes:** Knight (sword beam), Wizard (fireball), Elf Archer (arrow), Rogue (dagger volley),
-Cleric (holy light), Barbarian (spinning axe). Customize each with 8 colors, 4 skin tones, 8 hair/beard
-colors (archer, wizard, barbarian), 6 trims (the gold accents) and a companion pet (cat, owl, slime, baby
+**Heroes:** twelve classes, each with its own attack. Customize each with 8 colors, 4 skin tones, 8 hair/beard
+colors (for the classes that show hair), 6 trims (the gold accents) and a companion pet (cat, owl, slime, baby
 dragon or fox) that follows your hero into battle. The creator shows your hero on a mini battlefield doing
-their attack (tap it to attack again), and has **RANDOM LOOK** and a random-name button.
+their attack (tap it to attack again), with their perk and skill, and has **RANDOM LOOK** and a random-name button.
+
+## Classes
+
+| Class | Attack | Perk (when CLASS PERKS is on) | Skill (when SKILLS is on) |
+|-------|--------|-------------------------------|---------------------------|
+| Knight | Sword Beam | **Swift Blade:** +40% on words of 7 letters or fewer | **Rally:** your next 3 words score double |
+| Barbarian | Spinning Axe | **Cleave:** +20% on 8–10 letter words | **Berserk:** your next 2 words score x2.5 |
+| Wizard | Fireball | **Arcane Mind:** +35% on 11+ letter words | **Meteor:** hits the 2 most valuable words for +20% |
+| Elf Archer | Piercing Arrow | **Eagle Eye:** +25% on words with J, K, Q, V, W, X, Y or Z | **Arrow Rain:** hits the 3 newest words |
+| Rogue | Dagger Volley | **Sly:** +20% on words with an S | **Backstab:** hits the 3 words closest to the ground |
+| Cleric | Holy Light | **Blessed:** +60% on special words (+10% on all words when they're off); team battle power-ups last or heal 50% more | **Divine Favor:** your next 4 words score x1.75 |
+| Ninja | Shuriken | **Clean Cut:** +12% on every word typed without a typo | **Shuriken Storm:** hits 3 random words |
+| Necromancer | Soul Bolt | **Soul Harvest:** +50% on words with a double letter (ll, ee, ss…) | **Raise Dead:** scores up to 3 words that got away this round (team battle: heals the last 3 hits your team took) |
+| Druid | Thorn Vine | **Life Bloom:** +30% on words with 4+ vowels | **Overgrowth:** your next 6 words score x1.5 |
+| Pirate | Cannonball | **Plunder:** +50% on every 5th word you type | **Cannon Barrage:** hits 4 random words for 75% |
+| Bard | Power Chord | **Echo:** +35% on a word the same length as your last one | **Encore:** scores your last 3 words again (team battle: hits the other team directly) |
+| Valkyrie | Storm Spear | **Battle Cry:** +55% on words that start with a vowel | **Thunderclap:** hits up to 6 words for half their points |
+
+**How they're balanced.** Every perk is sized to add about 10% to an average game. Each one was measured
+over simulated games with the real word lists: a perk that fires on fewer of your points gets a bigger
+bonus. That's why the Knight gets +40% on short words, which only show up in the cheap first round, while
+the Barbarian gets +20% on the 8–10 letter words that carry much of a game's points. All twelve land between
++9% and +11%. Perks only look at the word (and your own typing), never at *when* you hit it, so they're
+worth the same in solo, in a crowd and in a team battle.
+
+Every skill is worth about three words' base points:
+- **Boosts** (Rally, Berserk, Divine Favor, Overgrowth) add to your next words' base points rather than on
+  top of your streak, so they don't snowball.
+- **Strikes** hit words for their base points. If the field doesn't have enough words, the missing hits
+  become a boost on your next words instead, so a strike is never wasted on an empty screen.
+- **In a team battle,** strikes block attacks flying at your team, and fire your own attacks if there's
+  nothing to block.
 
 **Host controls:** FREE FOR ALL / TEAM BATTLE, the game options, START BATTLE, SHUFFLE TEAMS, HALL OF FAME, SKIP ▶ (jump to the next phase), MUSIC ON/OFF, SOUND ON/OFF,
 PLAY AGAIN / BACK TO LOBBY on the podium screen. In the lobby, a hero's **X** removes them; in free for all
@@ -217,7 +249,8 @@ Round length, fall speed, spawn rate and points multipliers are in the `ROUNDS` 
 sit there too: `TEAM_HP`, how long attacks take to fly (`FLIGHT_MS`), how often power-ups appear and how long
 their effects last. The game options have their own settings: the boss round (`BOSS_ROUND`, `BOSS_HP`, bonuses),
 streak steps (`STREAK_STEPS`), special words (`SPECIAL_CHANCE`, `GOLD_FACTOR`, `ICE_MS`, `BOMB_SHARE`) and class
-perks (`PERKS`). The auto-typer limits are the `KEY_*` and `FLAG_AFTER` settings. Word lists are in `words.js`.
+perks (`PERKS`), skills (`SKILLS`, `SKILL_WORDS`). The auto-typer limits are the `KEY_*` and `FLAG_AFTER`
+settings. Word lists are in `words.js`; if you change them a lot, the perk bonuses may need re-measuring.
 The music tracks are the `TRACKS` table in `public/js/common.js`.
 
 ## Files

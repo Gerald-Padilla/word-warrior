@@ -39,7 +39,12 @@
     },
   };
 
-  const ATTACK = { knight: 'slash', wizard: 'fireball', archer: 'arrow', rogue: 'dagger', cleric: 'beam', barbarian: 'axe' };
+  const ATTACK = {
+    knight: 'slash', wizard: 'fireball', archer: 'arrow', rogue: 'dagger', cleric: 'beam', barbarian: 'axe',
+    ninja: 'shuriken', necromancer: 'soul', druid: 'thorn', pirate: 'cannon', bard: 'notes', valkyrie: 'spear',
+  };
+  // Trail left behind each kind of attack in flight.
+  const TRAIL = { soul: '#7dff6b', thorn: '#4fa865', cannon: '#8691a6', spear: '#fff6b0', shuriken: '#d5dbe6' };
 
   const lerp = (a, b, t) => a + (b - a) * t;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -588,6 +593,8 @@
       if (k.special === 'gold') tags.push('GOLD x3');
       if (k.mult > 1) tags.push(`x${k.mult} STREAK`);
       if (k.perk) tags.push('PERK');
+      if (k.boosted) tags.push('BOOST');
+      if (k.skill) tags.push('SKILL');
       const land = () => {
         this.dying = this.dying.filter((d) => d !== dying);
         this.explode(L.cx, L.cy, color);
@@ -902,14 +909,16 @@
     launch(cls, from, to, color, onHit) {
       const kind = ATTACK[cls] || 'slash';
       const dist = Math.hypot(to.x - from.x, to.y - from.y);
-      const speed = this.H * 0.0028 * (kind === 'arrow' ? 1.4 : kind === 'axe' ? 0.85 : 1);
+      const pace = { arrow: 1.4, shuriken: 1.35, spear: 1.3, axe: 0.85, cannon: 0.8, soul: 0.9 };
+      const speed = this.H * 0.0028 * (pace[kind] || 1);
       const dur = kind === 'beam' ? 170 : clamp(dist / speed, 160, 650);
       const t0 = performance.now();
       const base = { kind, from, to, color, t0, dur, trailAt: 0 };
-      if (kind === 'dagger') {
+      if (kind === 'dagger' || kind === 'notes') {
+        // A volley: three daggers, or three notes of a chord.
         const perp = Math.atan2(to.y - from.y, to.x - from.x) + Math.PI / 2;
         [0, 1, 2].forEach((i) => {
-          const off = (i - 1) * this.U * 3;
+          const off = (i - 1) * this.U * (kind === 'notes' ? 4 : 3);
           this.projectiles.push({
             ...base,
             t0: t0 + i * 60,
@@ -1560,11 +1569,12 @@
         if (t - pr.trailAt > 25) {
           pr.trailAt = t;
           const tc = pr.kind === 'fireball' ? ['#ff7b1c', '#ffd23f', '#e8371c'][Math.floor(Math.random() * 3)]
-            : pr.kind === 'axe' ? '#8691a6' : pr.color.P;
+            : pr.kind === 'axe' ? '#8691a6' : pr.kind === 'notes' ? pr.color.Q : TRAIL[pr.kind] || pr.color.P;
+          const rises = pr.kind === 'fireball' || pr.kind === 'cannon' || pr.kind === 'soul';
           this.particles.push({
             x: x - dx * U * 2 + rand(-1, 1) * U, y: y - dy * U * 2 + rand(-1, 1) * U,
-            vx: 0, vy: pr.kind === 'fireball' ? -0.01 * U : 0, g: 0,
-            life: pr.kind === 'fireball' ? 320 : 180, t0: t, size: U, color: tc,
+            vx: 0, vy: rises ? -0.01 * U : 0, g: 0,
+            life: pr.kind === 'fireball' || pr.kind === 'cannon' ? 320 : 180, t0: t, size: U, color: tc,
           });
         }
 
@@ -1643,6 +1653,60 @@
           }
           this.block(x, y, U * 2.4, '#fff6b0');
           this.block(x, y, U, '#ffffff');
+          break;
+        }
+        case 'shuriken': {
+          // A four-pointed star, spinning.
+          const spin = t / 45;
+          for (let i = 0; i < 4; i++) {
+            const ang = spin + (i * Math.PI) / 2;
+            this.block(x + Math.cos(ang) * U, y + Math.sin(ang) * U, U, '#d5dbe6');
+            this.block(x + Math.cos(ang) * U * 2, y + Math.sin(ang) * U * 2, U, '#ffffff');
+          }
+          this.block(x, y, U, '#8691a6');
+          break;
+        }
+        case 'soul': {
+          // A ghostly green skull that wobbles as it flies.
+          const wy = y + Math.sin(t / 70) * U * 0.6;
+          this.block(x, wy, U * 2.8, '#7dff6b');
+          this.block(x, wy, U * 1.8, '#c8ffbf');
+          this.block(x - U * 0.6, wy - U * 0.3, U * 0.7, '#1b1426');
+          this.block(x + U * 0.6, wy - U * 0.3, U * 0.7, '#1b1426');
+          this.block(x, wy + U * 0.8, U * 0.6, '#1b1426');
+          break;
+        }
+        case 'thorn': {
+          // A thorny vine whipping forward, light at the tip.
+          const px = -dy;
+          const py = dx;
+          for (let s = 0; s < 5; s++) {
+            const sway = Math.sin(t / 60 + s) * U * 0.6;
+            this.block(x - dx * U * s + px * sway, y - dy * U * s + py * sway, U * (s ? 1.1 : 1.4), s % 2 ? '#2f7d4a' : '#4fa865');
+            if (s % 2) this.block(x - dx * U * s + px * U * 1.2, y - dy * U * s + py * U * 1.2, U * 0.6, '#b6f59a');
+          }
+          break;
+        }
+        case 'cannon': {
+          this.block(x, y, U * 2.6, '#1b1426');
+          this.block(x - U * 0.5, y - U * 0.5, U * 0.9, '#8691a6');
+          break;
+        }
+        case 'notes': {
+          // A music note in the hero's color: head, stem and flag.
+          const wy = y + Math.sin(t / 80 + x) * U;
+          this.block(x, wy, U * 1.5, color.Q);
+          this.block(x + U * 0.8, wy - U * 1.2, U * 0.6, color.Q);
+          this.block(x + U * 0.8, wy - U * 2, U * 0.6, color.Q);
+          this.block(x + U * 1.4, wy - U * 2, U * 0.6, color.P);
+          break;
+        }
+        case 'spear': {
+          // A thrown spear crackling with lightning.
+          this.block(x, y, U, '#ffffff');
+          this.block(x - dx * U, y - dy * U, U, '#d5dbe6');
+          for (let s = 2; s <= 8; s++) this.block(x - dx * U * s, y - dy * U * s, U, '#8b5a2b');
+          for (let i = 0; i < 2; i++) this.block(x + rand(-2, 2) * U, y + rand(-2, 2) * U, U * 0.8, i ? '#fff6b0' : '#7fd4ff');
           break;
         }
         default:

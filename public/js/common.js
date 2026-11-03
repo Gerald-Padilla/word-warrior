@@ -28,6 +28,19 @@
     return best.offset;
   }
 
+  // A page left open while the server was updated reloads itself rather than run old code against it.
+  // It rejoins from saved tokens. One try per new version, so a stale cache can't make it loop.
+  function watchBuild(socket) {
+    socket.on('build', (build) => {
+      if (!window.WW_BUILD || build === window.WW_BUILD) return;
+      let tried = null;
+      try { tried = sessionStorage.getItem('ww_reload'); } catch (e) { /* private mode */ }
+      if (tried === build) return;
+      try { sessionStorage.setItem('ww_reload', build); } catch (e) { /* private mode */ }
+      location.reload();
+    });
+  }
+
   function rankPlayers(players) {
     return [...players].sort((a, b) => b.score - a.score || b.kills - a.kills || a.name.localeCompare(b.name));
   }
@@ -249,5 +262,5 @@
   // Emotes players can send from their phones.
   const EMOTES = ['👍', '😂', '😮', '🔥', '👏', '😭'];
 
-  window.WW = { $, el, syncClock, rankPlayers, TEAMS, Sfx, Music, EMOTES };
+  window.WW = { $, el, syncClock, watchBuild, rankPlayers, TEAMS, Sfx, Music, EMOTES };
 })();
