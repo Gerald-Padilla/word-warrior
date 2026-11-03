@@ -49,6 +49,21 @@
     .mini img { width: 40px; height: 40px; }
     .mini span { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .mini.me span { color: var(--gold); }
+    .mini.team0 img { box-shadow: 0 3px 0 #ff5a4d; } .mini.team1 img { box-shadow: 0 3px 0 #4da6ff; }
+    .team-badge { font-size: 12px; padding: 8px 12px; color: var(--ink); }
+    .mode-line { text-align: center; font-size: 9px; color: var(--muted); margin: 0; }
+
+    /* Team battle HP strip under the top bar */
+    .hpstrip { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 6px 10px 8px; background: var(--panel); box-shadow: 0 3px 0 var(--ink); z-index: 2; }
+    .hp-side { display: flex; flex-direction: column; gap: 4px; }
+    .hp-side.right { text-align: right; }
+    .hp-label { font-size: 8px; display: flex; justify-content: space-between; gap: 6px; }
+    .hp-label b { font-weight: normal; color: var(--cream); }
+    .hp-side.mine .hp-label span::after { content: ' (YOU)'; color: var(--gold); }
+    .hp-bar { position: relative; height: 12px; background: var(--ink); }
+    .hp-fill { position: absolute; top: 0; bottom: 0; transition: width 0.3s steps(5); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.3); }
+    .hp-side.left .hp-fill { left: 0; } .hp-side.right .hp-fill { right: 0; }
+    .hp-bar.hit { animation: shake 0.25s steps(4); }
     h3 { font-size: 10px; margin: 0 0 12px; color: var(--muted); }
 
     /* Game */
@@ -167,12 +182,15 @@
         <img id="lobbyHero" class="px-sprite bob" alt="">
         <div class="nm" id="lobbyName"></div>
         <div class="cl" id="lobbyClass"></div>
+        <div class="team-badge hidden" id="lobbyTeam"></div>
       </div>
       <p class="wait blink">Waiting for the host to start...</p>
+      <p class="mode-line" id="lobbyMode"></p>
       <div class="px-box">
         <h3>HEROES IN THE TAVERN: <span id="lobbyCount">0</span></h3>
         <div class="mini-roster" id="lobbyRoster"></div>
       </div>
+      <button id="btnTeam" class="px-btn hidden">SWITCH TEAM</button>
       <button id="btnEdit" class="px-btn ghost">CHANGE HERO</button>
     </section>
 
@@ -181,6 +199,16 @@
         <div class="r"><button id="btnQuit" class="quit hidden" type="button" aria-label="Quit this solo quest">X</button><span id="gRound">R1 EASY</span></div>
         <div class="t" id="gTime">0:45</div>
         <div class="s"><b id="gScore">0</b> · <span id="gRank">#1</span></div>
+      </div>
+      <div class="hpstrip hidden" id="hpStrip">
+        <div class="hp-side left" id="hpSide0">
+          <div class="hp-label"><span>RED</span><b id="hpVal0"></b></div>
+          <div class="hp-bar" id="hpBar0"><div class="hp-fill" id="hpFill0"></div></div>
+        </div>
+        <div class="hp-side right" id="hpSide1">
+          <div class="hp-label"><b id="hpVal1"></b><span>BLUE</span></div>
+          <div class="hp-bar" id="hpBar1"><div class="hp-fill" id="hpFill1"></div></div>
+        </div>
       </div>
       <div class="field" id="field">
         <canvas id="arena"></canvas>
@@ -205,7 +233,7 @@
       <div class="record blink hidden" id="fRecord"></div>
       <img id="fHero" class="px-sprite hero" alt="">
       <div class="stats">
-        <div class="stat">SCORE<b id="fScore">0</b></div>
+        <div class="stat"><span id="fScoreLbl">SCORE</span><b id="fScore">0</b></div>
         <div class="stat">MONSTERS SLAIN<b id="fKills">0</b></div>
       </div>
       <div class="rounds-line" id="fRounds"></div>

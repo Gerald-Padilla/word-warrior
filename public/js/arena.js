@@ -1,7 +1,8 @@
 // The battlefield: pixel background, falling monsters with words, heroes, attacks and effects.
-// Used by both the host screen (all heroes) and phones (only your own hero).
+// Used by both the host screen and phones. In a team battle the host field splits in half, one side per team.
 (function () {
   const { heroSprite, monsterSprite, axeSprite, COLORS, MONSTERS } = window.Art;
+  const { TEAMS } = window.WW;
 
   const THEMES = {
     slime: {
@@ -55,8 +56,12 @@
       this.typed = '';
       this.reserveRight = 0;
       this.reserveTop = 0;
+      this.teamMode = false;
+      this.split = false; // host in a team battle: left half team 0, right half team 1
+      this.flashAt = -1e9;
       this.onHit = null;
       this.onEscape = null;
+      this.onTeamHit = null; // (team, damage) when a blow lands on a team's side of the host screen
       this.lastFrame = performance.now();
       new ResizeObserver(() => this.resize()).observe(canvas);
       this.resize();
@@ -101,6 +106,13 @@
     // Words enter the field below this line (e.g. under the host's top bar).
     setReserveTop(cssPx) {
       this.reserveTop = cssPx * (this.dpr || 1);
+    }
+
+    setTeamMode(on) {
+      if (on === this.teamMode) return;
+      this.teamMode = on;
+      this.split = on && this.mode === 'host';
+      this.layoutHeroes();
     }
 
     buildBackground() {
@@ -258,6 +270,21 @@
       const list = [...this.players.values()];
       const n = list.length;
       if (!n) return;
+      if (this.split) {
+        // Each team lines up across its own half, at one shared size so neither side looks bigger.
+        const half = this.W / 2;
+        const sides = [0, 1].map((t) => list.filter((p) => p.team === t));
+        const most = Math.max(1, ...sides.map((s) => s.length));
+        const room = half * 0.92;
+        let hu = this.U;
+        while (hu > 2 && most * 20 * hu > room) hu--;
+        sides.forEach((side, t) => {
+          const spacing = Math.min(room / Math.max(1, side.length), 30 * hu);
+          const start = t * half + (half - spacing * side.length) / 2 + spacing / 2;
+          side.forEach((p, i) => this.heroPos.set(p.id, { x: start + i * spacing, hu, spacing }));
+        });
+        return;
+      }
       const avail = this.W * 0.96;
       let hu = this.U;
       while (hu > 2 && n * 20 * hu > avail) hu--;
@@ -299,9 +326,11 @@
       const stackH = mh + U + plateH;
       const p = (now - w.spawn) / w.dur;
       const top = lerp(this.reserveTop - stackH, this.groundY - stackH, p);
-      const fieldW = Math.max(this.W * 0.4, this.W - this.reserveRight);
+      const split = this.split && w.team != null;
+      const fieldW = split ? this.W / 2 : Math.max(this.W * 0.4, this.W - this.reserveRight);
+      const left = split ? w.team * fieldW : 0;
       const half = Math.max(mw, plateW) / 2 + U;
-      let cx = half * 2 > fieldW ? fieldW / 2 : clamp(w.x * fieldW, half, fieldW - half);
+      let cx = left + (half * 2 > fieldW ? fieldW / 2 : clamp(w.x * fieldW, half, fieldW - half));
       if (this.monster === 'bat') cx += Math.sin(now / 280 + w.id) * U * 2;
       if (this.monster === 'skull') cx += Math.sin(now / 520 + w.id) * U * 1.5;
       return { p, cx, top, mw, mh, plateW, plateH, cy: top + mh / 2, py: top + mh + U };
@@ -324,7 +353,30 @@
         const showName = this.mode === 'host' || playerId !== this.selfId;
         this.floatText(L.cx, L.top, `+${points}`, color.Q, showName && player ? player.name : null);
         if (this.onHit) this.onHit(playerId);
+        if (this.teamMode && w.team != null) this.strikeFoe(player ? player.cls : 'knight', L, w.team, points, color);
       });
+    }
+
+    // Team battle: the blow carries on to the other team - across to their half of the big screen,
+    // or off the top of a phone (the other team is somewhere else).
+    strikeFoe(cls, L, team, dmg, color) {
+      const foe = 1 - team;
+      const from = { x: L.cx, y: L.cy };
+      const to = this.split
+        ? { x: foe * (this.W / 2) + this.W / 4, y: this.reserveTop + 5 * this.U }
+        : { x: L.cx, y: -8 * this.U };
+      this.launch(cls, from, to, color, () => {
+        if (!this.split) return;
+        this.explode(to.x, to.y, { Q: TEAMS[team].color });
+        this.floatText(to.x, to.y + 2 * this.U, `-${dmg}`, TEAMS[foe].color, null);
+        if (this.onTeamHit) this.onTeamHit(foe, dmg);
+      });
+    }
+
+    // A quick tinted flash over the whole field (a phone's team taking a hit).
+    flash(color) {
+      this.flashAt = performance.now();
+      this.flashColor = color;
     }
 
     escape(wordId) {
@@ -452,6 +504,8 @@
         }
       }
 
+      if (this.split) this.drawSides();
+
       ctx.font = `${this.fontPx}px "Press Start 2P", monospace`;
       ctx.textBaseline = 'top';
 
@@ -479,6 +533,31 @@
       this.drawProjectiles(t);
       this.drawParticles(t, dt);
       this.drawTexts(t);
+
+      const fk = (t - this.flashAt) / 320;
+      if (fk < 1) {
+        ctx.globalAlpha = 0.35 * (1 - fk);
+        ctx.fillStyle = this.flashColor;
+        ctx.fillRect(0, 0, this.W, this.H);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Team battle on the big screen: tint each half in its team's color with a wall between them.
+    drawSides() {
+      const ctx = this.ctx;
+      const U = this.U;
+      const mid = Math.round(this.W / 2);
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = TEAMS[0].color;
+      ctx.fillRect(0, 0, mid, this.groundY);
+      ctx.fillStyle = TEAMS[1].color;
+      ctx.fillRect(mid, 0, this.W - mid, this.groundY);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#0e0a17';
+      ctx.fillRect(mid - U, 0, 2 * U, this.feetY);
+      ctx.fillStyle = '#4a3a6e';
+      for (let y = Math.floor(this.reserveTop / (4 * U)) * 4 * U; y < this.feetY; y += 4 * U) ctx.fillRect(mid - U, y, 2 * U, U);
     }
 
     drawMonster(L, frame) {

@@ -45,6 +45,15 @@
     .round-chip.easy { color: #8be36b; } .round-chip.medium { color: #b99cff; } .round-chip.hard { color: #ff7b4a; }
     .start-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
     .hint { font-size: 10px; color: var(--muted); margin: 0; }
+    .mode-pick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .mode-btn { font: inherit; font-size: 12px; padding: 12px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); line-height: 1.7; }
+    .mode-btn small { display: block; font-size: 8px; }
+    .mode-btn.on { background: var(--gold); color: var(--ink); }
+    .roster.split { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .team-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .team-col h4 { margin: 0; font-size: 11px; padding: 6px 8px; color: var(--ink); }
+    .team-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; align-content: start; }
+    .team-tiles .hero-tile img { width: 48px; height: 48px; }
 
     /* In-game HUD */
     #hud { position: fixed; top: 0; left: 0; right: 0; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 8px 16px; gap: 16px; background: rgba(27, 20, 38, 0.94); box-shadow: 0 4px 0 #0e0a17, 0 8px 0 rgba(0, 0, 0, 0.25); }
@@ -62,6 +71,20 @@
     #timeText { font-size: 12px; min-width: 52px; text-align: right; }
     .hud-controls { justify-self: end; display: flex; gap: 4px; }
 
+    /* Team battle HP bars, fighting-game style: red fills from the left, blue from the right */
+    #teamBar { position: fixed; left: 0; right: 0; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; padding: 8px 16px 10px; background: rgba(27, 20, 38, 0.9); box-shadow: 0 4px 0 #0e0a17; }
+    .tb-side { display: flex; flex-direction: column; gap: 6px; }
+    .tb-side.right { align-items: flex-end; text-align: right; }
+    .tb-name { font-size: 13px; text-shadow: 2px 2px 0 var(--ink); }
+    .tb-name span { color: var(--cream); font-size: 10px; margin: 0 8px; }
+    .tb-bar { position: relative; width: 100%; height: 20px; background: #0e0a17; box-shadow: 0 0 0 3px #0e0a17; }
+    .tb-fill { position: absolute; top: 0; bottom: 0; transition: width 0.35s steps(6); box-shadow: inset 0 -5px 0 rgba(0, 0, 0, 0.3), inset 0 4px 0 rgba(255, 255, 255, 0.25); }
+    .tb-side.left .tb-fill { left: 0; }
+    .tb-side.right .tb-fill { right: 0; }
+    .tb-bar.hit { animation: shake 0.25s steps(4); }
+    .tb-bar.hit .tb-fill { filter: brightness(1.8); }
+    .tb-vs { font-size: 18px; color: var(--gold); text-shadow: 3px 3px 0 var(--ink); }
+
     #board { position: fixed; right: 18px; top: 110px; width: 300px; max-height: calc(100vh - 110px - 24vh); overflow: hidden; padding: 14px 12px; background: rgba(45, 35, 66, 0.9); }
     #board h3 { margin: 0 0 12px; font-size: 12px; color: var(--gold); text-align: center; }
     #boardList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -71,6 +94,7 @@
     .row .sc { color: var(--gold); }
     .row.r1 .rk { color: var(--gold); } .row.r2 .rk { color: #d5dbe6; } .row.r3 .rk { color: #e08a4a; }
     .row.bump { background: rgba(255, 210, 63, 0.28); }
+    .row.team0 { box-shadow: inset 5px 0 0 #ff5a4d; } .row.team1 { box-shadow: inset 5px 0 0 #4da6ff; }
 
     /* Round banner / countdown */
     #banner { flex-direction: column; text-align: center; gap: 18px; }
@@ -96,6 +120,7 @@
     /* Final podium */
     #final { display: flex; flex-direction: column; align-items: center; padding-top: 3vh; gap: 10px; }
     #final h1 { font-size: clamp(30px, 4.4vw, 64px); margin: 0; }
+    .final-sub { font-size: 14px; color: var(--cream); text-shadow: 3px 3px 0 var(--ink); }
     .podium { display: flex; align-items: flex-end; gap: 22px; margin-top: 16px; }
     .pod { display: flex; flex-direction: column; align-items: center; width: clamp(150px, 15vw, 230px); }
     .pod img { width: clamp(96px, 9vw, 144px); height: clamp(96px, 9vw, 144px); }
@@ -148,6 +173,18 @@
     </div>
   </header>
 
+  <div id="teamBar" class="hidden">
+    <div class="tb-side left">
+      <div class="tb-name" id="tbName0">RED DRAGONS<span id="tbHp0"></span></div>
+      <div class="tb-bar" id="tbBar0"><div class="tb-fill" id="tbFill0"></div></div>
+    </div>
+    <div class="tb-vs">VS</div>
+    <div class="tb-side right">
+      <div class="tb-name" id="tbName1"><span id="tbHp1"></span>BLUE GRIFFINS</div>
+      <div class="tb-bar" id="tbBar1"><div class="tb-fill" id="tbFill1"></div></div>
+    </div>
+  </div>
+
   <aside id="board" class="px-box hidden">
     <h3>LEADERBOARD</h3>
     <ol id="boardList"></ol>
@@ -165,6 +202,10 @@
         <div id="netHelp" class="net-help hidden">Phones must be on the same Wi-Fi. If the QR doesn't open, try another address above.</div>
       </div>
       <div class="lobby-right">
+        <div class="mode-pick">
+          <button class="mode-btn on" type="button" data-mode="ffa">FREE FOR ALL<small>First to type a word scores it</small></button>
+          <button class="mode-btn" type="button" data-mode="teams">TEAM BATTLE<small>Red vs Blue - break their HP!</small></button>
+        </div>
         <h2>HEROES IN THE TAVERN: <span id="count">0</span></h2>
         <div id="roster" class="roster"></div>
         <div class="rounds">
@@ -174,6 +215,7 @@
         </div>
         <div class="start-row">
           <button id="btnStart" class="px-btn big" disabled>START BATTLE</button>
+          <button id="btnShuffle" class="px-btn ghost hidden">SHUFFLE TEAMS</button>
           <button id="btnHof" class="px-btn ghost">HALL OF FAME</button>
           <p class="hint" id="startHint">Waiting for heroes to join...</p>
         </div>
@@ -198,7 +240,8 @@
   </section>
 
   <section id="final" class="overlay hidden">
-    <h1 class="logo">VICTORY!</h1>
+    <h1 class="logo" id="finalTitle">VICTORY!</h1>
+    <div class="final-sub hidden" id="finalSub"></div>
     <div class="podium" id="podium"></div>
     <div class="final-rest" id="finalRest"></div>
     <div class="final-actions">

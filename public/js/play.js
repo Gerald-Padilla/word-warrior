@@ -1,6 +1,6 @@
 // Phone controller: hero creator, lobby, typing battle and results.
 (function () {
-  const { $, el, syncClock, rankPlayers, Sfx } = window.WW;
+  const { $, el, syncClock, rankPlayers, TEAMS, Sfx } = window.WW;
   const { CLASSES, COLORS, SKINS, heroDataURL, classByKey } = window.Art;
 
   const store = {
@@ -25,6 +25,10 @@
   let rounds = [];
   let state = { state: 'none', round: -1, phaseEndsAt: 0 };
   let editing = false;
+  let mode = 'ffa'; // or 'teams'
+  let teams = null; // team battle: [{ hp, max }, { hp, max }]
+  let winner = null; // team battle: 0, 1, or -1 for a draw
+  let ko = false;
   const toasted = new Set();
 
   const look = Object.assign({
@@ -36,6 +40,10 @@
 
   const ack = (ev, data) => new Promise((res) => socket.emit(ev, data, res));
   const me = () => players.find((p) => p.id === you);
+  const teamBattle = () => mode === 'teams' && !solo;
+  const myTeam = () => (me() ? me().team : 0);
+  // In a team battle a phone only shows its own side's words.
+  const onMySide = (w) => w.team === undefined || w.team === myTeam();
 
   // ---- viewport: keep the typing bar above the on-screen keyboard ----
   function fit() {
@@ -269,8 +277,9 @@
     store.set(`ww_token_${code}`, res.token);
     history.replaceState(null, '', `/play?room=${code}`);
     rounds = res.snapshot.rounds;
+    mode = res.snapshot.mode || 'ffa';
     setPlayers(res.snapshot.players);
-    arena.setWords(res.snapshot.words);
+    arena.setWords(res.snapshot.words.filter(onMySide));
     applyState(res.snapshot);
   }
 
@@ -280,7 +289,9 @@
     if (state.state === 'lobby' && !editing) renderLobby();
   });
   socket.on('room:state', (s) => applyState(s));
-  socket.on('word:spawn', (w) => arena.addWord(w));
+  socket.on('word:spawn', (w) => {
+    if (onMySide(w)) arena.addWord(w);
+  });
   socket.on('word:escape', ({ id }) => {
     arena.escape(id);
     if (solo) Sfx.play('escape');
@@ -305,8 +316,23 @@
 
   function setPlayers(list) {
     players = list;
-    arena.setPlayers(list);
+    // Team battle: the battlefield on your phone is your own side, so only your teammates stand on it.
+    arena.setPlayers(teamBattle() ? list.filter((p) => p.team === myTeam()) : list);
     updateTopbar();
+    renderHp();
+  }
+
+  function renderHp() {
+    const on = teamBattle() && Boolean(teams);
+    $('#hpStrip').classList.toggle('hidden', !on);
+    if (!on) return;
+    teams.forEach((t, i) => {
+      $(`#hpFill${i}`).style.width = `${(t.hp / t.max) * 100}%`;
+      $(`#hpFill${i}`).style.background = TEAMS[i].color;
+      $(`#hpVal${i}`).textContent = t.hp;
+      $(`#hpSide${i}`).classList.toggle('mine', i === myTeam());
+      $(`#hpSide${i}`).querySelector('span').style.color = TEAMS[i].color;
+    });
   }
 
   // ---- phases --------------------------------------------------------
@@ -314,7 +340,13 @@
     const prev = state.state;
     state = { state: s.state, round: s.round, phaseEndsAt: s.phaseEndsAt };
     if (s.records) records = s.records;
+    mode = s.mode || 'ffa';
+    teams = s.teams || null;
+    winner = s.winner ?? null;
+    ko = Boolean(s.ko);
+    arena.setTeamMode(teamBattle());
     if (s.players) setPlayers(s.players);
+    else renderHp();
     const r = rounds[s.round];
     if (r) arena.setTheme(r.monster);
     if (s.state === 'lobby') arena.setTheme('slime');
@@ -339,7 +371,8 @@
       }
       renderFinal();
       showScreen('scrFinal');
-      const won = solo || records[you]?.rank === 1 || rankPlayers(players)[0]?.id === you;
+      const won = solo || records[you]?.rank === 1
+        || (teamBattle() ? winner === myTeam() : rankPlayers(players)[0]?.id === you);
       if (prev && prev !== 'finished' && won) Sfx.play('win');
     } else {
       showScreen('scrGame');
@@ -367,13 +400,16 @@
     const r = rounds[state.round];
     const banner = $('#gBanner');
     const left = Math.max(0, state.phaseEndsAt - now());
+    $('#fb2').style.color = '';
     if (st === 'countdown' && r) {
       const n = Math.ceil(left / 1000);
       banner.classList.remove('hidden');
       $('#fb1').textContent = `ROUND ${state.round + 1}`;
       $('#fb2').textContent = r.name;
       $('#fb2').className = `fb-2 ${['d-easy', 'd-medium', 'd-hard'][state.round] || ''}`;
-      $('#fb3').textContent = `${r.title} · x${r.multiplier} pts`;
+      $('#fb3').textContent = teamBattle()
+        ? `${r.title} · x${r.multiplier} damage · you're ${TEAMS[myTeam()].name}`
+        : `${r.title} · x${r.multiplier} pts`;
       $('#fb4').textContent = n > 3 ? 'READY?' : String(Math.max(1, n));
     } else if (st === 'playing' && performance.now() < fightUntil) {
       banner.classList.remove('hidden');
@@ -394,6 +430,13 @@
       if (!mine) $('#fb3').textContent = '';
       else if (solo) $('#fb3').textContent = `${mine.score} total · ${mine.kills} monsters slain`;
       else $('#fb3').textContent = `+${roundPts} this round · ${mine.score} total`;
+      if (teamBattle() && teams) {
+        const ours = teams[myTeam()].hp;
+        const theirs = teams[1 - myTeam()].hp;
+        $('#fb2').textContent = ours > theirs ? 'WINNING!' : ours < theirs ? 'LOSING!' : 'TIED!';
+        $('#fb2').style.color = ours > theirs ? '#8be36b' : ours < theirs ? 'var(--red)' : '';
+        $('#fb3').textContent = `You dealt ${roundPts} damage · ${TEAMS[0].short} ${teams[0].hp} HP vs ${TEAMS[1].short} ${teams[1].hp} HP`;
+      }
       $('#fb4').textContent = next ? `${next.name} IN ${Math.ceil(left / 1000)}` : '';
       $('#fb4').style.fontSize = '14px';
       return;
@@ -408,6 +451,12 @@
     $('#gRound').textContent = r ? `R${state.round + 1} ${r.name}` : '';
     const mine = me();
     $('#gScore').textContent = mine ? mine.score : 0;
+    $('#gRank').style.color = '';
+    if (teamBattle()) {
+      $('#gRank').textContent = TEAMS[myTeam()].short;
+      $('#gRank').style.color = TEAMS[myTeam()].color;
+      return;
+    }
     if (solo) {
       const best = hof && hof.solo[0] ? hof.solo[0].score : 0;
       $('#gRank').textContent = `HI ${Math.max(best, mine ? mine.score : 0)}`;
@@ -504,6 +553,19 @@
       p.kills = k.kills;
       if (state.round >= 0) p.roundScores[state.round] = k.roundScore;
     }
+    if (k.hp && teams) {
+      k.hp.forEach((hp, i) => { teams[i].hp = hp; });
+      renderHp();
+      if (k.team !== myTeam()) {
+        // The other team landed a word on us.
+        arena.flash('#ff2d2d');
+        const bar = $(`#hpBar${myTeam()}`);
+        bar.classList.remove('hit');
+        void bar.offsetWidth;
+        bar.classList.add('hit');
+        Sfx.play('escape');
+      }
+    }
     if (k.by === you) {
       Sfx.play('shoot');
       if (navigator.vibrate) navigator.vibrate(25);
@@ -561,11 +623,23 @@
       $('#lobbyName').textContent = mine.name;
       $('#lobbyClass').textContent = `${classByKey(mine.cls).name} · ${classByKey(mine.cls).attack}`;
     }
+    const tb = teamBattle();
+    const side = mine ? TEAMS[mine.team] : null;
+    $('#lobbyTeam').classList.toggle('hidden', !tb || !side);
+    if (tb && side) {
+      $('#lobbyTeam').textContent = side.name;
+      $('#lobbyTeam').style.background = side.color;
+    }
+    $('#btnTeam').classList.toggle('hidden', !tb);
+    $('#lobbyMode').textContent = tb
+      ? "TEAM BATTLE: type your side's words to hit the other team!"
+      : 'FREE FOR ALL: first to type a word gets the points!';
     $('#lobbyCount').textContent = players.length;
     const roster = $('#lobbyRoster');
     roster.innerHTML = '';
     for (const p of players) {
-      roster.append(el('div', { class: `mini${p.id === you ? ' me' : ''}` }, [heroImg(p), el('span', { text: p.name })]));
+      const cls = `mini${p.id === you ? ' me' : ''}${tb ? ` team${p.team}` : ''}`;
+      roster.append(el('div', { class: cls }, [heroImg(p), el('span', { text: p.name })]));
     }
   }
 
@@ -581,8 +655,33 @@
     $('#fRounds').textContent = rounds.map((r, i) => `${r.name} +${mine.roundScores[i] || 0}`).join('  ·  ');
     $('#fSoloActions').classList.toggle('hidden', !solo);
     $('#fWait').classList.toggle('hidden', solo);
+    $('#fScoreLbl').textContent = 'SCORE';
+    $('#fPlace').style.color = '';
     const top = $('#fTop');
     top.innerHTML = '';
+    const topHeroes = (colorByTeam) => {
+      top.append(el('h3', { text: 'TOP HEROES' }));
+      ranked.slice(0, 3).forEach((p, i) => {
+        top.append(el('div', { class: `t3${p.id === you ? ' me' : ''}` }, [
+          el('span', { text: `${i + 1}.` }), heroImg(p),
+          el('span', { text: p.name, style: colorByTeam ? `color:${TEAMS[p.team].color}` : '' }),
+          el('span', { class: 'sc', text: p.score }),
+        ]));
+      });
+    };
+
+    if (teamBattle() && teams && winner !== null) {
+      const ours = myTeam();
+      $('#fTitle').textContent = winner === -1 ? 'DRAW!' : winner === ours ? 'VICTORY!' : 'DEFEAT...';
+      $('#fPlace').textContent = winner === -1
+        ? `${TEAMS[0].short} ${teams[0].hp} HP · ${TEAMS[1].short} ${teams[1].hp} HP`
+        : `${TEAMS[winner].name} WIN${ko ? ' BY K.O.!' : '!'}`;
+      $('#fPlace').style.color = winner >= 0 ? TEAMS[winner].color : '';
+      $('#fRecord').classList.add('hidden');
+      $('#fScoreLbl').textContent = 'DAMAGE DEALT';
+      topHeroes(true);
+      return;
+    }
 
     if (solo) {
       $('#fTitle').textContent = rec && rec.rank === 1 ? 'NEW HIGH SCORE!' : 'QUEST COMPLETE!';
@@ -601,14 +700,10 @@
     $('#fPlace').textContent = `#${idx + 1} of ${ranked.length}`;
     $('#fRecord').textContent = rec ? (rec.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${rec.rank}`) : '';
     $('#fRecord').classList.toggle('hidden', !rec);
-    top.append(el('h3', { text: 'TOP HEROES' }));
-    ranked.slice(0, 3).forEach((p, i) => {
-      top.append(el('div', { class: `t3${p.id === you ? ' me' : ''}` }, [
-        el('span', { text: `${i + 1}.` }), heroImg(p), el('span', { text: p.name }), el('span', { class: 'sc', text: p.score }),
-      ]));
-    });
+    topHeroes(false);
   }
 
+  $('#btnTeam').onclick = () => socket.emit('player:team');
   document.addEventListener('pointerdown', () => Sfx.unlock());
   buildCreator();
   refreshCreator(false);

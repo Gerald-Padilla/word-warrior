@@ -32,6 +32,12 @@
     return [...players].sort((a, b) => b.score - a.score || b.kills - a.kills || a.name.localeCompare(b.name));
   }
 
+  // Team battle sides, by the team index the server uses.
+  const TEAMS = [
+    { name: 'RED DRAGONS', short: 'RED', color: '#ff5a4d', dark: '#8a2118' },
+    { name: 'BLUE GRIFFINS', short: 'BLUE', color: '#4da6ff', dark: '#1d4a8a' },
+  ];
+
   const Sfx = {
     ctx: null,
     muted: false,
@@ -95,5 +101,5 @@
     },
   };
 
-  window.WW = { $, el, syncClock, rankPlayers, Sfx };
+  window.WW = { $, el, syncClock, rankPlayers, TEAMS, Sfx };
 })();

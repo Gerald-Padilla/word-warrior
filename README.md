@@ -32,10 +32,25 @@ Players scan the QR code on it. Phones must be able to reach this laptop (see *N
 - Words that reach the ground escape and nobody scores them.
 - More players means more words on screen at once.
 
+## Team battle
+
+Pick **TEAM BATTLE** instead of **FREE FOR ALL** in the host lobby (it needs at least 2 heroes).
+
+- Players are split into **Red Dragons** and **Blue Griffins**, balanced as they join. On the phone,
+  **SWITCH TEAM** changes sides in the lobby; the host can **SHUFFLE TEAMS** to deal everyone out again.
+- Both teams start with the same HP (10,000, scaled up for bigger teams).
+- Each team gets its own falling words. Only your team can type them, and every word you finish hits the
+  other team for its points: your hero attacks the word and the blow flies across to the enemy.
+- A team at 0 HP is knocked out on the spot. If both survive the three rounds, the team with more HP wins.
+- The big screen splits in half (red left, blue right) with fighting-game HP bars on top. Phones show only
+  your own side's words and teammates, with both HP bars under the top bar; your screen flashes when the
+  other team lands a hit.
+- The podium shows the top damage dealers from both teams. Team battles aren't recorded in the Hall of Fame.
+
 **Heroes:** Knight (sword beam), Wizard (fireball), Elf Archer (arrow), Rogue (dagger volley),
 Cleric (holy light), Barbarian (spinning axe), each in 8 colors and 4 skin tones.
 
-**Host controls:** START BATTLE, HALL OF FAME, SKIP ▶ (jump to the next phase), SOUND ON/OFF,
+**Host controls:** FREE FOR ALL / TEAM BATTLE, START BATTLE, SHUFFLE TEAMS, HALL OF FAME, SKIP ▶ (jump to the next phase), SOUND ON/OFF,
 PLAY AGAIN / BACK TO LOBBY on the podium screen. Click a hero in the lobby to remove them.
 
 Players who lose connection (phone locked, Wi-Fi blip) rejoin automatically with their score intact.
@@ -117,11 +132,12 @@ npm run bots -- ABCD 6
 ## Tuning
 
 Round length, fall speed, spawn rate and points multipliers are in the `ROUNDS` table at the top of
-`server.js`, next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Word lists are in `words.js`.
+`server.js`, next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo) and the team battle
+HP (`TEAM_HP`). Word lists are in `words.js`.
 
 ## Files
 
-- `server.js`: Express + Socket.IO server; battle and solo rooms, rounds, word spawning, scoring, Hall of Fame
+- `server.js`: Express + Socket.IO server; battle, team battle and solo rooms, rounds, word spawning, scoring, HP, Hall of Fame
 - `data/highscores.json`: saved Hall of Fame (created after the first finished game)
 - `words.js`: easy / medium / hard word pools
 - `public/host.html`, `public/js/host.js`: big screen (QR lobby, battlefield, leaderboard, podium)

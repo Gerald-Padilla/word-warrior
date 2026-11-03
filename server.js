@@ -29,6 +29,8 @@ const INTERMISSION_MS = 9000;
 const SOLO_INTERMISSION_MS = 5000;
 const SPAWN_LEAD_MS = 150; // words start slightly in the future so every client sees them enter
 const STOP_SPAWN_BEFORE_END_MS = 3000;
+const TEAM_HP = 10000; // each team's HP in a team battle, scaled up for bigger teams
+const KO_DELAY_MS = 1500; // let the knockout blow land before the results
 const MAX_PLAYERS = 60;
 const CLASSES = ['knight', 'wizard', 'archer', 'rogue', 'cleric', 'barbarian'];
 const COLOR_COUNT = 8;
@@ -157,29 +159,35 @@ function cleanLook(data) {
 function newPlayer(data) {
   return {
     id: shortId(), token: token(), name: cleanName(data.name) || 'Hero', ...cleanLook(data),
-    score: 0, kills: 0, roundScores: ROUNDS.map(() => 0),
+    score: 0, kills: 0, roundScores: ROUNDS.map(() => 0), team: 0,
     socketId: null, connected: true, joinedAt: Date.now(), bot: Boolean(data.bot),
   };
 }
+
+// Each stream of falling words keeps its own spawn clock: one for free-for-all, one per team in a team battle.
+const newStream = (nextSpawnAt = 0) => ({ nextSpawnAt, lastSpawnAt: 0, used: new Set() });
+const crowdFactor = (heroes) => Math.min(2.2, 1 + 0.12 * (heroes - 1));
 
 // Solo rooms run the same rounds with one player and no host screen.
 function createRoom(solo = false) {
   const room = {
     code: makeCode(),
     solo,
+    mode: 'ffa', // or 'teams'
     hostToken: token(),
     hostSocketId: null,
     players: new Map(),
     records: {}, // playerId -> { board, rank, entryId } for hall-of-fame entries from the last game
+    teams: null, // team battle: [{ hp, max }, { hp, max }]
+    winner: null, // team battle: 0, 1, or -1 for a draw
+    ko: false,
     state: 'lobby',
     round: -1,
     phaseEndsAt: 0,
     words: new Map(),
-    used: new Set(),
+    streams: [newStream()],
     recentKills: new Map(),
     nextWordId: 1,
-    nextSpawnAt: 0,
-    lastSpawnAt: 0,
     timer: null,
     ticker: null,
     lastActive: Date.now(),
@@ -191,7 +199,7 @@ function createRoom(solo = false) {
 const channel = (room) => `room:${room.code}`;
 
 function publicPlayer(p) {
-  return { id: p.id, name: p.name, cls: p.cls, color: p.color, skin: p.skin,
+  return { id: p.id, name: p.name, cls: p.cls, color: p.color, skin: p.skin, team: p.team,
     score: p.score, kills: p.kills, roundScores: p.roundScores, connected: p.connected };
 }
 
@@ -206,6 +214,7 @@ function snapshot(room) {
     players: [...room.players.values()].map(publicPlayer),
     words: [...room.words.values()],
     records: room.records,
+    mode: room.mode, teams: room.teams, winner: room.winner, ko: room.ko,
   };
 }
 
@@ -217,7 +226,49 @@ function broadcastState(room) {
   io.to(channel(room)).emit('room:state', {
     state: room.state, round: room.round, phaseEndsAt: room.phaseEndsAt,
     players: [...room.players.values()].map(publicPlayer), records: room.records,
+    mode: room.mode, teams: room.teams, winner: room.winner, ko: room.ko,
   });
+}
+
+// ---- Teams -----------------------------------------------------------------
+function teamCounts(room, connectedOnly = false) {
+  const counts = [0, 0];
+  for (const p of room.players.values()) if (!connectedOnly || p.connected) counts[p.team] += 1;
+  return counts;
+}
+
+const smallerTeam = (room) => {
+  const [a, b] = teamCounts(room);
+  return a === b ? Math.floor(Math.random() * 2) : a < b ? 0 : 1;
+};
+
+// shuffle deals everyone out again at random; otherwise this only steps in when one side is empty.
+function balanceTeams(room, shuffle) {
+  const list = [...room.players.values()];
+  const [a, b] = teamCounts(room);
+  if (!shuffle && ((a && b) || list.length < 2)) return;
+  if (shuffle) {
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+  }
+  const first = Math.floor(Math.random() * 2);
+  list.forEach((p, i) => { p.team = (i + first) % 2; });
+}
+
+// A team at 0 HP loses on the spot.
+function knockOut(room, winner) {
+  clearTimeout(room.timer);
+  clearInterval(room.ticker);
+  room.ticker = null;
+  room.ko = true;
+  room.winner = winner;
+  room.timer = setTimeout(() => {
+    room.words.clear();
+    io.to(channel(room)).emit('word:clear');
+    setPhase(room, 'finished', 0, null);
+  }, KO_DELAY_MS);
 }
 
 function closeRoom(room) {
@@ -250,6 +301,14 @@ function startGame(room) {
     p.kills = 0;
     p.roundScores = ROUNDS.map(() => 0);
   }
+  room.winner = null;
+  room.ko = false;
+  room.teams = null;
+  if (room.mode === 'teams') {
+    balanceTeams(room, false);
+    const max = Math.round((TEAM_HP * crowdFactor(Math.max(1, ...teamCounts(room)))) / 100) * 100;
+    room.teams = [{ hp: max, max }, { hp: max, max }];
+  }
   room.round = -1;
   room.words.clear();
   nextRound(room);
@@ -261,10 +320,9 @@ function nextRound(room) {
 }
 
 function beginPlaying(room) {
-  room.used.clear();
   room.words.clear();
   room.recentKills.clear();
-  room.nextSpawnAt = Date.now() + 200;
+  room.streams = (room.mode === 'teams' ? [0, 1] : [0]).map(() => newStream(Date.now() + 200));
   setPhase(room, 'playing', ROUNDS[room.round].duration, () => endRound(room));
   clearInterval(room.ticker);
   room.ticker = setInterval(() => tick(room), 100);
@@ -276,6 +334,10 @@ function endRound(room) {
   room.words.clear();
   io.to(channel(room)).emit('word:clear');
   if (room.round >= ROUNDS.length - 1) {
+    if (room.teams) {
+      const [a, b] = room.teams.map((t) => t.hp);
+      room.winner = a === b ? -1 : a > b ? 0 : 1;
+    }
     recordScores(room);
     setPhase(room, 'finished', 0, null);
   } else {
@@ -284,6 +346,7 @@ function endRound(room) {
 }
 
 function recordScores(room) {
+  if (room.mode === 'teams') return; // team damage isn't comparable with free-for-all scores
   const board = room.solo ? 'solo' : 'battle';
   const ranked = [...room.players.values()]
     .sort((a, b) => b.score - a.score || b.kills - a.kills || a.name.localeCompare(b.name));
@@ -302,6 +365,9 @@ function recordScores(room) {
 function backToLobby(room) {
   stopTimers(room);
   room.records = {};
+  room.teams = null;
+  room.winner = null;
+  room.ko = false;
   room.round = -1;
   room.words.clear();
   for (const p of room.players.values()) {
@@ -327,39 +393,48 @@ function tick(room) {
 
   if (now >= room.phaseEndsAt - STOP_SPAWN_BEFORE_END_MS) return;
 
-  // More heroes on the field means words disappear faster, so spawn faster too.
-  const heroes = Math.max(1, [...room.players.values()].filter((p) => p.connected).length);
-  const crowd = Math.min(2.2, 1 + 0.12 * (heroes - 1));
-  const maxActive = Math.min(12, cfg.maxActive + Math.floor((heroes - 1) / 3));
-  const fieldEmpty = room.words.size === 0 && now - room.lastSpawnAt > 500;
+  // More heroes on the field means words disappear faster, so spawn faster too. In a team battle each
+  // team has its own stream, both paced for the bigger team so neither side gets more words to hit with.
+  const teams = room.mode === 'teams';
+  const counts = teams ? teamCounts(room, true) : [[...room.players.values()].filter((p) => p.connected).length];
+  const heroes = Math.max(1, ...counts);
+  const crowd = crowdFactor(heroes);
+  const maxActive = Math.min(teams ? 8 : 12, cfg.maxActive + Math.floor((heroes - 1) / 3));
 
-  if (now >= room.nextSpawnAt || fieldEmpty) {
-    if (room.words.size < maxActive) {
-      spawnWord(room, cfg, now);
-      room.nextSpawnAt = now + rand(cfg.spawnEvery[0], cfg.spawnEvery[1]) / crowd;
+  room.streams.forEach((stream, i) => {
+    const team = teams ? i : null;
+    const active = streamWords(room, team).length;
+    const fieldEmpty = active === 0 && now - stream.lastSpawnAt > 500;
+    if (now < stream.nextSpawnAt && !fieldEmpty) return;
+    if (active < maxActive) {
+      spawnWord(room, cfg, now, stream, team);
+      stream.nextSpawnAt = now + rand(cfg.spawnEvery[0], cfg.spawnEvery[1]) / crowd;
     } else {
-      room.nextSpawnAt = now + 300;
+      stream.nextSpawnAt = now + 300;
     }
-  }
+  });
 }
 
-function pickWord(room, cfg) {
+// Words on one team's side (team null = the free-for-all field).
+const streamWords = (room, team) => [...room.words.values()].filter((w) => (w.team ?? null) === team);
+
+function pickWord(room, cfg, stream, team) {
   const pool = WORDS[cfg.key];
-  const active = [...room.words.values()].map((w) => w.text);
+  const active = streamWords(room, team).map((w) => w.text);
   // Never let one active word be a prefix of another - typing would auto-hit the shorter one.
-  const ok = (t) => !room.used.has(t) && !active.some((a) => a.startsWith(t) || t.startsWith(a));
+  const ok = (t) => !stream.used.has(t) && !active.some((a) => a.startsWith(t) || t.startsWith(a));
   let choices = pool.filter(ok);
   if (!choices.length) {
-    room.used.clear();
+    stream.used.clear();
     choices = pool.filter(ok);
   }
   if (!choices.length) return null;
   return choices[Math.floor(Math.random() * choices.length)];
 }
 
-function pickX(room, now) {
+function pickX(room, now, team) {
   // Keep new words away from words that are still near the top of the field.
-  const near = [...room.words.values()]
+  const near = streamWords(room, team)
     .filter((w) => (now - w.spawn) / w.dur < 0.4)
     .map((w) => w.x);
   let best = 0.5;
@@ -375,20 +450,21 @@ function pickX(room, now) {
   return Math.round(best * 1000) / 1000;
 }
 
-function spawnWord(room, cfg, now) {
-  const text = pickWord(room, cfg);
+function spawnWord(room, cfg, now, stream, team) {
+  const text = pickWord(room, cfg, stream, team);
   if (!text) return;
-  room.used.add(text);
+  stream.used.add(text);
   const word = {
     id: room.nextWordId++,
     text,
-    x: pickX(room, now),
+    x: pickX(room, now, team),
     spawn: now + SPAWN_LEAD_MS,
     dur: Math.round(rand(cfg.fall[0], cfg.fall[1]) + Math.max(0, text.length - 5) * 220),
     points: text.length * 10 * cfg.multiplier,
   };
+  if (team !== null) word.team = team;
   room.words.set(word.id, word);
-  room.lastSpawnAt = now;
+  stream.lastSpawnAt = now;
   io.to(channel(room)).emit('word:spawn', word);
 }
 
@@ -427,12 +503,27 @@ io.on('connection', (socket) => {
   socket.on('host:start', () => {
     const { room, isHost } = ctx();
     if (!isHost || !['lobby', 'finished'].includes(room.state) || room.players.size === 0) return;
+    if (room.mode === 'teams' && room.players.size < 2) return;
     startGame(room);
+  });
+
+  socket.on('host:mode', (data) => {
+    const { room, isHost } = ctx();
+    if (!isHost || room.state !== 'lobby') return;
+    room.mode = data?.mode === 'teams' ? 'teams' : 'ffa';
+    broadcastState(room);
+  });
+
+  socket.on('host:shuffle', () => {
+    const { room, isHost } = ctx();
+    if (!isHost || room.state !== 'lobby') return;
+    balanceTeams(room, true);
+    broadcastPlayers(room);
   });
 
   socket.on('host:skip', () => {
     const { room, isHost } = ctx();
-    if (!isHost) return;
+    if (!isHost || room.ko) return;
     if (room.state === 'countdown') beginPlaying(room);
     else if (room.state === 'intermission') nextRound(room);
     else if (room.state === 'playing') endRound(room);
@@ -503,10 +594,18 @@ io.on('connection', (socket) => {
       name = `${name.slice(0, 10)}${n}`;
     }
     const p = newPlayer({ ...data, name });
+    p.team = smallerTeam(room);
     room.players.set(p.id, p);
     attachPlayer(room, p);
     broadcastPlayers(room);
     reply(cb, { ok: true, token: p.token, you: p.id, snapshot: snapshot(room) });
+  });
+
+  socket.on('player:team', () => {
+    const { room, player } = ctx();
+    if (!player || room.solo || room.state !== 'lobby') return;
+    player.team = 1 - player.team;
+    broadcastPlayers(room);
   });
 
   socket.on('solo:start', (data, cb) => {
@@ -549,7 +648,7 @@ io.on('connection', (socket) => {
 
   socket.on('player:claim', (data, cb) => {
     const { room, player } = ctx();
-    if (!player || room.state !== 'playing') return reply(cb, { ok: false, reason: 'not-playing' });
+    if (!player || room.state !== 'playing' || room.ko) return reply(cb, { ok: false, reason: 'not-playing' });
     const id = Number(data?.id);
     const word = room.words.get(id);
     if (!word) {
@@ -558,17 +657,26 @@ io.on('connection', (socket) => {
       return reply(cb, { ok: false, reason: 'taken', by: by ? by.name : null });
     }
     if (String(data?.text || '').toLowerCase().trim() !== word.text) return reply(cb, { ok: false, reason: 'mismatch' });
+    if (word.team !== undefined && word.team !== player.team) return reply(cb, { ok: false, reason: 'other-team' });
 
     room.words.delete(id);
     room.recentKills.set(id, { by: player.id, at: Date.now() });
     player.score += word.points;
     player.kills += 1;
     player.roundScores[room.round] += word.points;
-    io.to(channel(room)).emit('word:kill', {
+    const kill = {
       id, by: player.id, points: word.points, score: player.score, kills: player.kills,
       roundScore: player.roundScores[room.round],
-    });
+    };
+    // Team battle: the word's points come off the other team's HP.
+    const foe = room.teams && word.team !== undefined ? room.teams[1 - word.team] : null;
+    if (foe) {
+      foe.hp = Math.max(0, foe.hp - word.points);
+      Object.assign(kill, { team: word.team, hp: room.teams.map((t) => t.hp) });
+    }
+    io.to(channel(room)).emit('word:kill', kill);
     reply(cb, { ok: true, points: word.points });
+    if (foe && foe.hp === 0) knockOut(room, word.team);
   });
 
   socket.on('disconnect', () => {

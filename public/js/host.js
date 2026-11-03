@@ -1,6 +1,6 @@
 // Host / big-screen controller: QR lobby, live battlefield, leaderboard and podium.
 (function () {
-  const { $, el, syncClock, rankPlayers, Sfx } = window.WW;
+  const { $, el, syncClock, rankPlayers, TEAMS, Sfx } = window.WW;
   const { heroDataURL } = window.Art;
 
   const socket = io();
@@ -13,6 +13,10 @@
   let players = [];
   let state = { state: 'connecting', round: -1, phaseEndsAt: 0 };
   let records = {}; // playerId -> hall-of-fame entry earned in the last game
+  let mode = 'ffa'; // or 'teams'
+  let teams = null; // team battle: [{ hp, max }, { hp, max }]
+  let winner = null; // team battle: 0, 1, or -1 for a draw
+  let ko = false;
   let lastCount = 0;
   let lastBeep = null;
   const prevScores = new Map();
@@ -50,6 +54,10 @@
     arena.kill(k.id, k.by, k.points);
     Sfx.play('shoot');
     scheduleBoard();
+    if (k.hp && teams) {
+      k.hp.forEach((hp, i) => { teams[i].hp = hp; });
+      renderTeamBar();
+    }
   });
   socket.on('room:closed', () => {
     store.set('ww_host', null);
@@ -58,6 +66,12 @@
 
   arena.onHit = () => Sfx.play('hit');
   arena.onEscape = () => Sfx.play('escape');
+  arena.onTeamHit = (team) => {
+    const bar = $(`#tbBar${team}`);
+    bar.classList.remove('hit');
+    void bar.offsetWidth;
+    bar.classList.add('hit');
+  };
 
   function load(snap) {
     code = snap.code;
@@ -122,26 +136,58 @@
     return el('img', { class: cls, src: heroDataURL(p), alt: '' });
   }
 
+  function heroTile(p) {
+    return el('button', {
+      class: `hero-tile${p.connected ? '' : ' off'}`,
+      title: `Remove ${p.name}`,
+      onclick: () => {
+        if (confirm(`Remove ${p.name} from the battle?`)) socket.emit('host:kick', { id: p.id });
+      },
+    }, [heroImg(p, 'px-sprite bob'), el('div', { class: 'nm', text: p.name }), el('div', { class: 'x', text: 'X' })]);
+  }
+
   function renderRoster() {
     const roster = $('#roster');
+    const teamsOn = mode === 'teams';
     roster.innerHTML = '';
+    roster.classList.toggle('split', teamsOn && players.length > 0);
     $('#count').textContent = players.length;
     if (!players.length) {
       roster.append(el('div', { class: 'roster-empty', text: 'No heroes yet... Scan the QR code to join the battle!' }));
+    } else if (teamsOn) {
+      TEAMS.forEach((t, i) => {
+        const side = players.filter((p) => p.team === i);
+        roster.append(el('div', { class: 'team-col' }, [
+          el('h4', { text: `${t.name} · ${side.length}`, style: `background:${t.color}` }),
+          el('div', { class: 'team-tiles' }, side.map(heroTile)),
+        ]));
+      });
+    } else {
+      for (const p of players) roster.append(heroTile(p));
     }
-    for (const p of players) {
-      roster.append(el('button', {
-        class: `hero-tile${p.connected ? '' : ' off'}`,
-        title: `Remove ${p.name}`,
-        onclick: () => {
-          if (confirm(`Remove ${p.name} from the battle?`)) socket.emit('host:kick', { id: p.id });
-        },
-      }, [heroImg(p, 'px-sprite bob'), el('div', { class: 'nm', text: p.name }), el('div', { class: 'x', text: 'X' })]));
+    const enough = players.length >= (teamsOn ? 2 : 1);
+    $('#btnStart').disabled = !enough;
+    show('#btnShuffle', teamsOn && players.length > 1);
+    if (teamsOn && players.length && !enough) $('#startHint').textContent = 'A team battle needs at least 2 heroes.';
+    else if (teamsOn && enough) {
+      const red = players.filter((p) => p.team === 0).length;
+      $('#startHint').textContent = `${red} red vs ${players.length - red} blue. Heroes can switch sides on their phones.`;
+    } else {
+      $('#startHint').textContent = players.length
+        ? `${players.length} hero${players.length === 1 ? '' : 'es'} ready. Start when everyone is in!`
+        : 'Waiting for heroes to join...';
     }
-    $('#btnStart').disabled = !players.length;
-    $('#startHint').textContent = players.length
-      ? `${players.length} hero${players.length === 1 ? '' : 'es'} ready. Start when everyone is in!`
-      : 'Waiting for heroes to join...';
+  }
+
+  function renderTeamBar() {
+    if (!teams) return;
+    teams.forEach((t, i) => {
+      const fill = $(`#tbFill${i}`);
+      fill.style.width = `${(t.hp / t.max) * 100}%`;
+      fill.style.background = TEAMS[i].color;
+      $(`#tbHp${i}`).textContent = `${t.hp} HP`;
+      $(`#tbName${i}`).style.color = TEAMS[i].color;
+    });
   }
 
   let boardQueued = false;
@@ -184,21 +230,34 @@
     const prev = state.state;
     state = { state: s.state, round: s.round, phaseEndsAt: s.phaseEndsAt };
     if (s.records) records = s.records;
+    mode = s.mode || 'ffa';
+    teams = s.teams || null;
+    winner = s.winner ?? null;
+    ko = Boolean(s.ko);
     if (s.players) setPlayers(s.players);
+    else renderRoster();
     const r = rounds[s.round];
     const st = s.state;
     const fighting = st === 'countdown' || st === 'playing';
+    const teamsOn = mode === 'teams';
 
+    for (const b of document.querySelectorAll('.mode-btn')) b.classList.toggle('on', b.dataset.mode === mode);
+    arena.setTeamMode(teamsOn);
     if (st !== 'lobby' && st !== 'finished') show('#hof', false);
     show('#lobby', st === 'lobby');
     show('#hud', fighting || st === 'intermission');
-    show('#board', fighting);
+    show('#teamBar', Boolean(teams) && (fighting || st === 'intermission'));
+    show('#board', fighting && !teamsOn);
     show('#banner', st === 'countdown');
     show('#inter', st === 'intermission');
     show('#final', st === 'finished');
-    arena.setReserveRight(fighting ? 340 : 0);
+    arena.setReserveRight(fighting && !teamsOn ? 340 : 0);
     const hudH = st === 'lobby' || st === 'finished' ? 0 : $('#hud').offsetHeight;
-    arena.setReserveTop(hudH);
+    $('#teamBar').style.top = `${hudH}px`;
+    const barH = teams && hudH ? $('#teamBar').offsetHeight : 0;
+    arena.setReserveTop(hudH + barH);
+    renderTeamBar();
+    $('#inter').style.paddingTop = `${hudH + barH + 20}px`;
     $('#board').style.top = `${hudH + 18}px`;
     $('#board').style.maxHeight = `calc(100vh - ${hudH + 18}px - 24vh)`;
 
@@ -209,7 +268,7 @@
     if (r) {
       arena.setTheme(r.monster);
       $('#hudRound').textContent = `ROUND ${s.round + 1} · ${r.name}`;
-      $('#hudTitle').textContent = `${r.title} · x${r.multiplier} points`;
+      $('#hudTitle').textContent = `${r.title} · x${r.multiplier} ${teamsOn ? 'damage' : 'points'}`;
       $('#bRound').textContent = `ROUND ${s.round + 1}`;
       $('#bDiff').textContent = r.name;
       $('#bDiff').className = `b-diff ${DIFF_CLASS[s.round] || ''}`;
@@ -239,7 +298,9 @@
   function renderInter() {
     const r = state.round;
     $('#iTitle').textContent = `ROUND ${r + 1} COMPLETE!`;
-    $('#iSub').textContent = ROUND_OUTRO[r] || '';
+    $('#iSub').textContent = teams
+      ? `${TEAMS[0].name} ${teams[0].hp} HP  ·  ${TEAMS[1].name} ${teams[1].hp} HP`
+      : ROUND_OUTRO[r] || '';
     const table = $('#iTable');
     table.innerHTML = '';
     table.append(el('div', { class: 'row head' }, [
@@ -247,7 +308,7 @@
       el('span', { class: 'rs', text: 'ROUND' }), el('span', { class: 'sc', text: 'TOTAL' }),
     ]));
     rankPlayers(players).slice(0, 8).forEach((p, i) => {
-      table.append(el('div', { class: `row r${i + 1}` }, [
+      table.append(el('div', { class: `row r${i + 1}${teams ? ` team${p.team}` : ''}` }, [
         el('span', { class: 'rk', text: `${i + 1}.` }),
         heroImg(p),
         el('span', { class: 'nm', text: p.name }),
@@ -262,6 +323,17 @@
 
   function renderFinal() {
     const ranked = rankPlayers(players);
+    // Team battle: the winning side takes the title; the podium shows the top damage dealers from both sides.
+    const tb = teams && winner !== null;
+    const teamStyle = (p) => (tb ? `color:${TEAMS[p.team].color}` : '');
+    $('#finalTitle').textContent = !tb ? 'VICTORY!' : winner === -1 ? 'DRAW!' : `${TEAMS[winner].name} WIN!`;
+    $('#finalTitle').style.color = tb && winner >= 0 ? TEAMS[winner].color : '';
+    if (tb) {
+      $('#finalSub').textContent = ko && winner >= 0
+        ? `K.O.! ${TEAMS[1 - winner].name} ran out of HP`
+        : `${TEAMS[0].name} ${teams[0].hp} HP  ·  ${TEAMS[1].name} ${teams[1].hp} HP`;
+    }
+    show('#finalSub', tb);
     const podium = $('#podium');
     podium.innerHTML = '';
     const order = [[1, 'p2'], [0, 'p1'], [2, 'p3']];
@@ -271,9 +343,9 @@
       const rec = records[p.id];
       podium.append(el('div', { class: `pod ${cls}` }, [
         heroImg(p),
-        el('div', { class: 'nm', text: p.name }),
+        el('div', { class: 'nm', text: p.name, style: teamStyle(p) }),
         rec ? el('div', { class: 'rec blink', text: rec.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${rec.rank}` }) : null,
-        el('div', { class: 'sc', text: `${p.score} PTS` }),
+        el('div', { class: 'sc', text: `${p.score} ${tb ? 'DMG' : 'PTS'}` }),
         el('div', { class: 'ko', text: `${p.kills} MONSTERS SLAIN` }),
         el('div', { class: 'block', text: idx + 1 }),
       ]));
@@ -281,7 +353,7 @@
     const rest = $('#finalRest');
     rest.innerHTML = '';
     ranked.slice(3, 15).forEach((p, i) => {
-      rest.append(el('div', { class: 'row' }, [
+      rest.append(el('div', { class: `row${tb ? ` team${p.team}` : ''}` }, [
         el('span', { class: 'rk', text: `${i + 4}.` }),
         heroImg(p),
         el('span', { class: 'nm', text: p.name }),
@@ -363,6 +435,8 @@
   $('#btnAgain').onclick = () => socket.emit('host:start');
   $('#btnLobby').onclick = () => socket.emit('host:lobby');
   $('#btnSkip').onclick = () => socket.emit('host:skip');
+  for (const b of document.querySelectorAll('.mode-btn')) b.onclick = () => socket.emit('host:mode', { mode: b.dataset.mode });
+  $('#btnShuffle').onclick = () => socket.emit('host:shuffle');
   $('#btnHof').onclick = openHof;
   $('#btnHof2').onclick = openHof;
   $('#btnHofClose').onclick = () => show('#hof', false);
