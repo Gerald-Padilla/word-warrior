@@ -22,13 +22,15 @@
     .err { color: var(--red); font-size: 10px; text-align: center; min-height: 14px; margin: 0; line-height: 1.7; }
 
     /* Hero creator */
-    .preview-row { display: flex; align-items: center; gap: 14px; }
-    .preview { flex: none; width: 112px; height: 112px; background: radial-gradient(circle, #3a2d57 0 55%, transparent 56%); display: flex; align-items: center; justify-content: center; }
-    .preview img { width: 96px; height: 96px; }
-    .preview img.hop { animation: hop 0.35s steps(4); }
+    .name-row { display: flex; gap: 8px; }
+    .name-row .px-btn { margin: 0; flex: none; padding: 0 14px; }
+    .stage { position: relative; height: 150px; box-shadow: 0 0 0 3px var(--ink); cursor: pointer; }
+    .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .stage-tag { position: absolute; left: 8px; top: 6px; font-size: 7px; color: var(--cream); background: rgba(27, 20, 38, 0.7); padding: 4px 6px; pointer-events: none; }
+    .cls-info { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
     .cls-info .nm { font-size: 14px; color: var(--gold); }
-    .cls-info .atk { font-size: 10px; color: var(--cream); margin-top: 10px; }
-    .cls-info .blurb { font-size: 8px; color: var(--muted); margin-top: 8px; line-height: 1.8; }
+    .cls-info .atk { font-size: 10px; color: var(--cream); }
+    .cls-info .blurb { font-size: 8px; color: var(--muted); line-height: 1.8; }
     .cls-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
     .cls-btn { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 2px; background: var(--panel-2); border: 0; color: var(--cream); font-size: 7px; cursor: pointer; box-shadow: inset 0 0 0 3px transparent; }
     .cls-btn img { width: 48px; height: 48px; }
@@ -36,11 +38,21 @@
     .swatches { display: flex; flex-wrap: wrap; gap: 8px; }
     .swatch { width: 34px; height: 34px; border: 0; cursor: pointer; box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.3), 0 0 0 3px var(--ink); }
     .swatch.on { box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.3), 0 0 0 3px var(--ink), 0 0 0 6px var(--gold); }
+    .label small { color: var(--cream); margin-left: 6px; }
+    #hairBlock .label { margin-top: 14px; }
+    .pet-row { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+    .pet-btn { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 5px; min-height: 52px; padding: 6px 2px; background: var(--panel-2); border: 0; color: var(--cream); font: inherit; font-size: 6px; cursor: pointer; }
+    .pet-btn img { width: 24px; height: 24px; }
+    .pet-btn.on { box-shadow: inset 0 0 0 3px var(--gold); background: var(--panel-3); color: var(--gold); }
+    #btnRandom { margin-top: 14px; width: 100%; }
 
     /* Lobby */
     .you { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; padding-top: 10px; }
     .you h2 { margin: 0; font-size: 18px; color: var(--gold); }
+    .you-pair { display: flex; align-items: flex-end; gap: 4px; }
     .you img { width: 128px; height: 128px; }
+    .you img.pet { width: 48px; height: 48px; }
+    .lobby-note { text-align: center; font-size: 10px; line-height: 1.7; color: var(--ink); background: var(--gold); padding: 8px; margin: 0; }
     .you .nm { font-size: 14px; }
     .you .cl { font-size: 9px; color: var(--muted); }
     .wait { text-align: center; font-size: 10px; color: var(--cream); margin: 4px 0; }
@@ -69,36 +81,6 @@
     .hp-fx:empty { display: none; }
     .fx-chip { display: flex; align-items: center; gap: 3px; font-size: 7px; padding: 2px 4px; background: var(--ink); }
     .fx-chip img { width: 10px; height: 12px; image-rendering: pixelated; }
-
-    /* Landscape: phones on their side and PC windows use the whole width. */
-    @media (orientation: landscape) {
-      #app { max-width: none; }
-      .screen:not(#scrGame) { width: 100%; max-width: 1100px; margin: 0 auto; }
-      #scrJoin, #scrLobby { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 18px; align-content: start; }
-      #scrJoin > *, #scrLobby > * { grid-column: 1; }
-      #scrJoin > #heroBox { grid-column: 2; grid-row: 1 / span 7; align-self: start; }
-      #scrLobby > .px-box { grid-column: 2; grid-row: 1 / span 7; align-self: start; }
-      #scrFinal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; align-content: center; justify-items: center; }
-      #scrFinal > * { grid-column: 1; }
-      #scrFinal > :first-child { margin-top: 0; }
-      #scrFinal > #fTop { grid-column: 2; grid-row: 1 / span 5; align-self: start; }
-      #scrFinal > .final-foot { grid-column: 2; grid-row: 6; margin-bottom: 0; }
-      .typebar { display: flex; justify-content: center; }
-      #typeIn { max-width: 760px; }
-    }
-    /* A phone on its side with the keyboard up has very little height: the typing box moves into the top
-       row and the HP bars float over the battlefield so the field keeps as much room as it can. */
-    @media (orientation: landscape) and (max-height: 520px) {
-      .screen { padding-top: 10px; }
-      .logo.sm { font-size: 16px; }
-      #scrGame { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); grid-template-rows: auto minmax(0, 1fr); }
-      #scrGame .topbar { grid-column: 1; grid-row: 1; padding: 4px 8px; }
-      #scrGame .typebar { grid-column: 2; grid-row: 1; padding: 4px 8px; box-shadow: 0 3px 0 var(--ink); }
-      #typeIn { font-size: 15px; padding: 7px 10px; }
-      #scrGame .field { grid-column: 1 / -1; grid-row: 2; }
-      #scrGame .hpstrip { grid-column: 1 / -1; grid-row: 2; align-self: start; background: rgba(45, 35, 66, 0.85); padding: 4px 10px; }
-      .tap-hint { bottom: 20%; }
-    }
     h3 { font-size: 10px; margin: 0 0 12px; color: var(--muted); }
 
     /* Game */
@@ -123,9 +105,27 @@
     .toast.bad { color: var(--red); } .toast.good { color: #8be36b; }
     .tap-hint { position: absolute; left: 50%; bottom: 30%; transform: translateX(-50%); font-size: 11px; color: var(--gold); background: var(--ink); padding: 10px 14px; pointer-events: none; white-space: nowrap; }
     .typebar { padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--panel); box-shadow: 0 -3px 0 var(--ink); z-index: 2; }
-    #typeIn { font-size: 20px; letter-spacing: 2px; padding: 12px; text-transform: lowercase; }
-    #typeIn.miss { box-shadow: inset 0 0 0 var(--b) var(--red); animation: shake 0.2s steps(4); }
+    .typebar.oops { animation: oops 0.35s steps(3); }
+    @keyframes oops { 0% { background: #8e1f35; } 100% { background: var(--panel); } }
+    /* The input's own text is invisible; the layer on top shows the letters that still match a word in gold
+       and the wrong ones white on red, lined up exactly over the real text. */
+    .type-wrap { position: relative; width: 100%; --tfs: 20px; --tpad: 12px; }
+    #typeIn, .type-show { font-size: var(--tfs); padding: var(--tpad); letter-spacing: 2px; }
+    #typeIn { text-transform: lowercase; color: transparent; caret-color: var(--gold); }
+    #typeIn::placeholder { color: #6f668a; }
+    #typeIn.miss { box-shadow: inset 0 0 0 var(--b) var(--red); }
+    #typeIn.oops { animation: shake 0.2s steps(4); }
     #typeIn:disabled { opacity: 0.5; }
+    .type-show { position: absolute; inset: 0; display: flex; align-items: center; white-space: pre; overflow: hidden; pointer-events: none; }
+    .type-show .ok { color: var(--gold); }
+    .type-show .bad { color: #fff; background: var(--red); }
+    .type-hint { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); font-size: 9px; color: #fff; background: var(--red); padding: 8px 10px; white-space: nowrap; pointer-events: none; z-index: 3; box-shadow: 0 0 0 3px var(--ink); }
+    /* Someone else got the word you were typing (or it got away): impossible to miss. */
+    .steal { position: absolute; inset: 0; margin: auto; width: fit-content; height: fit-content; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 20px; background: rgba(27, 20, 38, 0.94); box-shadow: 0 0 0 4px var(--red), 0 0 0 8px var(--ink); pointer-events: none; z-index: 4; text-align: center; max-width: 90%; }
+    .steal .s1 { font-size: 24px; color: var(--red); text-shadow: 3px 3px 0 var(--ink); }
+    .steal .s2 { font-size: 10px; color: var(--cream); line-height: 1.7; }
+    .steal.pop { animation: steal-in 0.3s steps(5); }
+    @keyframes steal-in { 0% { transform: scale(0.6); } 60% { transform: scale(1.12); } 100% { transform: scale(1); } }
 
     /* Final */
     /* Auto margins center the column but still let it scroll when it's taller than the screen. */
@@ -159,6 +159,39 @@
     .msg { align-items: center; justify-content: center; text-align: center; }
     .msg h2 { font-size: 16px; color: var(--gold); margin: 0; }
     .msg p { font-size: 10px; color: var(--muted); line-height: 1.9; }
+
+    /* Landscape: phones on their side and PC windows use the whole width. (Kept last so it wins.) */
+    @media (orientation: landscape) {
+      #app { max-width: none; }
+      .screen:not(#scrGame) { width: 100%; max-width: 1100px; margin: 0 auto; }
+      #scrJoin, #scrLobby { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 18px; align-content: start; }
+      #scrJoin > *, #scrLobby > * { grid-column: 1; }
+      #scrJoin > #heroBox { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
+      #scrLobby > .px-box { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
+      #scrFinal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; align-content: center; justify-items: center; }
+      #scrFinal > * { grid-column: 1; }
+      #scrFinal > :first-child { margin-top: 0; }
+      #scrFinal > #fTop { grid-column: 2; grid-row: 1 / span 5; align-self: start; }
+      #scrFinal > .final-foot { grid-column: 2; grid-row: 6; margin-bottom: 0; }
+      .typebar { display: flex; justify-content: center; }
+      .type-wrap { max-width: 760px; }
+    }
+    /* A phone on its side with the keyboard up has very little height: the typing box moves into the top
+       row and the HP bars float over the battlefield so the field keeps as much room as it can. */
+    @media (orientation: landscape) and (max-height: 520px) {
+      .screen { padding-top: 10px; }
+      .logo.sm { font-size: 16px; }
+      .stage { height: 120px; }
+      #scrGame { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); grid-template-rows: auto minmax(0, 1fr); }
+      #scrGame .topbar { grid-column: 1; grid-row: 1; padding: 4px 8px; }
+      #scrGame .typebar { grid-column: 2; grid-row: 1; padding: 4px 8px; box-shadow: 0 3px 0 var(--ink); }
+      .type-wrap { --tfs: 15px; --tpad: 7px 10px; }
+      #scrGame .field { grid-column: 1 / -1; grid-row: 2; }
+      #scrGame .hpstrip { grid-column: 1 / -1; grid-row: 2; align-self: start; background: rgba(45, 35, 66, 0.85); padding: 4px 10px; }
+      .tap-hint { bottom: 20%; }
+      .steal { padding: 10px 14px; }
+      .steal .s1 { font-size: 18px; }
+    }
   </style>
 </head>
 <body class="phone">
@@ -176,24 +209,37 @@
         <div class="label">ROOM CODE</div>
         <input id="inCode" class="px-input" maxlength="4" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="ABCD">
         <div class="label">HERO NAME</div>
-        <input id="inName" class="px-input" maxlength="12" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Your name">
+        <div class="name-row">
+          <input id="inName" class="px-input" maxlength="12" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Your name">
+          <button id="btnName" class="px-btn small ghost" type="button" title="Pick a random name">?</button>
+        </div>
       </div>
       <div class="px-box" id="heroBox">
         <div class="label">CHOOSE YOUR HERO</div>
-        <div class="preview-row">
-          <div class="preview"><img id="previewImg" class="px-sprite bob" alt=""></div>
-          <div class="cls-info">
-            <div class="nm" id="clsName">Knight</div>
-            <div class="atk" id="clsAttack">Sword Beam</div>
-            <div class="blurb" id="clsBlurb"></div>
-          </div>
+        <div class="stage" id="stageBox" title="Tap to attack">
+          <canvas id="stage"></canvas>
+          <div class="stage-tag">TAP TO ATTACK</div>
+        </div>
+        <div class="cls-info">
+          <div class="nm" id="clsName">Knight</div>
+          <div class="atk" id="clsAttack">Sword Beam</div>
+          <div class="blurb" id="clsBlurb"></div>
         </div>
         <div class="label">CLASS</div>
         <div class="cls-grid" id="clsGrid"></div>
-        <div class="label">COLOR</div>
+        <div class="label">COLOR<small id="colorName"></small></div>
         <div class="swatches" id="colorRow"></div>
         <div class="label">SKIN</div>
         <div class="swatches" id="skinRow"></div>
+        <div id="hairBlock">
+          <div class="label">HAIR<small id="hairName"></small></div>
+          <div class="swatches" id="hairRow"></div>
+        </div>
+        <div class="label">TRIM<small id="trimName"></small></div>
+        <div class="swatches" id="trimRow"></div>
+        <div class="label">COMPANION</div>
+        <div class="pet-row" id="petRow"></div>
+        <button id="btnRandom" class="px-btn small ghost" type="button">RANDOM LOOK</button>
       </div>
       <p id="joinErr" class="err"></p>
       <button id="btnJoin" class="px-btn big">JOIN BATTLE</button>
@@ -214,11 +260,15 @@
     <section id="scrLobby" class="screen hidden">
       <div class="you">
         <h2>YOU'RE IN!</h2>
-        <img id="lobbyHero" class="px-sprite bob" alt="">
+        <div class="you-pair">
+          <img id="lobbyPet" class="px-sprite pet hidden" alt="">
+          <img id="lobbyHero" class="px-sprite bob" alt="">
+        </div>
         <div class="nm" id="lobbyName"></div>
         <div class="cl" id="lobbyClass"></div>
         <div class="team-badge hidden" id="lobbyTeam"></div>
       </div>
+      <p class="lobby-note hidden" id="lobbyNote"></p>
       <p class="wait blink">Waiting for the host to start...</p>
       <p class="mode-line" id="lobbyMode"></p>
       <div class="px-box">
@@ -257,10 +307,18 @@
         </div>
         <div class="toast" id="toast"></div>
         <div class="tap-hint hidden" id="tapHint">TAP HERE TO TYPE</div>
+        <div class="type-hint hidden" id="typeHint">TYPO! BACKSPACE TO FIX · ENTER TO CLEAR</div>
+        <div class="steal hidden" id="steal">
+          <div class="s1" id="stealTitle">TOO SLOW!</div>
+          <div class="s2" id="stealWho"></div>
+        </div>
       </div>
-      <div class="typebar">
-        <input id="typeIn" class="px-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="none"
-          spellcheck="false" enterkeyhint="done" placeholder="type the words!" aria-label="Type the falling words">
+      <div class="typebar" id="typebar">
+        <div class="type-wrap">
+          <input id="typeIn" class="px-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="none"
+            spellcheck="false" enterkeyhint="done" placeholder="type the words!" aria-label="Type the falling words">
+          <div class="type-show" id="typeShow" aria-hidden="true"></div>
+        </div>
       </div>
     </section>
 

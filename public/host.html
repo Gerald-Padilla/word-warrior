@@ -36,8 +36,10 @@
     .hero-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 8px; background: var(--panel-2); cursor: pointer; border: 0; color: inherit; font: inherit; }
     .hero-tile img { width: 64px; height: 64px; }
     .hero-tile .nm { font-size: 9px; max-width: 108px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .hero-tile .x { position: absolute; top: 4px; right: 6px; font-size: 9px; color: var(--red); opacity: 0; }
-    .hero-tile:hover .x { opacity: 1; }
+    .hero-tile .x { position: absolute; top: 2px; right: 2px; padding: 4px 6px; font: inherit; font-size: 9px; color: var(--red); background: var(--ink); border: 0; cursor: pointer; opacity: 0; }
+    .hero-tile:hover .x, .hero-tile .x:focus { opacity: 1; }
+    .hero-tile .mv { font-size: 7px; color: var(--gold); opacity: 0; }
+    .hero-tile:hover .mv { opacity: 1; }
     .hero-tile.off { opacity: 0.45; }
     .rounds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
     .round-chip { padding: 10px; font-size: 11px; text-align: center; background: var(--ink); line-height: 1.8; }

@@ -2,7 +2,7 @@
 // Used by both the host screen and phones. A team battle is a different scene: two armies face off and
 // fling word-carrying attacks at each other (see the "team battle" sections).
 (function () {
-  const { heroSprite, monsterSprite, axeSprite, powerSprite, COLORS, MONSTERS, POWERS } = window.Art;
+  const { heroSprite, petSprite, monsterSprite, axeSprite, powerSprite, COLORS, MONSTERS, POWERS } = window.Art;
   const { TEAMS } = window.WW;
 
   const THEMES = {
@@ -39,12 +39,15 @@
   }
 
   class Arena {
-    constructor(canvas, { mode = 'host', now = () => Date.now(), selfId = null } = {}) {
+    // stage: the small preview in the hero creator - one big hero on the left, monsters to hit on the right.
+    constructor(canvas, { mode = 'host', now = () => Date.now(), selfId = null, stage = false } = {}) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
       this.mode = mode;
       this.now = now;
       this.selfId = selfId;
+      this.stage = stage;
+      this.typo = false; // phone: what you typed has gone off course after the matching part in `typed`
       this.players = new Map();
       this.heroPos = new Map();
       this.heroHop = new Map();
@@ -82,7 +85,11 @@
       this.W = W;
       this.H = H;
       this.landscape = W > H * 1.15;
-      if (this.mode === 'host') {
+      if (this.stage) {
+        this.U = Math.max(2, Math.round(H / 26));
+        this.fontPx = Math.max(16, Math.round((this.U * 2) / 8) * 8);
+        this.groundY = H - 3 * this.U;
+      } else if (this.mode === 'host') {
         this.U = Math.max(2, Math.round(H / 170));
         this.fontPx = Math.max(16, Math.round(H / 46 / 8) * 8);
         this.groundY = H - 9 * this.U;
@@ -265,6 +272,10 @@
     layoutHeroes() {
       this.heroPos.clear();
       if (!this.W) return;
+      if (this.stage) {
+        for (const id of this.players.keys()) this.heroPos.set(id, { x: this.W * 0.27, hu: this.U });
+        return;
+      }
       if (this.teamMode) {
         this.layoutDuel();
         return;
@@ -976,7 +987,9 @@
       const locked = !killedColor && !opts.noType && typed && w.text.startsWith(typed);
       const danger = !killedColor && !opts.noType && L.p > 0.72 && Math.floor(t / 180) % 2 === 0;
       if (opts.dim) ctx.globalAlpha = 0.55;
-      ctx.fillStyle = killedColor || (locked ? '#ffd23f' : danger ? '#ff4d4d' : opts.border || '#f4ead5');
+      // A typo flashes the border of the word you were going for.
+      const lockedColor = this.typo && Math.floor(t / 150) % 2 ? '#ff4d4d' : '#ffd23f';
+      ctx.fillStyle = killedColor || (locked ? lockedColor : danger ? '#ff4d4d' : opts.border || '#f4ead5');
       ctx.fillRect(x - bt, y - bt, L.plateW + bt * 2, L.plateH + bt * 2);
       ctx.fillStyle = '#1b1426';
       ctx.fillRect(x, y, L.plateW, L.plateH);
@@ -988,8 +1001,14 @@
       } else if (locked) {
         ctx.fillStyle = '#ffd23f';
         ctx.fillText(typed, tx, ty);
+        const rest = w.text.slice(typed.length);
+        if (this.typo && rest) {
+          // Mark the letter where you went wrong.
+          ctx.fillStyle = '#ff4d4d';
+          ctx.fillRect(tx + typed.length * fp - 2, y + bt, fp + 4, L.plateH - 2 * bt);
+        }
         ctx.fillStyle = '#ffffff';
-        ctx.fillText(w.text.slice(typed.length), tx + typed.length * fp, ty);
+        ctx.fillText(rest, tx + typed.length * fp, ty);
       } else {
         ctx.fillStyle = '#ffffff';
         ctx.fillText(w.text, tx, ty);
@@ -1014,15 +1033,16 @@
         ctx.globalAlpha = p.connected === false ? 0.35 : 1;
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.fillRect(Math.round(pos.x - 5 * hu), feet - hu, 10 * hu, hu);
-        if (pos.flip) {
-          // The army on the right faces left, toward the enemy.
-          ctx.save();
-          ctx.scale(-1, 1);
-          ctx.drawImage(spr, -x - 16 * hu, y, 16 * hu, 16 * hu);
-          ctx.restore();
-        } else {
-          ctx.drawImage(spr, x, y, 16 * hu, 16 * hu);
+        // A pet trots just behind its hero, hopping a beat after them.
+        const pet = petSprite(p.pet);
+        if (pet) {
+          const ps = Math.max(1, Math.round(hu * 0.75));
+          const petHop = hopT >= 0.3 && hopT < 1.3 ? Math.sin((hopT - 0.3) * Math.PI) * 2 * ps : 0;
+          const px = Math.round(pos.x + (pos.flip ? 9 : -9) * hu - (pet.width * ps) / 2);
+          const py = Math.round(feet - pet.height * ps + (Math.sin(t / 260 + hash(id)) > 0 ? 0 : ps) - petHop);
+          this.drawSprite(pet, px, py, ps, pos.flip);
         }
+        this.drawSprite(spr, x, y, hu, pos.flip);
         ctx.globalAlpha = 1;
 
         if (this.mode === 'host' && !this.teamMode) {
@@ -1046,6 +1066,19 @@
         }
       }
       for (const l of labels) this.drawLabel(l);
+    }
+
+    // Draw a sprite at pixel scale s; flipped sprites (the army on the right) face left.
+    drawSprite(spr, x, y, s, flip) {
+      const ctx = this.ctx;
+      if (!flip) {
+        ctx.drawImage(spr, x, y, spr.width * s, spr.height * s);
+        return;
+      }
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.drawImage(spr, -x - spr.width * s, y, spr.width * s, spr.height * s);
+      ctx.restore();
     }
 
     drawLabel({ text, x, y, fs, color }) {

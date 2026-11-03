@@ -44,6 +44,9 @@ const MAX_PLAYERS = 60;
 const CLASSES = ['knight', 'wizard', 'archer', 'rogue', 'cleric', 'barbarian'];
 const COLOR_COUNT = 8;
 const SKIN_COUNT = 4;
+const HAIR_COUNT = 8; // 0 = the class's own hair color
+const TRIM_COUNT = 6;
+const PET_COUNT = 6; // 0 = no pet
 
 const ROUNDS_PUBLIC = ROUNDS.map(({ key, name, title, monster, duration, multiplier }) =>
   ({ key, name, title, monster, duration, multiplier }));
@@ -162,6 +165,9 @@ function cleanLook(data) {
     cls: CLASSES.includes(data.cls) ? data.cls : CLASSES[0],
     color: clampInt(data.color, COLOR_COUNT),
     skin: clampInt(data.skin, SKIN_COUNT),
+    hair: clampInt(data.hair, HAIR_COUNT),
+    trim: clampInt(data.trim, TRIM_COUNT),
+    pet: clampInt(data.pet, PET_COUNT),
   };
 }
 
@@ -210,7 +216,7 @@ function createRoom(solo = false) {
 const channel = (room) => `room:${room.code}`;
 
 function publicPlayer(p) {
-  return { id: p.id, name: p.name, cls: p.cls, color: p.color, skin: p.skin, team: p.team,
+  return { id: p.id, name: p.name, cls: p.cls, color: p.color, skin: p.skin, hair: p.hair, trim: p.trim, pet: p.pet, team: p.team,
     score: p.score, kills: p.kills, roundScores: p.roundScores, connected: p.connected };
 }
 
@@ -365,8 +371,8 @@ function recordScores(room) {
   room.records = {};
   ranked.forEach((p, i) => {
     if (p.bot || p.score <= 0) return;
-    const entry = { id: shortId(), name: p.name, cls: p.cls, color: p.color, skin: p.skin,
-      score: p.score, kills: p.kills, at: Date.now() };
+    const entry = { id: shortId(), name: p.name, cls: p.cls, color: p.color, skin: p.skin, hair: p.hair, trim: p.trim,
+      pet: p.pet, score: p.score, kills: p.kills, at: Date.now() };
     if (!room.solo) Object.assign(entry, { place: i + 1, of: ranked.length });
     const rank = addToHall(board, entry);
     if (rank) room.records[p.id] = { board, rank, entryId: entry.id };
@@ -670,6 +676,14 @@ io.on('connection', (socket) => {
     const { room, isHost } = ctx();
     if (!isHost || room.state !== 'lobby') return;
     balanceTeams(room, true);
+    broadcastPlayers(room);
+  });
+
+  socket.on('host:move', (data) => {
+    const { room, isHost } = ctx();
+    const p = isHost && room.state === 'lobby' && room.players.get(data?.id);
+    if (!p) return;
+    p.team = 1 - p.team;
     broadcastPlayers(room);
   });
 

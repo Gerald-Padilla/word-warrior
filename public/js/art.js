@@ -28,6 +28,53 @@
     { S: '#6e4527', s: '#4a2c18' },
   ];
 
+  // Hair and beards (the H/h pixels: elf archer hair, wizard and barbarian beards). 0 keeps the class's own.
+  const HAIRS = [
+    { name: 'Natural' },
+    { name: 'Raven', H: '#2b2233', h: '#17121d' },
+    { name: 'Chestnut', H: '#7a4a26', h: '#4f2e15' },
+    { name: 'Golden', H: '#f2d16b', h: '#c9a43a' },
+    { name: 'Copper', H: '#d9682b', h: '#9c4317' },
+    { name: 'Snow', H: '#f4f4f8', h: '#bfc4d4' },
+    { name: 'Moss', H: '#6fbf5a', h: '#3f7d33' },
+    { name: 'Arcane', H: '#a07aff', h: '#6a48c4' },
+  ];
+
+  // Trim: the gold accents (belts, hilts, hat bands, holy symbols).
+  const TRIMS = [
+    { name: 'Gold', G: '#f5c542', g: '#b8860b' },
+    { name: 'Silver', G: '#e3e8f0', g: '#8691a6' },
+    { name: 'Bronze', G: '#d08a4a', g: '#8a5428' },
+    { name: 'Ruby', G: '#ff5a6e', g: '#a01c2e' },
+    { name: 'Jade', G: '#5fe0a0', g: '#2b8a5c' },
+    { name: 'Onyx', G: '#5a4f73', g: '#2a2238' },
+  ];
+
+  // Companions that trot along beside their hero. 0 is no pet.
+  const PETS = [
+    null,
+    {
+      name: 'Cat', pal: { A: '#8a8aa0', a: '#5a5a70', E: '#ffd23f' },
+      rows: ['.K....K.', 'KAK..KAK', 'KAAKKAAK', 'KAEAAEAK', 'KAAaaAAK', '.KAAAAK.', '.KAAAAKK', '..KKKKAK'],
+    },
+    {
+      name: 'Owl', pal: { A: '#a0703c', a: '#6e4a24', E: '#ffd23f', Y: '#ff9a3c' },
+      rows: ['.K....K.', 'KAKKKKAK', 'KWWAAWWK', 'KWEAAEWK', 'KAAYYAAK', 'KAaAAaAK', '.KAAAAK.', '..Y..Y..'],
+    },
+    {
+      name: 'Slime', pal: { A: '#6fd34f', a: '#3c8f2a' },
+      rows: ['........', '...KK...', '..KAAK..', '.KAWAAK.', 'KAAAAAAK', 'KAKAAKAK', 'KaAAAAaK', '.KKKKKK.'],
+    },
+    {
+      name: 'Dragon', pal: { A: '#e8374a', a: '#a01c2e', Y: '#ffd23f' },
+      rows: ['Y.....Y.', 'KK...KK.', 'KAKKKAK.', 'KAWAWAKK', '.KAAAAKA', 'KAYYYAKA', '.KAAAAKK', '..KK.KK.'],
+    },
+    {
+      name: 'Fox', pal: { A: '#ee7b2a', a: '#a8481a' },
+      rows: ['K.....K.', 'KK...KK.', 'KAKKKAK.', 'KAWAWAK.', '.KAAAK..', '.KWWWKKK', '.KAAAKAW', '..K.KKKK'],
+    },
+  ];
+
   const CLASSES = [
     {
       key: 'knight', name: 'Knight', attack: 'Sword Beam', blurb: 'Hurls a shining crescent of steel.',
@@ -53,7 +100,7 @@
     },
     {
       key: 'wizard', name: 'Wizard', attack: 'Fireball', blurb: 'Lobs a roaring ball of flame.',
-      pal: { F: '#5ee0ff' },
+      pal: { F: '#5ee0ff', H: '#f4f4f8', h: '#c9cfdc' },
       rows: [
         '..........KK....',
         '........KKPK....',
@@ -62,10 +109,10 @@
         '.FF..KPQPGPPK...',
         '.BKKppppppppKK..',
         '.B.KSSKSSKSSK...',
-        '.B.KSSWWWWSSK...',
-        '.B..KWWWWWWK....',
-        '.SKPPKWWWWKPPK..',
-        '.BKPQPKWWKPPPK..',
+        '.B.KSSHHHHSSK...',
+        '.B..KHHHHHHK....',
+        '.SKPPKHHHhKPPK..',
+        '.BKPQPKHhKPPPK..',
         '.BKPPPPGGPPPPK..',
         '.BKpPPPPPPPPpK..',
         '.BKpPPPPPPPPpK..',
@@ -387,19 +434,39 @@
   const cache = new Map();
   const classByKey = (key) => CLASSES.find((c) => c.key === key) || CLASSES[0];
 
+  const classHasHair = (key) => classByKey(key).rows.some((r) => r.includes('H'));
+  const lookKey = (look) => `${look.cls}:${look.color}:${look.skin}:${look.hair || 0}:${look.trim || 0}`;
+
   function heroSprite(look) {
     const cls = classByKey(look.cls);
     const color = COLORS[look.color] || COLORS[0];
     const skin = SKINS[look.skin] || SKINS[0];
-    const key = `hero:${cls.key}:${look.color}:${look.skin}`;
-    if (!cache.has(key)) cache.set(key, paint(cls.rows, { ...BASE, ...color, ...skin, ...cls.pal }));
+    const hair = HAIRS[look.hair] && look.hair > 0 ? { H: HAIRS[look.hair].H, h: HAIRS[look.hair].h } : {};
+    const trim = TRIMS[look.trim] || TRIMS[0];
+    const key = `hero:${lookKey(look)}`;
+    if (!cache.has(key)) {
+      cache.set(key, paint(cls.rows, { ...BASE, ...color, ...skin, ...cls.pal, ...hair, G: trim.G, g: trim.g }));
+    }
     return cache.get(key);
   }
 
   function heroDataURL(look) {
-    const key = `url:${look.cls}:${look.color}:${look.skin}`;
+    const key = `url:${lookKey(look)}`;
     if (!cache.has(key)) cache.set(key, heroSprite(look).toDataURL());
     return cache.get(key);
+  }
+
+  function petSprite(index) {
+    const pet = PETS[index];
+    if (!pet) return null;
+    if (!cache.has(`pet:${index}`)) cache.set(`pet:${index}`, paint(pet.rows, { ...BASE, ...pet.pal }));
+    return cache.get(`pet:${index}`);
+  }
+
+  function petDataURL(index) {
+    if (!PETS[index]) return '';
+    if (!cache.has(`peturl:${index}`)) cache.set(`peturl:${index}`, petSprite(index).toDataURL());
+    return cache.get(`peturl:${index}`);
   }
 
   function monsterSprite(type, frame) {
@@ -426,7 +493,8 @@
   }
 
   window.Art = {
-    BASE, COLORS, SKINS, CLASSES, MONSTERS, POWERS,
-    classByKey, heroSprite, heroDataURL, monsterSprite, axeSprite, powerSprite, powerDataURL,
+    BASE, COLORS, SKINS, HAIRS, TRIMS, PETS, CLASSES, MONSTERS, POWERS,
+    classByKey, classHasHair, heroSprite, heroDataURL, petSprite, petDataURL,
+    monsterSprite, axeSprite, powerSprite, powerDataURL,
   };
 })();

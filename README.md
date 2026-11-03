@@ -27,8 +27,11 @@ Players scan the QR code on it. Phones must be able to reach this laptop (see *N
   Backspace deletes one letter.
 - On phones, every hero stands on the battlefield: yours big in the middle, the rest beside you. When someone
   gets a word, their hero attacks it and their name pops up above them.
-- Words you're typing are highlighted gold on your phone. Typos turn the input red.
-- If someone else gets the word you were typing, your input clears and you see "TOO SLOW!".
+- As you type, the letters that still match a word show gold (in the box and on the word itself). A typo
+  shows white on red in the box, marks the exact letter you missed on the word you were going for, shakes
+  and buzzes, and a "TYPO!" hint shows how to fix it.
+- If someone else gets the word you were halfway through (or it escapes), a big "TOO SLOW!" / "TOO LATE!"
+  says who got it, and your input clears.
 - Words that reach the ground escape and nobody scores them.
 - More players means more words on screen at once.
 
@@ -38,7 +41,8 @@ A different game from free-for-all: two armies face off and fight with words. Pi
 host lobby (it needs at least 2 heroes).
 
 - Players are split into **Red Dragons** and **Blue Griffins**, balanced as they join. On the phone,
-  **SWITCH TEAM** changes sides in the lobby; the host can **SHUFFLE TEAMS** to deal everyone out again.
+  **SWITCH TEAM** changes sides in the lobby. On the host screen, click a hero to move them to the other team
+  (they get a note on their phone), or **SHUFFLE TEAMS** to deal everyone out again.
 - Both teams start with the same HP (6,000, scaled up for bigger teams).
 - **Attack:** your team has a row of attack words. Type one and your hero launches it across the field at
   the other army, carrying the word. If it lands, the enemy loses HP equal to its points.
@@ -71,10 +75,14 @@ moves into the top row (and team HP bars float over the battlefield) so there's 
 keyboard open.
 
 **Heroes:** Knight (sword beam), Wizard (fireball), Elf Archer (arrow), Rogue (dagger volley),
-Cleric (holy light), Barbarian (spinning axe), each in 8 colors and 4 skin tones.
+Cleric (holy light), Barbarian (spinning axe). Customize each with 8 colors, 4 skin tones, 8 hair/beard
+colors (archer, wizard, barbarian), 6 trims (the gold accents) and a companion pet (cat, owl, slime, baby
+dragon or fox) that follows your hero into battle. The creator shows your hero on a mini battlefield doing
+their attack (tap it to attack again), and has **RANDOM LOOK** and a random-name button.
 
 **Host controls:** FREE FOR ALL / TEAM BATTLE, START BATTLE, SHUFFLE TEAMS, HALL OF FAME, SKIP ▶ (jump to the next phase), SOUND ON/OFF,
-PLAY AGAIN / BACK TO LOBBY on the podium screen. Click a hero in the lobby to remove them.
+PLAY AGAIN / BACK TO LOBBY on the podium screen. In the lobby, a hero's **X** removes them; in free for all
+clicking the hero also removes them, in a team battle it moves them to the other team.
 
 Players who lose connection (phone locked, Wi-Fi blip) rejoin automatically with their score intact.
 

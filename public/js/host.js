@@ -174,14 +174,24 @@
     return el('img', { class: cls, src: heroDataURL(p), alt: '' });
   }
 
+  // Lobby tile. Team battle: click moves the hero to the other team. Free for all: click removes them.
+  // The X always removes.
   function heroTile(p) {
-    return el('button', {
+    const teamsOn = mode === 'teams';
+    const remove = (e) => {
+      e.stopPropagation();
+      if (confirm(`Remove ${p.name} from the battle?`)) socket.emit('host:kick', { id: p.id });
+    };
+    return el('div', {
       class: `hero-tile${p.connected ? '' : ' off'}`,
-      title: `Remove ${p.name}`,
-      onclick: () => {
-        if (confirm(`Remove ${p.name} from the battle?`)) socket.emit('host:kick', { id: p.id });
-      },
-    }, [heroImg(p, 'px-sprite bob'), el('div', { class: 'nm', text: p.name }), el('div', { class: 'x', text: 'X' })]);
+      title: teamsOn ? `Move ${p.name} to ${TEAMS[1 - p.team].name}` : `Remove ${p.name}`,
+      onclick: teamsOn ? () => socket.emit('host:move', { id: p.id }) : remove,
+    }, [
+      heroImg(p, 'px-sprite bob'),
+      el('div', { class: 'nm', text: p.name }),
+      teamsOn ? el('div', { class: 'mv', text: p.team === 0 ? 'MOVE >' : '< MOVE' }) : null,
+      el('button', { class: 'x', type: 'button', title: `Remove ${p.name}`, text: 'X', onclick: remove }),
+    ]);
   }
 
   function renderRoster() {
@@ -209,7 +219,7 @@
     if (teamsOn && players.length && !enough) $('#startHint').textContent = 'A team battle needs at least 2 heroes.';
     else if (teamsOn && enough) {
       const red = players.filter((p) => p.team === 0).length;
-      $('#startHint').textContent = `${red} red vs ${players.length - red} blue. Heroes can switch sides on their phones.`;
+      $('#startHint').textContent = `${red} red vs ${players.length - red} blue. Click a hero to move them to the other team.`;
     } else {
       $('#startHint').textContent = players.length
         ? `${players.length} hero${players.length === 1 ? '' : 'es'} ready. Start when everyone is in!`

@@ -1,7 +1,8 @@
 // Phone controller: hero creator, lobby, typing battle and results.
 (function () {
   const { $, el, syncClock, rankPlayers, TEAMS, Sfx } = window.WW;
-  const { CLASSES, COLORS, SKINS, POWERS, heroDataURL, powerDataURL, classByKey } = window.Art;
+  const { CLASSES, COLORS, SKINS, HAIRS, TRIMS, PETS, POWERS } = window.Art;
+  const { heroDataURL, petDataURL, powerDataURL, classByKey, classHasHair } = window.Art;
 
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -32,11 +33,15 @@
   let effects = [{}, {}]; // team battle power-ups: per team, name -> active until (server ms)
   const toasted = new Set();
 
+  const pick = (n) => Math.floor(Math.random() * n);
   const look = Object.assign({
     name: '',
-    cls: CLASSES[Math.floor(Math.random() * CLASSES.length)].key,
-    color: Math.floor(Math.random() * COLORS.length),
+    cls: CLASSES[pick(CLASSES.length)].key,
+    color: pick(COLORS.length),
     skin: 0,
+    hair: 0,
+    trim: 0,
+    pet: 0,
   }, store.get('ww_profile') || {});
 
   const ack = (ev, data) => new Promise((res) => socket.emit(ev, data, res));
@@ -77,6 +82,30 @@
   }
 
   // ---- hero creator --------------------------------------------------
+  // The preview is a tiny battlefield: your hero (and pet) knocks out a monster every couple of seconds.
+  const stage = new Arena($('#stage'), { mode: 'phone', now: () => Date.now(), selfId: 'you', stage: true });
+  const DEMO_WORDS = ['ogre', 'imp', 'slime', 'goblin', 'bat', 'troll', 'wraith', 'kobold'];
+  const DEMO_THEMES = ['slime', 'bat', 'skull'];
+  let demoId = 0;
+
+  function demoAttack() {
+    if ($('#scrJoin').classList.contains('hidden')) return;
+    const id = ++demoId;
+    if (id % 3 === 0) stage.setTheme(DEMO_THEMES[(id / 3) % DEMO_THEMES.length]);
+    const text = DEMO_WORDS[id % DEMO_WORDS.length];
+    stage.addWord({ id, text, x: 0.74, spawn: Date.now() - 3500, dur: 10000 });
+    setTimeout(() => stage.kill(id, 'you', text.length * 10), 700);
+  }
+  setInterval(demoAttack, 2600);
+  $('#stageBox').addEventListener('click', () => {
+    Sfx.unlock();
+    demoAttack();
+  });
+
+  function swatch(color, title, onclick) {
+    return el('button', { class: 'swatch', type: 'button', title, style: `background:${color}`, onclick });
+  }
+
   function buildCreator() {
     const grid = $('#clsGrid');
     for (const c of CLASSES) {
@@ -85,22 +114,26 @@
         onclick: () => { look.cls = c.key; refreshCreator(true); },
       }, [el('img', { class: 'px-sprite', alt: '' }), el('span', { text: c.name })]));
     }
-    COLORS.forEach((c, i) => $('#colorRow').append(el('button', {
-      class: 'swatch', type: 'button', title: c.name, style: `background:${c.P}`,
-      onclick: () => { look.color = i; refreshCreator(true); },
-    })));
-    SKINS.forEach((s, i) => $('#skinRow').append(el('button', {
-      class: 'swatch', type: 'button', style: `background:${s.S}`,
-      onclick: () => { look.skin = i; refreshCreator(true); },
-    })));
-    $('#previewImg').addEventListener('click', () => hop($('#previewImg')));
+    COLORS.forEach((c, i) => $('#colorRow').append(swatch(c.P, c.name, () => { look.color = i; refreshCreator(true); })));
+    SKINS.forEach((s, i) => $('#skinRow').append(swatch(s.S, 'Skin', () => { look.skin = i; refreshCreator(true); })));
+    HAIRS.forEach((h, i) => $('#hairRow').append(swatch(h.H || '#f4f4f8', h.name, () => { look.hair = i; refreshCreator(true); })));
+    TRIMS.forEach((t, i) => $('#trimRow').append(swatch(t.G, t.name, () => { look.trim = i; refreshCreator(true); })));
+    PETS.forEach((p, i) => $('#petRow').append(el('button', {
+      class: 'pet-btn', type: 'button', title: p ? p.name : 'No companion',
+      onclick: () => { look.pet = i; refreshCreator(true); },
+    }, [p ? el('img', { class: 'px-sprite', src: petDataURL(i), alt: '' }) : null, el('span', { text: p ? p.name : 'None' })])));
   }
 
-  function hop(img) {
-    img.classList.remove('hop', 'bob');
-    void img.offsetWidth;
-    img.classList.add('hop');
-    setTimeout(() => { img.classList.remove('hop'); img.classList.add('bob'); }, 360);
+  const NAME_START = ['Ar', 'Bel', 'Cor', 'Dra', 'El', 'Fen', 'Gal', 'Hal', 'Is', 'Jor', 'Kae', 'Lyr', 'Mor', 'Nim', 'Or', 'Pyr', 'Ryn', 'Syl', 'Tor', 'Val', 'Wyn', 'Zar'];
+  const NAME_END = ['a', 'ion', 'is', 'or', 'wen', 'dor', 'ric', 'wyn', 'ath', 'iel', 'us', 'en', 'mir', 'ra', 'thas', 'ka'];
+  const randomName = () => NAME_START[pick(NAME_START.length)] + NAME_END[pick(NAME_END.length)];
+
+  function randomLook() {
+    Object.assign(look, {
+      cls: CLASSES[pick(CLASSES.length)].key, color: pick(COLORS.length), skin: pick(SKINS.length),
+      hair: pick(HAIRS.length), trim: pick(TRIMS.length), pet: pick(PETS.length),
+    });
+    refreshCreator(true);
   }
 
   function refreshCreator(animate) {
@@ -111,12 +144,28 @@
     }
     [...$('#colorRow').children].forEach((b, i) => b.classList.toggle('on', i === look.color));
     [...$('#skinRow').children].forEach((b, i) => b.classList.toggle('on', i === look.skin));
-    $('#previewImg').src = heroDataURL(look);
+    [...$('#hairRow').children].forEach((b, i) => b.classList.toggle('on', i === (look.hair || 0)));
+    [...$('#trimRow').children].forEach((b, i) => b.classList.toggle('on', i === (look.trim || 0)));
+    [...$('#petRow').children].forEach((b, i) => b.classList.toggle('on', i === (look.pet || 0)));
+    // "Natural" shows the class's own hair color; classes under a helmet or hood have no hair to color.
+    const hasHair = classHasHair(look.cls);
+    $('#hairBlock').classList.toggle('hidden', !hasHair);
+    if (hasHair) $('#hairRow').firstChild.style.background = cls.pal.H;
+    $('#colorName').textContent = COLORS[look.color].name;
+    $('#hairName').textContent = HAIRS[look.hair || 0].name;
+    $('#trimName').textContent = TRIMS[look.trim || 0].name;
     $('#clsName').textContent = cls.name;
     $('#clsAttack').textContent = `ATTACK: ${cls.attack}`;
     $('#clsBlurb').textContent = cls.blurb;
-    if (animate) hop($('#previewImg'));
+    stage.setPlayers([{ id: 'you', ...look, name: look.name || 'You', connected: true }]);
+    if (animate) stage.heroHop.set('you', performance.now());
   }
+
+  $('#btnName').onclick = () => {
+    $('#inName').value = randomName();
+    look.name = $('#inName').value;
+  };
+  $('#btnRandom').onclick = randomLook;
 
   function openCreator(isEdit) {
     editing = isEdit;
@@ -291,9 +340,22 @@
     applyState(res.snapshot);
   }
 
+  let switchingTo = null; // the team you asked to switch to with SWITCH TEAM
+  let noteTimer = null;
   socket.on('room:players', (list) => {
+    const before = me()?.team;
     setPlayers(list);
     if (you && !list.some((p) => p.id === you)) return;
+    const after = me()?.team;
+    if (teamBattle() && before !== undefined && after !== before && after !== switchingTo) {
+      // The host moved you.
+      $('#lobbyNote').textContent = `The host moved you to ${TEAMS[after].name}!`;
+      $('#lobbyNote').classList.remove('hidden');
+      clearTimeout(noteTimer);
+      noteTimer = setTimeout(() => $('#lobbyNote').classList.add('hidden'), 4000);
+      Sfx.play('join');
+    }
+    if (after === switchingTo) switchingTo = null;
     if (state.state === 'lobby' && !editing) renderLobby();
   });
   socket.on('room:state', (s) => applyState(s));
@@ -313,15 +375,10 @@
     hp.forEach((v, i) => { teams[i].hp = v; });
     renderHp();
   };
-  // Someone else typed the word you were halfway through: start over.
-  const wordTaken = (text, by) => {
-    if (by === you || !arena.typed || !text.startsWith(arena.typed)) return;
-    if (!arena.typeable(now()).some((w) => w.text.startsWith(arena.typed))) clearTyping();
-  };
   const nameOf = (id) => players.find((p) => p.id === id)?.name || 'Someone';
 
   socket.on('duel:launch', ({ slot, missile }) => {
-    wordTaken(missile.text, missile.by);
+    if (missile.by !== you) lostWord(missile.text, 'TOO SLOW!', `${nameOf(missile.by)} launched "${missile.text}"`);
     arena.duelLaunch(slot, missile);
     if (missile.by === you) {
       Sfx.play('shoot');
@@ -330,12 +387,14 @@
   });
   socket.on('duel:block', (b) => {
     const w = arena.words.get(b.id);
-    if (w) wordTaken(w.text, b.by);
+    if (w && b.by !== you) lostWord(w.text, 'TOO SLOW!', `${nameOf(b.by)} blocked "${w.text}"`);
     setScore(b.by, b.score, b.roundScore, b.kills);
     arena.duelBlock(b.id, b.by);
     if (b.by === you) showToast('BLOCKED!', 'good');
   });
   socket.on('duel:hit', (h) => {
+    const w = arena.words.get(h.id);
+    if (w && h.team === myTeam()) lostWord(w.text, 'TOO LATE!', `"${w.text}" hit your team`);
     setScore(h.by, h.score, h.roundScore);
     arena.duelHit(h.id, h.team, h.dmg, h.shielded);
     setHp(h.hp);
@@ -350,7 +409,10 @@
   });
   socket.on('duel:power', (pw) => {
     const w = arena.words.get(pw.id);
-    if (w) wordTaken(w.text, pw.by);
+    if (w && pw.by !== you) {
+      const who = pw.team === myTeam() ? nameOf(pw.by) : `${TEAMS[pw.team].short} team`;
+      lostWord(w.text, 'TOO SLOW!', `${who} grabbed "${w.text}"`);
+    }
     const before = teams ? teams[pw.team].hp : 0;
     effects = pw.effects;
     arena.setEffects(effects);
@@ -365,6 +427,8 @@
   });
   socket.on('duel:retime', (list) => arena.retime(list));
   socket.on('word:escape', ({ id }) => {
+    const w = arena.words.get(id);
+    if (w) lostWord(w.text, 'TOO LATE!', `"${w.text}" ${w.kind === 'power' ? 'faded away' : 'got away'}`);
     arena.escape(id);
     if (solo) Sfx.play('escape');
   });
@@ -588,8 +652,30 @@
   const normalize = (s) => s.toLowerCase().replace(/[^a-z]/g, '');
   const visibleWords = () => arena.typeable(now());
 
+  const typeShow = $('#typeShow');
   let shown = ''; // normalized text in the box after the last edit
   let lastCleared = null; // { text, t } of the last text we wiped
+
+  // The box shows the part that still matches a word in gold and anything after it white on red.
+  function showTyped(v, ok) {
+    typeShow.textContent = '';
+    if (ok) typeShow.append(el('span', { class: 'ok', text: ok }));
+    if (v.length > ok.length) typeShow.append(el('span', { class: 'bad', text: v.slice(ok.length) }));
+  }
+
+  function setTypo(on) {
+    typeIn.classList.toggle('miss', on);
+    $('#typeHint').classList.toggle('hidden', !on);
+    arena.typo = on;
+  }
+
+  function flashTypebar() {
+    for (const node of [typeIn, $('#typebar')]) {
+      node.classList.remove('oops');
+      void node.offsetWidth;
+      node.classList.add('oops');
+    }
+  }
 
   function clearTyping() {
     const v = normalize(typeIn.value);
@@ -597,7 +683,8 @@
     typeIn.value = '';
     shown = '';
     arena.typed = '';
-    typeIn.classList.remove('miss');
+    showTyped('', '');
+    setTypo(false);
   }
 
   typeIn.addEventListener('input', () => {
@@ -608,21 +695,51 @@
     if (lc && !shown && performance.now() - lc.t < 1500 && lc.text.length >= 2
       && v.startsWith(lc.text) && v.length <= lc.text.length + 1) {
       v = v.slice(lc.text.length);
-      typeIn.value = v;
     }
+    const grew = v.length > shown.length;
     shown = v;
-    arena.typed = v;
-    if (!v || state.state !== 'playing') {
-      typeIn.classList.remove('miss');
-      return;
-    }
-    const words = visibleWords();
+    if (typeIn.value !== v) typeIn.value = v; // keep the real text lined up with the colored copy on top
+    const playing = state.state === 'playing';
+    const words = playing ? visibleWords() : [];
     const hit = words.find((w) => w.text === v);
     if (hit) return claim(hit);
-    const onTrack = words.some((w) => w.text.startsWith(v));
-    if (!onTrack && !typeIn.classList.contains('miss')) Sfx.play('miss');
-    typeIn.classList.toggle('miss', !onTrack);
+    let ok = v;
+    if (playing) while (ok && !words.some((w) => w.text.startsWith(ok))) ok = ok.slice(0, -1);
+    arena.typed = ok;
+    showTyped(v, ok);
+    const typo = ok !== v;
+    if (typo && grew) {
+      // Every wrong key gets a shake, a buzz and a red flash.
+      flashTypebar();
+      Sfx.play('miss');
+      if (navigator.vibrate) navigator.vibrate(30);
+    }
+    setTypo(typo);
   });
+
+  // The word you were partway through is gone - someone else got it, or it got away. If nothing else on
+  // screen still matches what you typed, start over and say so loudly.
+  function lostWord(text, title, detail) {
+    if (!arena.typed || !text.startsWith(arena.typed)) return;
+    if (visibleWords().some((w) => w.text !== text && w.text.startsWith(arena.typed))) return;
+    clearTyping();
+    showSteal(title, detail);
+  }
+
+  let stealTimer = null;
+  function showSteal(title, detail) {
+    $('#stealTitle').textContent = title;
+    $('#stealWho').textContent = detail;
+    const box = $('#steal');
+    box.classList.remove('hidden', 'pop');
+    void box.offsetWidth;
+    box.classList.add('pop');
+    clearTimeout(stealTimer);
+    stealTimer = setTimeout(() => box.classList.add('hidden'), 1600);
+    flashTypebar();
+    Sfx.play('miss');
+    if (navigator.vibrate) navigator.vibrate([70, 40, 70]);
+  }
 
   // Enter (the keyboard's Done key on phones) throws the whole word away; Backspace deletes one letter.
   typeIn.addEventListener('keydown', (e) => {
@@ -636,9 +753,9 @@
     clearTyping();
     socket.emit('player:claim', { id: word.id, text: word.text }, (res) => {
       if (res && !res.ok && res.reason === 'taken' && !toasted.has(word.id)) {
+        // You finished it, but someone's claim reached the server first.
         toasted.add(word.id);
-        showToast(`TOO SLOW! ${res.by || 'Someone'} got it`, 'bad');
-        Sfx.play('miss');
+        showSteal('TOO SLOW!', `${res.by || 'Someone'} got "${word.text}" first`);
       }
     });
   }
@@ -654,15 +771,9 @@
     if (k.by === you) {
       Sfx.play('shoot');
       if (navigator.vibrate) navigator.vibrate(25);
-    } else if (word && arena.typed && word.text.startsWith(arena.typed)) {
-      // Someone sniped the word you were typing.
-      const others = visibleWords().some((w) => w.id !== k.id && w.text.startsWith(arena.typed));
-      if (!others) {
-        clearTyping();
-        toasted.add(k.id);
-        showToast(`TOO SLOW! ${p ? p.name : 'Someone'} got "${word.text}"`, 'bad');
-        Sfx.play('miss');
-      }
+    } else if (word) {
+      toasted.add(k.id);
+      lostWord(word.text, 'TOO SLOW!', `${p ? p.name : 'Someone'} got "${word.text}"`);
     }
     arena.kill(k.id, k.by, k.points);
     updateTopbar();
@@ -705,6 +816,8 @@
     const mine = me();
     if (mine) {
       $('#lobbyHero').src = heroDataURL(mine);
+      $('#lobbyPet').classList.toggle('hidden', !PETS[mine.pet]);
+      if (PETS[mine.pet]) $('#lobbyPet').src = petDataURL(mine.pet);
       $('#lobbyName').textContent = mine.name;
       $('#lobbyClass').textContent = `${classByKey(mine.cls).name} · ${classByKey(mine.cls).attack}`;
     }
@@ -788,7 +901,10 @@
     topHeroes(false);
   }
 
-  $('#btnTeam').onclick = () => socket.emit('player:team');
+  $('#btnTeam').onclick = () => {
+    switchingTo = 1 - myTeam();
+    socket.emit('player:team');
+  };
   document.addEventListener('pointerdown', () => Sfx.unlock());
   buildCreator();
   refreshCreator(false);
