@@ -64,6 +64,41 @@
     .hp-fill { position: absolute; top: 0; bottom: 0; transition: width 0.3s steps(5); box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.3); }
     .hp-side.left .hp-fill { left: 0; } .hp-side.right .hp-fill { right: 0; }
     .hp-bar.hit { animation: shake 0.25s steps(4); }
+    .hp-fx { display: flex; gap: 4px; flex-wrap: wrap; }
+    .hp-side.right .hp-fx { justify-content: flex-end; }
+    .hp-fx:empty { display: none; }
+    .fx-chip { display: flex; align-items: center; gap: 3px; font-size: 7px; padding: 2px 4px; background: var(--ink); }
+    .fx-chip img { width: 10px; height: 12px; image-rendering: pixelated; }
+
+    /* Landscape: phones on their side and PC windows use the whole width. */
+    @media (orientation: landscape) {
+      #app { max-width: none; }
+      .screen:not(#scrGame) { width: 100%; max-width: 1100px; margin: 0 auto; }
+      #scrJoin, #scrLobby { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 18px; align-content: start; }
+      #scrJoin > *, #scrLobby > * { grid-column: 1; }
+      #scrJoin > #heroBox { grid-column: 2; grid-row: 1 / span 7; align-self: start; }
+      #scrLobby > .px-box { grid-column: 2; grid-row: 1 / span 7; align-self: start; }
+      #scrFinal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; align-content: center; justify-items: center; }
+      #scrFinal > * { grid-column: 1; }
+      #scrFinal > :first-child { margin-top: 0; }
+      #scrFinal > #fTop { grid-column: 2; grid-row: 1 / span 5; align-self: start; }
+      #scrFinal > .final-foot { grid-column: 2; grid-row: 6; margin-bottom: 0; }
+      .typebar { display: flex; justify-content: center; }
+      #typeIn { max-width: 760px; }
+    }
+    /* A phone on its side with the keyboard up has very little height: the typing box moves into the top
+       row and the HP bars float over the battlefield so the field keeps as much room as it can. */
+    @media (orientation: landscape) and (max-height: 520px) {
+      .screen { padding-top: 10px; }
+      .logo.sm { font-size: 16px; }
+      #scrGame { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); grid-template-rows: auto minmax(0, 1fr); }
+      #scrGame .topbar { grid-column: 1; grid-row: 1; padding: 4px 8px; }
+      #scrGame .typebar { grid-column: 2; grid-row: 1; padding: 4px 8px; box-shadow: 0 3px 0 var(--ink); }
+      #typeIn { font-size: 15px; padding: 7px 10px; }
+      #scrGame .field { grid-column: 1 / -1; grid-row: 2; }
+      #scrGame .hpstrip { grid-column: 1 / -1; grid-row: 2; align-self: start; background: rgba(45, 35, 66, 0.85); padding: 4px 10px; }
+      .tap-hint { bottom: 20%; }
+    }
     h3 { font-size: 10px; margin: 0 0 12px; color: var(--muted); }
 
     /* Game */
@@ -143,7 +178,7 @@
         <div class="label">HERO NAME</div>
         <input id="inName" class="px-input" maxlength="12" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="Your name">
       </div>
-      <div class="px-box">
+      <div class="px-box" id="heroBox">
         <div class="label">CHOOSE YOUR HERO</div>
         <div class="preview-row">
           <div class="preview"><img id="previewImg" class="px-sprite bob" alt=""></div>
@@ -204,10 +239,12 @@
         <div class="hp-side left" id="hpSide0">
           <div class="hp-label"><span>RED</span><b id="hpVal0"></b></div>
           <div class="hp-bar" id="hpBar0"><div class="hp-fill" id="hpFill0"></div></div>
+          <div class="hp-fx" id="hpFx0"></div>
         </div>
         <div class="hp-side right" id="hpSide1">
           <div class="hp-label"><b id="hpVal1"></b><span>BLUE</span></div>
           <div class="hp-bar" id="hpBar1"><div class="hp-fill" id="hpFill1"></div></div>
+          <div class="hp-fx" id="hpFx1"></div>
         </div>
       </div>
       <div class="field" id="field">

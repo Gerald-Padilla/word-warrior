@@ -274,6 +274,100 @@
     '...B...',
   ];
 
+  // Team battle power-ups: the item that floats in the middle of the field.
+  const POWERS = {
+    potion: {
+      name: 'HEALTH POTION', short: 'HEAL', color: '#ff5a6e',
+      pal: { R: '#e8374a', r: '#a01c2e' },
+      rows: [
+        '....KK....',
+        '...KbbK...',
+        '...KbbK...',
+        '....KK....',
+        '...KWWK...',
+        '..KRWRRK..',
+        '.KRRRRRRK.',
+        '.KRWRRRRK.',
+        '.KRRRRRrK.',
+        '.KrRRRRrK.',
+        '..KrrrrK..',
+        '...KKKK...',
+      ],
+    },
+    slow: {
+      name: 'SLOW TIME', short: 'SLOW', color: '#7fd4ff',
+      pal: { C: '#9fd7ff', Y: '#ffd23f' },
+      rows: [
+        'KKKKKKKKKK',
+        'KGGGGGGGgK',
+        '.KCCCCCCK.',
+        '.KWYYYYCK.',
+        '..KWYYCK..',
+        '...KYYK...',
+        '...KCYK...',
+        '..KCCYCK..',
+        '.KCCYYYCK.',
+        '.KCYYYYYK.',
+        'KGGGGGGGgK',
+        'KKKKKKKKKK',
+      ],
+    },
+    haste: {
+      name: 'HASTE', short: 'HASTE', color: '#ffe14d',
+      pal: { Y: '#ffe14d', y: '#d9a514' },
+      rows: [
+        '.....KKKK.',
+        '....KYYYK.',
+        '...KYYYK..',
+        '..KYYyK...',
+        '.KYYYKKKK.',
+        'KYYYYYYYK.',
+        'KKKKYYyK..',
+        '...KYYK...',
+        '..KYyK....',
+        '..KYK.....',
+        '.KYK......',
+        '.KK.......',
+      ],
+    },
+    shield: {
+      name: 'SHIELD', short: 'SHIELD', color: '#7aa7ff',
+      pal: { A: '#3a6fe0', a: '#233f94' },
+      rows: [
+        '.KKKKKKKK.',
+        'KMMMMMMMMK',
+        'KMAAAAAAmK',
+        'KMAWAAAAmK',
+        'KMAAGGAAmK',
+        'KMAAGGAAmK',
+        'KMAAAAAamK',
+        '.KMAAAAmK.',
+        '.KMAAAamK.',
+        '..KMAamK..',
+        '...KMmK...',
+        '....KK....',
+      ],
+    },
+    fury: {
+      name: 'FURY', short: 'FURY', color: '#ff7b1c',
+      pal: { R: '#e8371c', O: '#ff7b1c', Y: '#ffd23f' },
+      rows: [
+        '....KK....',
+        '...KRK....',
+        '...KRRK...',
+        '..KRORK.K.',
+        '..KROORKRK',
+        '.KROOORRK.',
+        '.KROYYORK.',
+        'KROOYYOORK',
+        'KROYYYYORK',
+        'KROYWWYORK',
+        '.KROYYORK.',
+        '..KKKKKK..',
+      ],
+    },
+  };
+
   function paint(rows, pal) {
     const c = document.createElement('canvas');
     c.width = rows[0].length;
@@ -320,5 +414,19 @@
     return cache.get('axe');
   }
 
-  window.Art = { BASE, COLORS, SKINS, CLASSES, MONSTERS, classByKey, heroSprite, heroDataURL, monsterSprite, axeSprite };
+  function powerSprite(key) {
+    const p = POWERS[key] || POWERS.potion;
+    if (!cache.has(`pow:${key}`)) cache.set(`pow:${key}`, paint(p.rows, { ...BASE, ...p.pal }));
+    return cache.get(`pow:${key}`);
+  }
+
+  function powerDataURL(key) {
+    if (!cache.has(`powurl:${key}`)) cache.set(`powurl:${key}`, powerSprite(key).toDataURL());
+    return cache.get(`powurl:${key}`);
+  }
+
+  window.Art = {
+    BASE, COLORS, SKINS, CLASSES, MONSTERS, POWERS,
+    classByKey, heroSprite, heroDataURL, monsterSprite, axeSprite, powerSprite, powerDataURL,
+  };
 })();

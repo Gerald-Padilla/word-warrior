@@ -1,7 +1,7 @@
 // Host / big-screen controller: QR lobby, live battlefield, leaderboard and podium.
 (function () {
   const { $, el, syncClock, rankPlayers, TEAMS, Sfx } = window.WW;
-  const { heroDataURL } = window.Art;
+  const { heroDataURL, powerDataURL, POWERS } = window.Art;
 
   const socket = io();
   let offset = 0;
@@ -17,6 +17,7 @@
   let teams = null; // team battle: [{ hp, max }, { hp, max }]
   let winner = null; // team battle: 0, 1, or -1 for a draw
   let ko = false;
+  let effects = [{}, {}]; // team battle power-ups: per team, name -> active until (server ms)
   let lastCount = 0;
   let lastBeep = null;
   const prevScores = new Map();
@@ -54,11 +55,54 @@
     arena.kill(k.id, k.by, k.points);
     Sfx.play('shoot');
     scheduleBoard();
-    if (k.hp && teams) {
-      k.hp.forEach((hp, i) => { teams[i].hp = hp; });
-      renderTeamBar();
-    }
   });
+
+  // Team battle ---------------------------------------------------------
+  const setScore = (id, score, roundScore, kills) => {
+    const p = players.find((pl) => pl.id === id);
+    if (!p) return;
+    p.score = score;
+    if (kills !== undefined) p.kills = kills;
+    if (state.round >= 0 && roundScore !== undefined) p.roundScores[state.round] = roundScore;
+  };
+  const setHp = (hp) => {
+    if (!teams || !hp) return;
+    hp.forEach((v, i) => { teams[i].hp = v; });
+    renderTeamBar();
+  };
+  const shakeBar = (team) => {
+    const bar = $(`#tbBar${team}`);
+    bar.classList.remove('hit');
+    void bar.offsetWidth;
+    bar.classList.add('hit');
+  };
+  socket.on('duel:launch', ({ slot, missile }) => {
+    arena.duelLaunch(slot, missile);
+    Sfx.play('shoot');
+  });
+  socket.on('duel:block', (b) => {
+    setScore(b.by, b.score, b.roundScore, b.kills);
+    arena.duelBlock(b.id, b.by);
+  });
+  socket.on('duel:hit', (h) => {
+    setScore(h.by, h.score, h.roundScore);
+    arena.duelHit(h.id, h.team, h.dmg, h.shielded);
+    setHp(h.hp);
+    if (!h.shielded) shakeBar(h.team);
+    Sfx.play(h.shielded ? 'beep' : 'escape');
+  });
+  socket.on('duel:power', (pw) => {
+    const before = teams ? teams[pw.team].hp : 0;
+    effects = pw.effects;
+    arena.setEffects(effects);
+    setHp(pw.hp);
+    const info = POWERS[pw.power];
+    const label = pw.power === 'potion' ? `+${(teams ? teams[pw.team].hp : 0) - before} HP` : `${info.name}!`;
+    arena.duelPower(pw.id, pw.by, pw.team, pw.power, label);
+    renderFx();
+    Sfx.play('join');
+  });
+  socket.on('duel:retime', (list) => arena.retime(list));
   socket.on('room:closed', () => {
     store.set('ww_host', null);
     location.reload();
@@ -66,12 +110,6 @@
 
   arena.onHit = () => Sfx.play('hit');
   arena.onEscape = () => Sfx.play('escape');
-  arena.onTeamHit = (team) => {
-    const bar = $(`#tbBar${team}`);
-    bar.classList.remove('hit');
-    void bar.offsetWidth;
-    bar.classList.add('hit');
-  };
 
   function load(snap) {
     code = snap.code;
@@ -190,6 +228,27 @@
     });
   }
 
+  // Active power-ups under each team's HP bar, with seconds left.
+  let fxShown = '';
+  function renderFx() {
+    const t = now();
+    const chips = [0, 1].map((team) => Object.entries(effects[team] || {})
+      .filter(([, until]) => until > t)
+      .map(([name, until]) => [name, Math.ceil((until - t) / 1000)]));
+    const key = JSON.stringify(chips);
+    if (key === fxShown) return;
+    fxShown = key;
+    chips.forEach((list, team) => {
+      const box = $(`#tbFx${team}`);
+      box.innerHTML = '';
+      for (const [name, secs] of list) {
+        box.append(el('span', { class: 'fx-chip', style: `color:${POWERS[name].color}` }, [
+          el('img', { src: powerDataURL(name), alt: '' }), `${POWERS[name].short} ${secs}s`,
+        ]));
+      }
+    });
+  }
+
   let boardQueued = false;
   function scheduleBoard() {
     if (boardQueued) return;
@@ -234,6 +293,8 @@
     teams = s.teams || null;
     winner = s.winner ?? null;
     ko = Boolean(s.ko);
+    effects = s.effects || [{}, {}];
+    arena.setEffects(effects);
     if (s.players) setPlayers(s.players);
     else renderRoster();
     const r = rounds[s.round];
@@ -345,7 +406,7 @@
         heroImg(p),
         el('div', { class: 'nm', text: p.name, style: teamStyle(p) }),
         rec ? el('div', { class: 'rec blink', text: rec.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${rec.rank}` }) : null,
-        el('div', { class: 'sc', text: `${p.score} ${tb ? 'DMG' : 'PTS'}` }),
+        el('div', { class: 'sc', text: `${p.score} PTS` }),
         el('div', { class: 'ko', text: `${p.kills} MONSTERS SLAIN` }),
         el('div', { class: 'block', text: idx + 1 }),
       ]));
@@ -363,6 +424,7 @@
   }
 
   function tick() {
+    if (teams) renderFx();
     const left = Math.max(0, state.phaseEndsAt - now());
     if (state.state === 'countdown') {
       const n = Math.ceil(left / 1000);

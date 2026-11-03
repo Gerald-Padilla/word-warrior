@@ -1,7 +1,7 @@
 // Phone controller: hero creator, lobby, typing battle and results.
 (function () {
   const { $, el, syncClock, rankPlayers, TEAMS, Sfx } = window.WW;
-  const { CLASSES, COLORS, SKINS, heroDataURL, classByKey } = window.Art;
+  const { CLASSES, COLORS, SKINS, POWERS, heroDataURL, powerDataURL, classByKey } = window.Art;
 
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -29,6 +29,7 @@
   let teams = null; // team battle: [{ hp, max }, { hp, max }]
   let winner = null; // team battle: 0, 1, or -1 for a draw
   let ko = false;
+  let effects = [{}, {}]; // team battle power-ups: per team, name -> active until (server ms)
   const toasted = new Set();
 
   const look = Object.assign({
@@ -42,14 +43,21 @@
   const me = () => players.find((p) => p.id === you);
   const teamBattle = () => mode === 'teams' && !solo;
   const myTeam = () => (me() ? me().team : 0);
-  // In a team battle a phone only shows its own side's words.
-  const onMySide = (w) => w.team === undefined || w.team === myTeam();
 
   // ---- viewport: keep the typing bar above the on-screen keyboard ----
   function fit() {
     const vv = window.visualViewport;
     document.documentElement.style.setProperty('--app-h', `${vv ? vv.height : window.innerHeight}px`);
     $('#app').style.transform = vv && vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
+    requestAnimationFrame(syncReserve);
+  }
+
+  // On a short landscape screen the HP bars float over the top of the battlefield; keep the action below them.
+  function syncReserve() {
+    const strip = $('#hpStrip');
+    const over = !strip.classList.contains('hidden')
+      && strip.getBoundingClientRect().top >= $('#field').getBoundingClientRect().top - 1;
+    arena.setReserveTop(over ? strip.offsetHeight : 0);
   }
   window.visualViewport?.addEventListener('resize', fit);
   window.visualViewport?.addEventListener('scroll', fit);
@@ -279,7 +287,7 @@
     rounds = res.snapshot.rounds;
     mode = res.snapshot.mode || 'ffa';
     setPlayers(res.snapshot.players);
-    arena.setWords(res.snapshot.words.filter(onMySide));
+    arena.setWords(res.snapshot.words);
     applyState(res.snapshot);
   }
 
@@ -289,9 +297,73 @@
     if (state.state === 'lobby' && !editing) renderLobby();
   });
   socket.on('room:state', (s) => applyState(s));
-  socket.on('word:spawn', (w) => {
-    if (onMySide(w)) arena.addWord(w);
+  socket.on('word:spawn', (w) => arena.addWord(w));
+
+  // Team battle ---------------------------------------------------------
+  const setScore = (id, score, roundScore, kills) => {
+    const p = players.find((pl) => pl.id === id);
+    if (!p) return;
+    p.score = score;
+    if (kills !== undefined) p.kills = kills;
+    if (state.round >= 0 && roundScore !== undefined) p.roundScores[state.round] = roundScore;
+    updateTopbar();
+  };
+  const setHp = (hp) => {
+    if (!teams || !hp) return;
+    hp.forEach((v, i) => { teams[i].hp = v; });
+    renderHp();
+  };
+  // Someone else typed the word you were halfway through: start over.
+  const wordTaken = (text, by) => {
+    if (by === you || !arena.typed || !text.startsWith(arena.typed)) return;
+    if (!arena.typeable(now()).some((w) => w.text.startsWith(arena.typed))) clearTyping();
+  };
+  const nameOf = (id) => players.find((p) => p.id === id)?.name || 'Someone';
+
+  socket.on('duel:launch', ({ slot, missile }) => {
+    wordTaken(missile.text, missile.by);
+    arena.duelLaunch(slot, missile);
+    if (missile.by === you) {
+      Sfx.play('shoot');
+      if (navigator.vibrate) navigator.vibrate(25);
+    }
   });
+  socket.on('duel:block', (b) => {
+    const w = arena.words.get(b.id);
+    if (w) wordTaken(w.text, b.by);
+    setScore(b.by, b.score, b.roundScore, b.kills);
+    arena.duelBlock(b.id, b.by);
+    if (b.by === you) showToast('BLOCKED!', 'good');
+  });
+  socket.on('duel:hit', (h) => {
+    setScore(h.by, h.score, h.roundScore);
+    arena.duelHit(h.id, h.team, h.dmg, h.shielded);
+    setHp(h.hp);
+    if (h.team === myTeam() && !h.shielded) {
+      const bar = $(`#hpBar${h.team}`);
+      bar.classList.remove('hit');
+      void bar.offsetWidth;
+      bar.classList.add('hit');
+      Sfx.play('escape');
+      if (navigator.vibrate) navigator.vibrate(60);
+    }
+  });
+  socket.on('duel:power', (pw) => {
+    const w = arena.words.get(pw.id);
+    if (w) wordTaken(w.text, pw.by);
+    const before = teams ? teams[pw.team].hp : 0;
+    effects = pw.effects;
+    arena.setEffects(effects);
+    setHp(pw.hp);
+    const info = POWERS[pw.power];
+    const label = pw.power === 'potion' ? `+${(teams ? teams[pw.team].hp : 0) - before} HP` : `${info.name}!`;
+    arena.duelPower(pw.id, pw.by, pw.team, pw.power, label);
+    renderFx();
+    const ours = pw.team === myTeam();
+    showToast(`${ours ? (pw.by === you ? 'YOU' : nameOf(pw.by)) : TEAMS[pw.team].short} GOT ${info.name}!`, ours ? 'good' : 'bad', 1800);
+    Sfx.play(ours ? 'join' : 'miss');
+  });
+  socket.on('duel:retime', (list) => arena.retime(list));
   socket.on('word:escape', ({ id }) => {
     arena.escape(id);
     if (solo) Sfx.play('escape');
@@ -316,15 +388,19 @@
 
   function setPlayers(list) {
     players = list;
-    // Team battle: the battlefield on your phone is your own side, so only your teammates stand on it.
-    arena.setPlayers(teamBattle() ? list.filter((p) => p.team === myTeam()) : list);
+    arena.setPlayers(list);
+    // Team battle: your army is drawn on the near side, the enemy across from it.
+    arena.setTeamMode(teamBattle(), teamBattle() ? myTeam() : null);
     updateTopbar();
     renderHp();
   }
 
   function renderHp() {
     const on = teamBattle() && Boolean(teams);
-    $('#hpStrip').classList.toggle('hidden', !on);
+    const strip = $('#hpStrip');
+    const wasHidden = strip.classList.contains('hidden');
+    strip.classList.toggle('hidden', !on);
+    if (wasHidden !== !on) syncReserve();
     if (!on) return;
     teams.forEach((t, i) => {
       $(`#hpFill${i}`).style.width = `${(t.hp / t.max) * 100}%`;
@@ -332,6 +408,27 @@
       $(`#hpVal${i}`).textContent = t.hp;
       $(`#hpSide${i}`).classList.toggle('mine', i === myTeam());
       $(`#hpSide${i}`).querySelector('span').style.color = TEAMS[i].color;
+    });
+  }
+
+  // Active power-ups under each HP bar, with seconds left.
+  let fxShown = '';
+  function renderFx() {
+    const t = now();
+    const chips = [0, 1].map((team) => Object.entries(effects[team] || {})
+      .filter(([, until]) => until > t)
+      .map(([name, until]) => [name, Math.ceil((until - t) / 1000)]));
+    const key = JSON.stringify(chips);
+    if (key === fxShown) return;
+    fxShown = key;
+    chips.forEach((list, team) => {
+      const box = $(`#hpFx${team}`);
+      box.innerHTML = '';
+      for (const [name, secs] of list) {
+        box.append(el('span', { class: 'fx-chip', style: `color:${POWERS[name].color}` }, [
+          el('img', { src: powerDataURL(name), alt: '' }), `${POWERS[name].short} ${secs}s`,
+        ]));
+      }
     });
   }
 
@@ -344,9 +441,13 @@
     teams = s.teams || null;
     winner = s.winner ?? null;
     ko = Boolean(s.ko);
-    arena.setTeamMode(teamBattle());
+    effects = s.effects || [{}, {}];
+    arena.setEffects(effects);
     if (s.players) setPlayers(s.players);
-    else renderHp();
+    else {
+      arena.setTeamMode(teamBattle(), teamBattle() ? myTeam() : null);
+      renderHp();
+    }
     const r = rounds[s.round];
     if (r) arena.setTheme(r.monster);
     if (s.state === 'lobby') arena.setTheme('slime');
@@ -435,7 +536,7 @@
         const theirs = teams[1 - myTeam()].hp;
         $('#fb2').textContent = ours > theirs ? 'WINNING!' : ours < theirs ? 'LOSING!' : 'TIED!';
         $('#fb2').style.color = ours > theirs ? '#8be36b' : ours < theirs ? 'var(--red)' : '';
-        $('#fb3').textContent = `You dealt ${roundPts} damage · ${TEAMS[0].short} ${teams[0].hp} HP vs ${TEAMS[1].short} ${teams[1].hp} HP`;
+        $('#fb3').textContent = `You scored ${roundPts} · ${TEAMS[0].short} ${teams[0].hp} HP vs ${TEAMS[1].short} ${teams[1].hp} HP`;
       }
       $('#fb4').textContent = next ? `${next.name} IN ${Math.ceil(left / 1000)}` : '';
       $('#fb4').style.fontSize = '14px';
@@ -478,17 +579,14 @@
       $('#gTime').classList.remove('low');
     }
     if (!$('#scrGame').classList.contains('hidden')) updateBanner();
+    if (teams) renderFx();
   }
   setInterval(tick, 100);
 
   // ---- typing --------------------------------------------------------
   const typeIn = $('#typeIn');
   const normalize = (s) => s.toLowerCase().replace(/[^a-z]/g, '');
-
-  function visibleWords() {
-    const t = now();
-    return [...arena.words.values()].filter((w) => t >= w.spawn && t <= w.spawn + w.dur);
-  }
+  const visibleWords = () => arena.typeable(now());
 
   let shown = ''; // normalized text in the box after the last edit
   let lastCleared = null; // { text, t } of the last text we wiped
@@ -552,19 +650,6 @@
       p.score = k.score;
       p.kills = k.kills;
       if (state.round >= 0) p.roundScores[state.round] = k.roundScore;
-    }
-    if (k.hp && teams) {
-      k.hp.forEach((hp, i) => { teams[i].hp = hp; });
-      renderHp();
-      if (k.team !== myTeam()) {
-        // The other team landed a word on us.
-        arena.flash('#ff2d2d');
-        const bar = $(`#hpBar${myTeam()}`);
-        bar.classList.remove('hit');
-        void bar.offsetWidth;
-        bar.classList.add('hit');
-        Sfx.play('escape');
-      }
     }
     if (k.by === you) {
       Sfx.play('shoot');
@@ -678,7 +763,7 @@
         : `${TEAMS[winner].name} WIN${ko ? ' BY K.O.!' : '!'}`;
       $('#fPlace').style.color = winner >= 0 ? TEAMS[winner].color : '';
       $('#fRecord').classList.add('hidden');
-      $('#fScoreLbl').textContent = 'DAMAGE DEALT';
+      $('#fScoreLbl').textContent = 'DAMAGE + BLOCKS';
       topHeroes(true);
       return;
     }

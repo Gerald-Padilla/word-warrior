@@ -84,6 +84,10 @@
     .tb-bar.hit { animation: shake 0.25s steps(4); }
     .tb-bar.hit .tb-fill { filter: brightness(1.8); }
     .tb-vs { font-size: 18px; color: var(--gold); text-shadow: 3px 3px 0 var(--ink); }
+    .tb-fx { display: flex; gap: 6px; min-height: 22px; }
+    .tb-side.right .tb-fx { justify-content: flex-end; }
+    .fx-chip { display: flex; align-items: center; gap: 6px; font-size: 9px; padding: 3px 7px; background: var(--ink); }
+    .fx-chip img { width: 15px; height: 18px; image-rendering: pixelated; }
 
     #board { position: fixed; right: 18px; top: 110px; width: 300px; max-height: calc(100vh - 110px - 24vh); overflow: hidden; padding: 14px 12px; background: rgba(45, 35, 66, 0.9); }
     #board h3 { margin: 0 0 12px; font-size: 12px; color: var(--gold); text-align: center; }
@@ -177,11 +181,13 @@
     <div class="tb-side left">
       <div class="tb-name" id="tbName0">RED DRAGONS<span id="tbHp0"></span></div>
       <div class="tb-bar" id="tbBar0"><div class="tb-fill" id="tbFill0"></div></div>
+      <div class="tb-fx" id="tbFx0"></div>
     </div>
     <div class="tb-vs">VS</div>
     <div class="tb-side right">
       <div class="tb-name" id="tbName1"><span id="tbHp1"></span>BLUE GRIFFINS</div>
       <div class="tb-bar" id="tbBar1"><div class="tb-fill" id="tbFill1"></div></div>
+      <div class="tb-fx" id="tbFx1"></div>
     </div>
   </div>
 
@@ -204,7 +210,7 @@
       <div class="lobby-right">
         <div class="mode-pick">
           <button class="mode-btn on" type="button" data-mode="ffa">FREE FOR ALL<small>First to type a word scores it</small></button>
-          <button class="mode-btn" type="button" data-mode="teams">TEAM BATTLE<small>Red vs Blue - break their HP!</small></button>
+          <button class="mode-btn" type="button" data-mode="teams">TEAM BATTLE<small>Red vs Blue: attack, block, grab power-ups</small></button>
         </div>
         <h2>HEROES IN THE TAVERN: <span id="count">0</span></h2>
         <div id="roster" class="roster"></div>

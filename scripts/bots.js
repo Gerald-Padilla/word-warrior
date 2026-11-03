@@ -38,8 +38,14 @@ for (let i = 0; i < count; i++) {
   socket.on('room:players', trackTeam);
   socket.on('room:state', (s) => trackTeam(s.players));
 
+  const duel = new Map(); // team battle words: attack slots, attacks in the air, power-ups
+  let busyUntil = 0;
+
   socket.on('word:spawn', (w) => {
-    if (w.team !== undefined && w.team !== team) return; // in a team battle, only type your own side's words
+    if (w.kind) {
+      duel.set(w.id, w);
+      return;
+    }
     alive.add(w.id);
     // Wait until the word is visible, "read" it, then type it.
     const delay = Math.max(0, w.spawn - Date.now()) + 500 + Math.random() * 1500 + (w.text.length / cps) * 1000;
@@ -47,7 +53,42 @@ for (let i = 0; i < count; i++) {
       if (alive.has(w.id) && Math.random() < 0.85) socket.emit('player:claim', { id: w.id, text: w.text }, () => {});
     }, delay);
   });
-  socket.on('word:kill', ({ id }) => alive.delete(id));
-  socket.on('word:escape', ({ id }) => alive.delete(id));
-  socket.on('word:clear', () => alive.clear());
+  socket.on('duel:launch', ({ slot, missile }) => {
+    duel.delete(slot);
+    duel.set(missile.id, missile);
+  });
+  socket.on('duel:retime', (list) => list.forEach((r) => duel.has(r.id) && Object.assign(duel.get(r.id), r)));
+  for (const ev of ['word:kill', 'word:escape', 'duel:block', 'duel:hit', 'duel:power']) {
+    socket.on(ev, ({ id }) => {
+      alive.delete(id);
+      duel.delete(id);
+    });
+  }
+  socket.on('word:clear', () => {
+    alive.clear();
+    duel.clear();
+  });
+
+  // Team battle: when free, block the most urgent incoming attack, go for a power-up, or launch an attack.
+  setInterval(() => {
+    const now = Date.now();
+    if (!duel.size || now < busyUntil) return;
+    const typeMs = (w) => 400 + Math.random() * 900 + (w.text.length / cps) * 1000;
+    const words = [...duel.values()];
+    const power = words.find((w) => w.kind === 'power');
+    const incoming = words
+      .filter((w) => w.kind === 'missile' && w.team !== team && w.launch + w.dur - now > 1500)
+      .sort((a, b) => a.launch + a.dur - (b.launch + b.dur));
+    const slots = words.filter((w) => w.kind === 'attack' && w.team === team);
+    const r = Math.random();
+    let target = slots[Math.floor(Math.random() * slots.length)];
+    if (power && r < 0.3) target = power;
+    else if (incoming.length && r < 0.7) target = incoming[0];
+    if (!target) return;
+    const ms = typeMs(target);
+    busyUntil = now + ms;
+    setTimeout(() => {
+      if (duel.has(target.id) && Math.random() < 0.9) socket.emit('player:claim', { id: target.id, text: target.text }, () => {});
+    }, ms);
+  }, 150);
 }

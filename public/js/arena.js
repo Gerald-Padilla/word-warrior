@@ -1,7 +1,8 @@
 // The battlefield: pixel background, falling monsters with words, heroes, attacks and effects.
-// Used by both the host screen and phones. In a team battle the host field splits in half, one side per team.
+// Used by both the host screen and phones. A team battle is a different scene: two armies face off and
+// fling word-carrying attacks at each other (see the "team battle" sections).
 (function () {
-  const { heroSprite, monsterSprite, axeSprite, COLORS, MONSTERS } = window.Art;
+  const { heroSprite, monsterSprite, axeSprite, powerSprite, COLORS, MONSTERS, POWERS } = window.Art;
   const { TEAMS } = window.WW;
 
   const THEMES = {
@@ -56,12 +57,13 @@
       this.typed = '';
       this.reserveRight = 0;
       this.reserveTop = 0;
-      this.teamMode = false;
-      this.split = false; // host in a team battle: left half team 0, right half team 1
+      this.teamMode = false; // team battle
+      this.myTeam = null; // phone: your team (drawn on the near side); host: red is on the left
+      this.effects = [{}, {}]; // team battle power-ups: per team, name -> active until (server ms)
+      this.geo = null; // team battle layout, from layoutDuel()
       this.flashAt = -1e9;
       this.onHit = null;
       this.onEscape = null;
-      this.onTeamHit = null; // (team, damage) when a blow lands on a team's side of the host screen
       this.lastFrame = performance.now();
       new ResizeObserver(() => this.resize()).observe(canvas);
       this.resize();
@@ -79,10 +81,16 @@
       this.canvas.height = H;
       this.W = W;
       this.H = H;
+      this.landscape = W > H * 1.15;
       if (this.mode === 'host') {
         this.U = Math.max(2, Math.round(H / 170));
         this.fontPx = Math.max(16, Math.round(H / 46 / 8) * 8);
         this.groundY = H - 9 * this.U;
+      } else if (this.landscape) {
+        // A phone on its side or a PC window: size things off the height so heroes don't fill the screen.
+        this.U = Math.max(2, Math.round(H / 90));
+        this.fontPx = Math.max(16, Math.round(Math.max(13 * dpr, this.U * 3.2) / 8) * 8);
+        this.groundY = H - 5 * this.U;
       } else {
         this.U = Math.max(2, Math.round(Math.min(W / 62, H / 52)));
         this.fontPx = Math.max(16, Math.round((13 * dpr) / 8) * 8);
@@ -105,14 +113,25 @@
 
     // Words enter the field below this line (e.g. under the host's top bar).
     setReserveTop(cssPx) {
-      this.reserveTop = cssPx * (this.dpr || 1);
+      const px = cssPx * (this.dpr || 1);
+      if (px === this.reserveTop) return;
+      this.reserveTop = px;
+      this.layoutHeroes();
     }
 
-    setTeamMode(on) {
-      if (on === this.teamMode) return;
+    setTeamMode(on, myTeam = null) {
+      if (on === this.teamMode && myTeam === this.myTeam) return;
       this.teamMode = on;
-      this.split = on && this.mode === 'host';
+      this.myTeam = myTeam;
       this.layoutHeroes();
+    }
+
+    setEffects(effects) {
+      this.effects = effects || [{}, {}];
+    }
+
+    effectOn(team, name) {
+      return (this.effects[team]?.[name] || 0) > this.now();
     }
 
     buildBackground() {
@@ -246,51 +265,113 @@
     layoutHeroes() {
       this.heroPos.clear();
       if (!this.W) return;
+      if (this.teamMode) {
+        this.layoutDuel();
+        return;
+      }
       if (this.mode === 'phone') {
-        // Your hero stands big in the middle; everyone else crowds in smaller on both sides,
-        // nearest the middle first. Others go in first so your hero is drawn on top.
-        const U = this.U;
-        const others = [...this.players.keys()].filter((id) => id !== this.selfId);
-        const gap = 9 * U;
-        const sideW = this.W / 2 - gap - U;
-        const perSide = Math.ceil(others.length / 2);
-        let hu = Math.max(2, Math.round(U / 2));
-        let spacing = perSide ? Math.min(18 * hu, sideW / perSide) : 0;
-        while (hu > 2 && spacing < 11 * hu) {
-          hu--;
-          spacing = Math.min(18 * hu, sideW / perSide);
-        }
-        others.forEach((id, i) => {
-          const side = i % 2 ? 1 : -1;
-          this.heroPos.set(id, { x: this.W / 2 + side * (gap + spacing * (Math.floor(i / 2) + 0.5)), hu });
-        });
-        if (this.selfId) this.heroPos.set(this.selfId, { x: this.W / 2, hu: U });
+        this.layoutCrowd([...this.players.keys()]);
         return;
       }
       const list = [...this.players.values()];
       const n = list.length;
       if (!n) return;
-      if (this.split) {
-        // Each team lines up across its own half, at one shared size so neither side looks bigger.
-        const half = this.W / 2;
-        const sides = [0, 1].map((t) => list.filter((p) => p.team === t));
-        const most = Math.max(1, ...sides.map((s) => s.length));
-        const room = half * 0.92;
-        let hu = this.U;
-        while (hu > 2 && most * 20 * hu > room) hu--;
-        sides.forEach((side, t) => {
-          const spacing = Math.min(room / Math.max(1, side.length), 30 * hu);
-          const start = t * half + (half - spacing * side.length) / 2 + spacing / 2;
-          side.forEach((p, i) => this.heroPos.set(p.id, { x: start + i * spacing, hu, spacing }));
-        });
-        return;
-      }
       const avail = this.W * 0.96;
       let hu = this.U;
       while (hu > 2 && n * 20 * hu > avail) hu--;
       const spacing = Math.min(avail / n, 30 * hu);
       const start = (this.W - spacing * n) / 2 + spacing / 2;
       list.forEach((p, i) => this.heroPos.set(p.id, { x: start + i * spacing, hu, spacing }));
+    }
+
+    // Phones: your hero stands big in the middle; the others crowd in smaller on both sides,
+    // nearest the middle first. Others go in first so your hero is drawn on top.
+    layoutCrowd(ids) {
+      const U = this.U;
+      const others = ids.filter((id) => id !== this.selfId);
+      const gap = 9 * U;
+      const sideW = this.W / 2 - gap - U;
+      const perSide = Math.ceil(others.length / 2);
+      let hu = Math.max(2, Math.round(U / 2));
+      let spacing = perSide ? Math.min(18 * hu, sideW / perSide) : 0;
+      while (hu > 2 && spacing < 11 * hu) {
+        hu--;
+        spacing = Math.min(18 * hu, sideW / perSide);
+      }
+      others.forEach((id, i) => {
+        const side = i % 2 ? 1 : -1;
+        this.heroPos.set(id, { x: this.W / 2 + side * (gap + spacing * (Math.floor(i / 2) + 0.5)), hu });
+      });
+      if (this.selfId && ids.includes(this.selfId)) this.heroPos.set(this.selfId, { x: this.W / 2, hu: U });
+    }
+
+    // ---- team battle: layout ---------------------------------------------
+    // Two armies face each other. Side-on (big screen, landscape) your team - red on the big screen -
+    // stands on the left and the enemy on the right, mirrored to face you. On a phone held upright the
+    // enemy lines a rampart across the top and your team stands on the ground below.
+    layoutDuel() {
+      const { W, U } = this;
+      const near = this.myTeam ?? 0;
+      const g = { near, far: 1 - near, horizontal: this.mode === 'host' || this.landscape };
+      const list = [...this.players.values()];
+      const sides = [0, 1].map((t) => list.filter((p) => p.team === t));
+      const fp = this.fontPx;
+      g.plateH = Math.round(fp * 1.8);
+      g.gap = Math.round(fp / 2);
+
+      if (g.horizontal) {
+        const zoneW = W * (this.mode === 'host' ? 0.2 : 0.24);
+        const most = Math.max(1, ...sides.map((s) => s.length));
+        // Up to three ranks; back ranks stand a little higher and are drawn first.
+        let hu = U;
+        const perRow = () => Math.max(1, Math.floor((zoneW * 0.9) / (11 * hu)));
+        while (hu > 2 && Math.ceil(most / perRow()) > 3) hu--;
+        const cols = perRow();
+        const step = (zoneW * 0.9) / cols;
+        const placed = [];
+        for (const t of [0, 1]) {
+          const left = t === near;
+          const order = [...sides[t]].sort((a, b) => (b.id === this.selfId) - (a.id === this.selfId));
+          order.forEach((p, i) => {
+            const row = Math.floor(i / cols);
+            const fromFront = (i % cols + 0.5 + (row % 2) * 0.35) * step;
+            const x = left ? zoneW * 0.95 - fromFront : W - zoneW * 0.95 + fromFront;
+            const size = p.id === this.selfId ? Math.round(hu * 1.3) : hu;
+            placed.push([p.id, { x, hu: size, feet: this.feetY - row * 5 * hu, flip: !left, row }]);
+          });
+        }
+        placed.sort((a, b) => b[1].row - a[1].row || (a[0] === this.selfId) - (b[0] === this.selfId));
+        for (const [id, pos] of placed) this.heroPos.set(id, pos);
+        g.zoneW = zoneW;
+        g.armyHu = hu;
+        g.front = [0, 1].map((t) => (t === near ? zoneW : W - zoneW));
+        // Attack words sit in rows across the top of each team's half; attacks cruise below them
+        // (lanes are worked out each frame, once we know how many rows the attack words need).
+        g.top = this.reserveTop + 2 * U;
+        g.chest = this.feetY - 10 * hu;
+        g.laneFloor = this.feetY - 30 * hu;
+        this.setLanes(g, 1);
+      } else {
+        // Upright phone: the enemy on a rampart along the top.
+        const farIds = sides[g.far].map((p) => p.id);
+        let huF = Math.max(2, Math.round(U * 0.45));
+        const avail = W * 0.94;
+        while (huF > 2 && farIds.length * 12 * huF > avail) huF--;
+        const spacing = farIds.length ? Math.min(18 * huF, avail / farIds.length) : 0;
+        g.bandTop = this.reserveTop;
+        g.bandBottom = this.reserveTop + 20 * huF;
+        farIds.forEach((id, i) => {
+          const x = (W - spacing * farIds.length) / 2 + spacing * (i + 0.5);
+          this.heroPos.set(id, { x, hu: huF, feet: g.bandBottom - 2 * huF });
+        });
+        this.layoutCrowd(sides[g.near].map((p) => p.id));
+        g.huF = huF;
+        g.chest = this.feetY - 9 * U;
+        g.farChest = g.bandBottom - 10 * huF;
+        // Your attack words sit in rows just above your team's heads.
+        g.slotBottom = this.feetY - 17 * U - g.gap;
+      }
+      this.geo = g;
     }
 
     colorOf(id) {
@@ -300,9 +381,23 @@
 
     heroOrigin(id) {
       const pos = this.heroPos.get(id);
-      if (pos) return { x: pos.x, y: this.feetY - 13 * pos.hu };
+      if (pos) return { x: pos.x, y: (pos.feet ?? this.feetY) - 13 * pos.hu };
       // Phones: other heroes attack from off-screen below.
       return { x: ((hash(id) % 1000) / 1000) * this.W * 0.9 + this.W * 0.05, y: this.H + 4 * this.U };
+    }
+
+    // Middle of a team's army, where attacks land.
+    armyPoint(team) {
+      const g = this.geo;
+      const own = [...this.heroPos.entries()].filter(([id]) => this.players.get(id)?.team === team);
+      if (own.length) {
+        const x = own.reduce((s, [, p]) => s + p.x, 0) / own.length;
+        const nearSide = team === g.near;
+        if (!g.horizontal) return { x, y: nearSide ? g.chest : g.farChest };
+        return { x: nearSide ? Math.max(x, g.front[team] - g.zoneW / 2) : Math.min(x, g.front[team] + g.zoneW / 2), y: g.chest };
+      }
+      if (!g.horizontal) return { x: this.W / 2, y: team === g.near ? g.chest : g.farChest };
+      return { x: team === g.near ? g.zoneW / 2 : this.W - g.zoneW / 2, y: g.chest };
     }
 
     // ---- words ---------------------------------------------------------
@@ -326,11 +421,9 @@
       const stackH = mh + U + plateH;
       const p = (now - w.spawn) / w.dur;
       const top = lerp(this.reserveTop - stackH, this.groundY - stackH, p);
-      const split = this.split && w.team != null;
-      const fieldW = split ? this.W / 2 : Math.max(this.W * 0.4, this.W - this.reserveRight);
-      const left = split ? w.team * fieldW : 0;
+      const fieldW = Math.max(this.W * 0.4, this.W - this.reserveRight);
       const half = Math.max(mw, plateW) / 2 + U;
-      let cx = left + (half * 2 > fieldW ? fieldW / 2 : clamp(w.x * fieldW, half, fieldW - half));
+      let cx = half * 2 > fieldW ? fieldW / 2 : clamp(w.x * fieldW, half, fieldW - half);
       if (this.monster === 'bat') cx += Math.sin(now / 280 + w.id) * U * 2;
       if (this.monster === 'skull') cx += Math.sin(now / 520 + w.id) * U * 1.5;
       return { p, cx, top, mw, mh, plateW, plateH, cy: top + mh / 2, py: top + mh + U };
@@ -353,24 +446,201 @@
         const showName = this.mode === 'host' || playerId !== this.selfId;
         this.floatText(L.cx, L.top, `+${points}`, color.Q, showName && player ? player.name : null);
         if (this.onHit) this.onHit(playerId);
-        if (this.teamMode && w.team != null) this.strikeFoe(player ? player.cls : 'knight', L, w.team, points, color);
       });
     }
 
-    // Team battle: the blow carries on to the other team - across to their half of the big screen,
-    // or off the top of a phone (the other team is somewhere else).
-    strikeFoe(cls, L, team, dmg, color) {
-      const foe = 1 - team;
-      const from = { x: L.cx, y: L.cy };
-      const to = this.split
-        ? { x: foe * (this.W / 2) + this.W / 4, y: this.reserveTop + 5 * this.U }
-        : { x: L.cx, y: -8 * this.U };
-      this.launch(cls, from, to, color, () => {
-        if (!this.split) return;
-        this.explode(to.x, to.y, { Q: TEAMS[team].color });
-        this.floatText(to.x, to.y + 2 * this.U, `-${dmg}`, TEAMS[foe].color, null);
-        if (this.onTeamHit) this.onTeamHit(foe, dmg);
+    // Side-on: attacks cruise between the attack-word rows and the armies' heads.
+    setLanes(g, slotRows) {
+      g.laneTop = g.top + Math.max(1, slotRows) * (g.plateH + g.gap) + 4 * this.U;
+      g.laneBottom = Math.max(g.laneTop + g.plateH, g.laneFloor);
+    }
+
+    // ---- team battle: where things are ----------------------------------
+    // Attack words for each team, flowed into rows. Returns id -> plate layout, and the rows used.
+    slotLayout() {
+      const g = this.geo;
+      const fp = this.fontPx;
+      const out = new Map();
+      let rows = 0;
+      for (const team of [0, 1]) {
+        if (this.mode === 'phone' && team !== g.near) continue; // you can only type your own team's
+        const slots = [...this.words.values()].filter((w) => w.kind === 'attack' && w.team === team).sort((a, b) => a.id - b.id);
+        let x0;
+        let x1;
+        if (!g.horizontal) [x0, x1] = [this.W * 0.03, this.W * 0.97];
+        else if (this.mode === 'phone') [x0, x1] = [2 * this.U, this.W * 0.62];
+        else [x0, x1] = team === g.near ? [2 * this.U, this.W * 0.48] : [this.W * 0.52, this.W - 2 * this.U];
+        const lines = [[]];
+        let used = 0;
+        for (const w of slots) {
+          const plateW = w.text.length * fp + fp;
+          if (lines[lines.length - 1].length && used + plateW > x1 - x0) {
+            lines.push([]);
+            used = 0;
+          }
+          lines[lines.length - 1].push([w, plateW]);
+          used += plateW + g.gap;
+        }
+        lines.forEach((line, r) => {
+          const width = line.reduce((s, [, pw]) => s + pw + g.gap, -g.gap);
+          let x = g.horizontal && team === g.near ? x0 : g.horizontal ? x1 - width : (x0 + x1 - width) / 2;
+          const py = g.horizontal ? g.top + r * (g.plateH + g.gap) : g.slotBottom - (r + 1) * (g.plateH + g.gap);
+          for (const [w, plateW] of line) {
+            out.set(w.id, { cx: x + plateW / 2, py, plateW, plateH: g.plateH, p: 0 });
+            x += plateW + g.gap;
+          }
+        });
+        if (slots.length) rows = Math.max(rows, lines.length);
+      }
+      return { slots: out, rows };
+    }
+
+    // Attacks fly in lanes (heights side-on, columns upright) so their words don't pile on top of each other.
+    laneCount() {
+      const g = this.geo;
+      if (!g.horizontal) return Math.max(2, Math.floor(this.W / (this.fontPx * 8)));
+      return Math.max(1, Math.floor((g.laneBottom - g.laneTop) / (g.plateH + g.gap)) + 1);
+    }
+
+    pickLane(team) {
+      const n = this.laneCount();
+      const used = new Array(n).fill(0);
+      for (const w of this.words.values()) if (w.kind === 'missile' && w.team === team && w.lane != null) used[w.lane % n] += 1;
+      const least = Math.min(...used);
+      const free = used.map((u, i) => (u === least ? i : -1)).filter((i) => i >= 0);
+      return free[Math.floor(Math.random() * free.length)];
+    }
+
+    // Where an attack is right now: it flies from where it was launched to the middle of the other army.
+    missilePos(w, now) {
+      const g = this.geo;
+      const p = clamp((now - w.launch) / w.dur, 0, 1);
+      const n = this.laneCount();
+      const r = w.lane != null ? ((w.lane % n) + 0.5) / n : (hash(w.id) % 1000) / 1000;
+      const to = this.armyPoint(1 - w.team);
+      let from = w.from;
+      let x;
+      let y;
+      if (g.horizontal) {
+        const lane = g.laneTop + r * Math.max(0, g.laneBottom - g.laneTop);
+        if (!from) from = { x: g.front[w.team], y: lane };
+        x = lerp(from.x, to.x, p);
+        // Rise to the lane, cruise, then drop onto the army.
+        const cruise = p < 0.2 ? lerp(from.y, lane, p / 0.2) : p > 0.8 ? lerp(lane, to.y, (p - 0.8) / 0.2) : lane;
+        y = cruise - Math.sin(p * Math.PI) * 3 * this.U;
+      } else {
+        const lx = this.W * (0.12 + 0.76 * r);
+        const incoming = w.team !== g.near;
+        if (!from) from = incoming ? { x: lx, y: g.bandBottom } : { x: lx, y: g.slotBottom };
+        x = lerp(from.x, incoming ? lx : to.x, p) + Math.sin(p * Math.PI * 2 + w.id) * 2 * this.U;
+        y = lerp(from.y, to.y, p);
+      }
+      const fp = this.fontPx;
+      const plateW = w.text.length * fp + fp;
+      return { p, x, y, cx: x, cy: y, py: y + 3 * this.U, plateW, plateH: g.plateH, dx: to.x - from.x, dy: to.y - from.y };
+    }
+
+    // The power-up floats in the middle of the field.
+    powerPos(w, now) {
+      const g = this.geo;
+      const s = Math.max(2, Math.round(this.U * (g.horizontal ? 1.1 : 0.9)));
+      const midY = g.horizontal ? (g.laneTop + g.laneBottom) / 2 : (g.bandBottom + g.slotBottom - 2 * g.plateH) / 2;
+      const y = midY + Math.sin(now / 300) * 2 * this.U;
+      const fp = this.fontPx;
+      const plateW = w.text.length * fp + fp;
+      return { x: this.W / 2, y, s, cx: this.W / 2, cy: y, py: y + 7 * s, plateW, plateH: g.plateH, p: (now - w.spawn) / w.dur };
+    }
+
+    duelPos(w, now) {
+      if (w.kind === 'missile') return this.missilePos(w, now);
+      if (w.kind === 'power') return this.powerPos(w, now);
+      return this.slotLayout().slots.get(w.id) || null;
+    }
+
+    // Phone: what you can type right now in a team battle - your attack words, attacks coming at you,
+    // and the power-up. Free for all: the words on screen.
+    typeable(now) {
+      if (!this.teamMode) return [...this.words.values()].filter((w) => now >= w.spawn && now <= w.spawn + w.dur);
+      return [...this.words.values()].filter((w) => this.canType(w));
+    }
+
+    canType(w) {
+      if (w.kind === 'power') return true;
+      if (w.kind === 'attack') return w.team === this.myTeam;
+      return w.kind === 'missile' && w.team !== this.myTeam;
+    }
+
+    // ---- team battle: events -------------------------------------------
+    // An attack word was typed: its plate lifts off from the attack row and heads for the other army.
+    duelLaunch(slotId, missile) {
+      const L = this.geo && this.slotLayout().slots.get(slotId);
+      this.words.delete(slotId);
+      const m = { ...missile };
+      if (L) m.from = { x: L.cx, y: L.py + L.plateH / 2 };
+      if (this.geo) m.lane = this.pickLane(m.team);
+      this.words.set(m.id, m);
+      this.heroHop.set(m.by, performance.now());
+      const o = this.heroOrigin(m.by);
+      this.sparkle(o.x, o.y, this.colorOf(m.by).Q, 10);
+    }
+
+    // An incoming attack was typed by a defender: their hero shoots it down mid-air.
+    duelBlock(id, by) {
+      const w = this.words.get(id);
+      if (!w) return;
+      const L = this.missilePos(w, this.now());
+      this.words.delete(id);
+      const color = this.colorOf(by);
+      const dying = { w, L, color, t0: performance.now() };
+      this.dying.push(dying);
+      const player = this.players.get(by);
+      this.heroHop.set(by, performance.now());
+      this.launch(player ? player.cls : 'knight', this.heroOrigin(by), { x: L.x, y: L.y }, color, () => {
+        this.dying = this.dying.filter((d) => d !== dying);
+        this.explode(L.x, L.y, color);
+        this.floatText(L.x, L.y - 2 * this.U, 'BLOCKED!', color.Q, player ? player.name : null);
+        if (this.onHit) this.onHit(by);
       });
+    }
+
+    // An attack reached its target army.
+    duelHit(id, team, dmg, shielded) {
+      const w = this.words.get(id);
+      this.words.delete(id);
+      const at = this.armyPoint(team);
+      const color = w ? this.colorOf(w.by) : { P: TEAMS[1 - team].color, Q: TEAMS[1 - team].color };
+      if (shielded) {
+        this.sparkle(at.x, at.y, POWERS.shield.color, 24);
+        this.floatText(at.x, at.y - 6 * this.U, 'SHIELDED!', POWERS.shield.color, null);
+      } else {
+        this.explode(at.x, at.y, color);
+        this.floatText(at.x, at.y - 6 * this.U, `-${dmg}`, TEAMS[team].color, null);
+      }
+      const t0 = performance.now();
+      for (const [pid] of this.heroPos) if (this.players.get(pid)?.team === team) this.heroHop.set(pid, t0 + Math.random() * 120);
+      if (this.mode === 'phone' && team === this.myTeam && !shielded) this.flash('#ff2d2d');
+    }
+
+    // A team grabbed the power-up: it bursts and the power flies to their army.
+    duelPower(id, by, team, power, label) {
+      const w = this.words.get(id);
+      this.words.delete(id);
+      const at = this.armyPoint(team);
+      const info = POWERS[power] || POWERS.potion;
+      if (w) {
+        const L = this.powerPos(w, this.now());
+        this.sparkle(L.x, L.y, info.color, 22);
+      }
+      this.sparkle(at.x, at.y, info.color, 26);
+      this.floatText(at.x, at.y - 8 * this.U, label, info.color, this.players.get(by)?.name || null);
+      this.heroHop.set(by, performance.now());
+    }
+
+    retime(list) {
+      for (const r of list) {
+        const w = this.words.get(r.id);
+        if (w) Object.assign(w, { launch: r.launch, dur: r.dur });
+      }
     }
 
     // A quick tinted flash over the whole field (a phone's team taking a hit).
@@ -383,6 +653,12 @@
       const w = this.words.get(wordId);
       if (!w) return;
       this.words.delete(wordId);
+      if (w.kind) {
+        // A power-up nobody grabbed fades away.
+        const L = this.duelPos(w, this.now());
+        if (L) this.puff(L.cx, L.cy, ['#9c93b5', '#d0c9e6', POWERS[w.power]?.color || '#ffffff'], 14);
+        return;
+      }
       const L = this.layoutWord(w, Math.min(this.now(), w.spawn + w.dur));
       this.puff(L.cx, this.groundY - this.U * 2, ['#9c93b5', '#6c6485', '#d0c9e6'], 14);
       if (this.onEscape) this.onEscape();
@@ -390,8 +666,8 @@
 
     clearWords() {
       for (const w of this.words.values()) {
-        const L = this.layoutWord(w, this.now());
-        if (L.p > 0) this.puff(L.cx, L.cy, MONSTERS[this.monster].fx, 10);
+        const L = w.kind ? this.geo && this.duelPos(w, this.now()) : this.layoutWord(w, this.now());
+        if (L && (w.kind || L.p > 0)) this.puff(L.cx, L.cy, MONSTERS[this.monster].fx, 10);
       }
       this.words.clear();
       this.dying = [];
@@ -504,32 +780,34 @@
         }
       }
 
-      if (this.split) this.drawSides();
-
       ctx.font = `${this.fontPx}px "Press Start 2P", monospace`;
       ctx.textBaseline = 'top';
 
-      const mon = MONSTERS[this.monster];
-      for (const w of this.words.values()) {
-        const L = this.layoutWord(w, now);
-        if (L.p < 0) continue;
-        if (L.p > 1) {
-          if (L.p > 1 + 1500 / w.dur) this.words.delete(w.id); // missed escape event
-          continue;
+      if (this.teamMode && this.geo) {
+        this.drawDuel(t, now);
+      } else {
+        const mon = MONSTERS[this.monster];
+        for (const w of this.words.values()) {
+          const L = this.layoutWord(w, now);
+          if (L.p < 0) continue;
+          if (L.p > 1) {
+            if (L.p > 1 + 1500 / w.dur) this.words.delete(w.id); // missed escape event
+            continue;
+          }
+          const frame = Math.floor((t + w.id * 97) / mon.frameMs) % 2;
+          this.drawMonster(L, frame);
+          this.drawPlate(w, L, t);
         }
-        const frame = Math.floor((t + w.id * 97) / mon.frameMs) % 2;
-        this.drawMonster(L, frame);
-        this.drawPlate(w, L, t);
-      }
-
-      for (const d of this.dying) {
-        if (t - d.t0 > 1500) continue;
-        if (Math.floor((t - d.t0) / 60) % 2 === 0) this.drawMonster(d.L, 0);
-        this.drawPlate(d.w, d.L, t, d.color.Q);
+        for (const d of this.dying) {
+          if (t - d.t0 > 1500) continue;
+          if (Math.floor((t - d.t0) / 60) % 2 === 0) this.drawMonster(d.L, 0);
+          this.drawPlate(d.w, d.L, t, d.color.Q);
+        }
       }
       this.dying = this.dying.filter((d) => t - d.t0 <= 1500);
 
       this.drawHeroes(t);
+      if (this.teamMode && this.geo) this.drawEffects(t);
       this.drawProjectiles(t);
       this.drawParticles(t, dt);
       this.drawTexts(t);
@@ -543,21 +821,141 @@
       }
     }
 
-    // Team battle on the big screen: tint each half in its team's color with a wall between them.
-    drawSides() {
+    // ---- team battle: drawing --------------------------------------------
+    drawDuel(t, now) {
+      const ctx = this.ctx;
+      const g = this.geo;
+      const U = this.U;
+      const { slots, rows } = this.slotLayout();
+      if (g.horizontal) this.setLanes(g, rows);
+
+      // Each army's ground glows in its team color; upright phones get a rampart for the enemy.
+      if (g.horizontal) {
+        ctx.globalAlpha = 0.14;
+        for (const team of [0, 1]) {
+          ctx.fillStyle = TEAMS[team].color;
+          ctx.fillRect(team === g.near ? 0 : this.W - g.zoneW, 0, g.zoneW, this.groundY);
+        }
+        ctx.globalAlpha = 1;
+        for (const team of [0, 1]) this.drawBanner(team === g.near ? 3 * U : this.W - 3 * U, g.top + 2 * U, team);
+      } else {
+        const color = TEAMS[g.far].color;
+        ctx.fillStyle = '#120d22';
+        ctx.fillRect(0, g.bandTop, this.W, g.bandBottom - g.bandTop);
+        ctx.fillStyle = TEAMS[g.far].dark;
+        ctx.fillRect(0, g.bandBottom - 2 * g.huF, this.W, 2 * g.huF);
+        ctx.fillStyle = color;
+        for (let x = 0; x < this.W; x += 8 * g.huF) ctx.fillRect(x, g.bandBottom - 3 * g.huF, 4 * g.huF, g.huF);
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = TEAMS[g.near].color;
+        ctx.fillRect(0, g.slotBottom, this.W, this.groundY - g.slotBottom);
+        ctx.globalAlpha = 1;
+      }
+
+      // The power-up: a glowing item with its word underneath. It blinks when it's about to fade.
+      for (const w of this.words.values()) {
+        if (w.kind !== 'power') continue;
+        const L = this.powerPos(w, now);
+        if (L.p > 0.8 && Math.floor(t / 120) % 2) continue;
+        const info = POWERS[w.power] || POWERS.potion;
+        const r = (6 + Math.sin(t / 150)) * L.s;
+        ctx.globalAlpha = 0.25;
+        this.ring(L.x, L.y, r, info.color, L.s);
+        ctx.globalAlpha = 1;
+        const spr = powerSprite(w.power);
+        ctx.drawImage(spr, Math.round(L.x - (spr.width * L.s) / 2), Math.round(L.y - (spr.height * L.s) / 2), spr.width * L.s, spr.height * L.s);
+        this.drawLabel({ text: info.name, x: L.x, y: L.y - 7 * L.s - this.fontPx, fs: Math.max(8, Math.round((this.fontPx * 0.67) / 8) * 8), color: info.color });
+        this.drawPlate(w, L, t, null, { border: info.color });
+      }
+
+      // Attack words waiting to be typed. On a phone they keep the plain border, so red always means
+      // "incoming - block it".
+      for (const [id, L] of slots) {
+        const w = this.words.get(id);
+        if (w) this.drawPlate(w, L, t, null, this.mode === 'host' ? { border: TEAMS[w.team].color, noType: true } : {});
+      }
+
+      // Attacks in flight: the hero's projectile with its word. On a phone, yours are dimmed (only the
+      // other team can type them); the ones coming at you are the ones to block.
+      for (const w of this.words.values()) {
+        if (w.kind !== 'missile') continue;
+        const L = this.missilePos(w, now);
+        const incoming = this.mode === 'phone' && w.team !== this.myTeam;
+        const outgoing = this.mode === 'phone' && w.team === this.myTeam;
+        const p = this.players.get(w.by);
+        const color = this.colorOf(w.by);
+        const a = Math.atan2(L.dy, L.dx);
+        if (this.effectOn(1 - w.team, 'slow')) {
+          ctx.globalAlpha = 0.5;
+          this.ring(L.x, L.y, 4 * U, POWERS.slow.color, U);
+          ctx.globalAlpha = 1;
+        }
+        if (t - (w.trailAt || 0) > (this.effectOn(w.team, 'haste') ? 20 : 45)) {
+          w.trailAt = t;
+          this.particles.push({
+            x: L.x + rand(-1, 1) * U, y: L.y + rand(-1, 1) * U, vx: 0, vy: 0, g: 0, life: 260, t0: t, size: U,
+            color: this.effectOn(w.team, 'haste') ? POWERS.haste.color : TEAMS[w.team].color,
+          });
+        }
+        this.drawBolt(ATTACK[p ? p.cls : 'knight'] || 'slash', L.x, L.y, Math.cos(a), Math.sin(a), a, color, t);
+        this.drawPlate(w, L, t, null, { border: incoming ? '#ff4d4d' : TEAMS[w.team].color, dim: outgoing, noType: !incoming });
+      }
+
+      for (const d of this.dying) {
+        if (t - d.t0 > 1500 || Math.floor((t - d.t0) / 60) % 2) continue;
+        this.drawPlate(d.w, d.L, t, d.color.Q);
+      }
+    }
+
+    // A team flag on a pole.
+    drawBanner(x, y, team) {
       const ctx = this.ctx;
       const U = this.U;
-      const mid = Math.round(this.W / 2);
-      ctx.globalAlpha = 0.12;
-      ctx.fillStyle = TEAMS[0].color;
-      ctx.fillRect(0, 0, mid, this.groundY);
-      ctx.fillStyle = TEAMS[1].color;
-      ctx.fillRect(mid, 0, this.W - mid, this.groundY);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = '#0e0a17';
-      ctx.fillRect(mid - U, 0, 2 * U, this.feetY);
-      ctx.fillStyle = '#4a3a6e';
-      for (let y = Math.floor(this.reserveTop / (4 * U)) * 4 * U; y < this.feetY; y += 4 * U) ctx.fillRect(mid - U, y, 2 * U, U);
+      const left = x < this.W / 2;
+      ctx.fillStyle = '#8b5a2b';
+      ctx.fillRect(Math.round(x - U / 2), y, U, 14 * U);
+      ctx.fillStyle = TEAMS[team].color;
+      const wave = Math.floor(performance.now() / 250) % 2;
+      for (let r = 0; r < 5; r++) ctx.fillRect(left ? x + U / 2 : x - U / 2 - (6 + (r === 2 ? wave : 0)) * U, y + r * U, (6 + (r === 2 ? wave : 0)) * U, U);
+    }
+
+    ring(x, y, r, color, size) {
+      for (let i = 0; i < 18; i++) {
+        const a = (i / 18) * Math.PI * 2;
+        this.block(x + Math.cos(a) * r, y + Math.sin(a) * r, size, color);
+      }
+    }
+
+    // Shield domes over protected armies and sparks rising off armies in a fury.
+    drawEffects(t) {
+      const ctx = this.ctx;
+      const U = this.U;
+      for (const team of [0, 1]) {
+        const heroes = [...this.heroPos.entries()].filter(([id]) => this.players.get(id)?.team === team).map(([, p]) => p);
+        if (!heroes.length) continue;
+        const minX = Math.min(...heroes.map((h) => h.x - 9 * h.hu));
+        const maxX = Math.max(...heroes.map((h) => h.x + 9 * h.hu));
+        const feet = Math.max(...heroes.map((h) => h.feet ?? this.feetY));
+        const head = Math.min(...heroes.map((h) => (h.feet ?? this.feetY) - 17 * h.hu));
+        if (this.effectOn(team, 'shield')) {
+          const cx = (minX + maxX) / 2;
+          const rx = (maxX - minX) / 2 + 3 * U;
+          const ry = feet - head + 3 * U;
+          ctx.globalAlpha = 0.45 + 0.15 * Math.sin(t / 200);
+          for (let i = 0; i <= 28; i++) {
+            const a = Math.PI + (i / 28) * Math.PI;
+            this.block(cx + Math.cos(a) * rx, feet + Math.sin(a) * ry, U * 1.2, POWERS.shield.color);
+          }
+          ctx.globalAlpha = 1;
+        }
+        if (this.effectOn(team, 'fury') && Math.random() < 0.5) {
+          const h = heroes[Math.floor(Math.random() * heroes.length)];
+          this.particles.push({
+            x: h.x + rand(-6, 6) * h.hu, y: (h.feet ?? this.feetY) - rand(0, 14) * h.hu, vx: 0, vy: -0.03 * U, g: 0,
+            life: rand(300, 600), t0: t, size: U, color: Math.random() < 0.5 ? '#ff7b1c' : '#e8371c',
+          });
+        }
+      }
     }
 
     drawMonster(L, frame) {
@@ -567,16 +965,18 @@
       this.ctx.drawImage(spr, x, y, spr.width * this.U, spr.height * this.U);
     }
 
-    drawPlate(w, L, t, killedColor) {
+    // opts (team battle): border color, dim (not yours to type), noType (never highlight).
+    drawPlate(w, L, t, killedColor, opts = {}) {
       const ctx = this.ctx;
       const fp = this.fontPx;
       const bt = Math.max(2, Math.round(this.U / 2));
       const x = Math.round(L.cx - L.plateW / 2);
       const y = Math.round(L.py);
       const typed = this.typed;
-      const locked = !killedColor && typed && w.text.startsWith(typed);
-      const danger = !killedColor && L.p > 0.72 && Math.floor(t / 180) % 2 === 0;
-      ctx.fillStyle = killedColor || (locked ? '#ffd23f' : danger ? '#ff4d4d' : '#f4ead5');
+      const locked = !killedColor && !opts.noType && typed && w.text.startsWith(typed);
+      const danger = !killedColor && !opts.noType && L.p > 0.72 && Math.floor(t / 180) % 2 === 0;
+      if (opts.dim) ctx.globalAlpha = 0.55;
+      ctx.fillStyle = killedColor || (locked ? '#ffd23f' : danger ? '#ff4d4d' : opts.border || '#f4ead5');
       ctx.fillRect(x - bt, y - bt, L.plateW + bt * 2, L.plateH + bt * 2);
       ctx.fillStyle = '#1b1426';
       ctx.fillRect(x, y, L.plateW, L.plateH);
@@ -585,9 +985,7 @@
       if (killedColor) {
         ctx.fillStyle = killedColor;
         ctx.fillText(w.text, tx, ty);
-        return;
-      }
-      if (locked) {
+      } else if (locked) {
         ctx.fillStyle = '#ffd23f';
         ctx.fillText(typed, tx, ty);
         ctx.fillStyle = '#ffffff';
@@ -596,6 +994,7 @@
         ctx.fillStyle = '#ffffff';
         ctx.fillText(w.text, tx, ty);
       }
+      ctx.globalAlpha = 1;
     }
 
     drawHeroes(t) {
@@ -609,26 +1008,35 @@
         const bob = Math.sin(t / 320 + (hash(id) % 100)) > 0 ? 0 : hu;
         const hopT = (t - (this.heroHop.get(id) || -1e9)) / 260;
         const hop = hopT >= 0 && hopT < 1 ? Math.sin(hopT * Math.PI) * 4 * hu : 0;
+        const feet = pos.feet ?? this.feetY;
         const x = Math.round(pos.x - 8 * hu);
-        const y = Math.round(this.feetY - 16 * hu + bob - hop);
+        const y = Math.round(feet - 16 * hu + bob - hop);
         ctx.globalAlpha = p.connected === false ? 0.35 : 1;
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.fillRect(Math.round(pos.x - 5 * hu), this.feetY - hu, 10 * hu, hu);
-        ctx.drawImage(spr, x, y, 16 * hu, 16 * hu);
+        ctx.fillRect(Math.round(pos.x - 5 * hu), feet - hu, 10 * hu, hu);
+        if (pos.flip) {
+          // The army on the right faces left, toward the enemy.
+          ctx.save();
+          ctx.scale(-1, 1);
+          ctx.drawImage(spr, -x - 16 * hu, y, 16 * hu, 16 * hu);
+          ctx.restore();
+        } else {
+          ctx.drawImage(spr, x, y, 16 * hu, 16 * hu);
+        }
         ctx.globalAlpha = 1;
 
-        if (this.mode === 'host') {
+        if (this.mode === 'host' && !this.teamMode) {
           const fs = hu >= 4 ? 16 : 8;
           const maxChars = Math.max(3, Math.floor((pos.spacing - 4) / fs));
           const name = p.name.length > maxChars ? p.name.slice(0, maxChars - 1) + '.' : p.name;
           labels.push({ text: name, x: pos.x, y: this.feetY + hu, fs, color: this.colorOf(id).Q });
         } else if (id !== this.selfId && hopT >= 0 && hopT < 6) {
-          // Phones have no room for every name, so a hero's name pops up while they attack.
+          // No room for every name (phones, armies), so a hero's name pops up while they attack.
           const fs = Math.max(8, Math.round((this.fontPx * 0.67) / 8) * 8);
           labels.push({ text: p.name, x: pos.x, y: y - fs - hu, fs, color: this.colorOf(id).Q });
         }
       }
-      if (this.mode === 'phone') {
+      if (this.mode === 'phone' || this.teamMode) {
         // Neighbours attacking at once would print their names on top of each other; stack them instead.
         const placed = [];
         for (const l of labels) {
@@ -708,69 +1116,86 @@
           });
         }
 
-        switch (pr.kind) {
-          case 'slash': {
-            const r = 5 * U;
-            const cx = x - dx * r * 0.6;
-            const cy = y - dy * r * 0.6;
-            for (let i = -5; i <= 5; i++) {
-              const ang = a + i * 0.2;
-              this.block(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r, U * 1.2, '#ffffff');
-              if (Math.abs(i) <= 4) this.block(cx + Math.cos(ang) * (r - U), cy + Math.sin(ang) * (r - U), U, pr.color.Q);
-            }
-            break;
-          }
-          case 'fireball': {
-            const flick = Math.floor(t / 50) % 2;
-            for (let i = 0; i < 8; i++) {
-              const ang = (i / 8) * Math.PI * 2 + flick * 0.4;
-              this.block(x + Math.cos(ang) * U * 2.2, y + Math.sin(ang) * U * 2.2, U * 1.4, '#e8371c');
-            }
-            for (let i = 0; i < 6; i++) {
-              const ang = (i / 6) * Math.PI * 2;
-              this.block(x + Math.cos(ang) * U * 1.2, y + Math.sin(ang) * U * 1.2, U * 1.4, '#ff7b1c');
-            }
-            this.block(x, y, U * 2, '#ffd23f');
-            this.block(x - U * 0.5, y - U * 0.5, U, '#ffffff');
-            break;
-          }
-          case 'arrow': {
-            this.block(x, y, U, '#ffffff');
-            this.block(x - dx * U, y - dy * U, U, '#d5dbe6');
-            for (let s = 2; s <= 6; s++) this.block(x - dx * U * s, y - dy * U * s, U, '#8b5a2b');
-            const px = -dy;
-            const py = dx;
-            for (const s of [6, 7]) {
-              this.block(x - dx * U * s + px * U, y - dy * U * s + py * U, U, pr.color.P);
-              this.block(x - dx * U * s - px * U, y - dy * U * s - py * U, U, pr.color.P);
-            }
-            break;
-          }
-          case 'dagger': {
-            const b = Math.max(2, U * 0.8);
-            this.block(x, y, b, '#ffffff');
-            this.block(x - dx * b, y - dy * b, b, '#d5dbe6');
-            this.block(x - dx * b * 2, y - dy * b * 2, b, '#d5dbe6');
-            this.block(x - dx * b * 3, y - dy * b * 3, b, pr.color.P);
-            this.block(x - dx * b * 4, y - dy * b * 4, b, '#f5c542');
-            break;
-          }
-          case 'axe': {
-            const spr = axeSprite();
-            const step = Math.floor(t / 70) % 4;
-            this.ctx.save();
-            this.ctx.translate(Math.round(x), Math.round(y));
-            this.ctx.rotate((step * Math.PI) / 2);
-            this.ctx.drawImage(spr, Math.round((-spr.width * U) / 2), Math.round((-spr.height * U) / 2), spr.width * U, spr.height * U);
-            this.ctx.restore();
-            break;
-          }
-          default:
-            this.block(x, y, U * 2, '#ffffff');
-        }
+        this.drawBolt(pr.kind, x, y, dx, dy, a, pr.color, t);
         keep.push(pr);
       }
       this.projectiles = keep;
+    }
+
+    // One frame of a hero's attack at (x, y), heading along (dx, dy) / angle a. Also used for the slower
+    // team battle attacks; a cleric's beam travels as a holy orb there.
+    drawBolt(kind, x, y, dx, dy, a, color, t) {
+      const U = this.U;
+      switch (kind) {
+        case 'slash': {
+          const r = 5 * U;
+          const cx = x - dx * r * 0.6;
+          const cy = y - dy * r * 0.6;
+          for (let i = -5; i <= 5; i++) {
+            const ang = a + i * 0.2;
+            this.block(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r, U * 1.2, '#ffffff');
+            if (Math.abs(i) <= 4) this.block(cx + Math.cos(ang) * (r - U), cy + Math.sin(ang) * (r - U), U, color.Q);
+          }
+          break;
+        }
+        case 'fireball': {
+          const flick = Math.floor(t / 50) % 2;
+          for (let i = 0; i < 8; i++) {
+            const ang = (i / 8) * Math.PI * 2 + flick * 0.4;
+            this.block(x + Math.cos(ang) * U * 2.2, y + Math.sin(ang) * U * 2.2, U * 1.4, '#e8371c');
+          }
+          for (let i = 0; i < 6; i++) {
+            const ang = (i / 6) * Math.PI * 2;
+            this.block(x + Math.cos(ang) * U * 1.2, y + Math.sin(ang) * U * 1.2, U * 1.4, '#ff7b1c');
+          }
+          this.block(x, y, U * 2, '#ffd23f');
+          this.block(x - U * 0.5, y - U * 0.5, U, '#ffffff');
+          break;
+        }
+        case 'arrow': {
+          this.block(x, y, U, '#ffffff');
+          this.block(x - dx * U, y - dy * U, U, '#d5dbe6');
+          for (let s = 2; s <= 6; s++) this.block(x - dx * U * s, y - dy * U * s, U, '#8b5a2b');
+          const px = -dy;
+          const py = dx;
+          for (const s of [6, 7]) {
+            this.block(x - dx * U * s + px * U, y - dy * U * s + py * U, U, color.P);
+            this.block(x - dx * U * s - px * U, y - dy * U * s - py * U, U, color.P);
+          }
+          break;
+        }
+        case 'dagger': {
+          const b = Math.max(2, U * 0.8);
+          this.block(x, y, b, '#ffffff');
+          this.block(x - dx * b, y - dy * b, b, '#d5dbe6');
+          this.block(x - dx * b * 2, y - dy * b * 2, b, '#d5dbe6');
+          this.block(x - dx * b * 3, y - dy * b * 3, b, color.P);
+          this.block(x - dx * b * 4, y - dy * b * 4, b, '#f5c542');
+          break;
+        }
+        case 'axe': {
+          const spr = axeSprite();
+          const step = Math.floor(t / 70) % 4;
+          this.ctx.save();
+          this.ctx.translate(Math.round(x), Math.round(y));
+          this.ctx.rotate((step * Math.PI) / 2);
+          this.ctx.drawImage(spr, Math.round((-spr.width * U) / 2), Math.round((-spr.height * U) / 2), spr.width * U, spr.height * U);
+          this.ctx.restore();
+          break;
+        }
+        case 'beam': {
+          const pulse = Math.floor(t / 90) % 2;
+          for (let i = 0; i < 8; i++) {
+            const ang = (i / 8) * Math.PI * 2;
+            this.block(x + Math.cos(ang) * U * (2 + pulse * 0.5), y + Math.sin(ang) * U * (2 + pulse * 0.5), U, '#ffd23f');
+          }
+          this.block(x, y, U * 2.4, '#fff6b0');
+          this.block(x, y, U, '#ffffff');
+          break;
+        }
+        default:
+          this.block(x, y, U * 2, '#ffffff');
+      }
     }
 
     drawParticles(t, dt) {

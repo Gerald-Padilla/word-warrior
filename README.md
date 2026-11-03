@@ -34,18 +34,41 @@ Players scan the QR code on it. Phones must be able to reach this laptop (see *N
 
 ## Team battle
 
-Pick **TEAM BATTLE** instead of **FREE FOR ALL** in the host lobby (it needs at least 2 heroes).
+A different game from free-for-all: two armies face off and fight with words. Pick **TEAM BATTLE** in the
+host lobby (it needs at least 2 heroes).
 
 - Players are split into **Red Dragons** and **Blue Griffins**, balanced as they join. On the phone,
   **SWITCH TEAM** changes sides in the lobby; the host can **SHUFFLE TEAMS** to deal everyone out again.
-- Both teams start with the same HP (10,000, scaled up for bigger teams).
-- Each team gets its own falling words. Only your team can type them, and every word you finish hits the
-  other team for its points: your hero attacks the word and the blow flies across to the enemy.
+- Both teams start with the same HP (6,000, scaled up for bigger teams).
+- **Attack:** your team has a row of attack words. Type one and your hero launches it across the field at
+  the other army, carrying the word. If it lands, the enemy loses HP equal to its points.
+- **Block:** the enemy's attacks fly at you with their words showing (red on your phone). Type one before it
+  lands and your hero shoots it down.
+- **Power-ups:** every so often a glowing item floats in the middle with a word under it. The first team to
+  type it gets the power:
+  - **Health Potion** heals your team (15% of max HP).
+  - **Slow Time** makes attacks coming at your team fly slower for 10s, so you have more time to block.
+  - **Haste** makes your team's attacks fly faster for 10s, so the enemy has less time to block.
+  - **Shield** blocks every attack that hits your team for 6s.
+  - **Fury** doubles your team's damage for 10s.
 - A team at 0 HP is knocked out on the spot. If both survive the three rounds, the team with more HP wins.
-- The big screen splits in half (red left, blue right) with fighting-game HP bars on top. Phones show only
-  your own side's words and teammates, with both HP bars under the top bar; your screen flashes when the
-  other team lands a hit.
-- The podium shows the top damage dealers from both teams. Team battles aren't recorded in the Hall of Fame.
+- Your score is the damage your attacks dealt plus the damage you blocked. The podium shows the best heroes
+  from both teams. Team battles aren't recorded in the Hall of Fame.
+
+What it looks like:
+
+- **Big screen:** red army on the left, blue on the right, attack words across the top of each side,
+  attacks flying between them, the power-up in the middle, and HP bars with active power-ups on top.
+- **Phone, upright:** the enemy army lines a rampart at the top, your team stands below with your attack
+  words just above their heads; attacks fly up and down between you.
+- **Phone on its side or a PC:** like the big screen, but your team is always on the left.
+
+## Landscape and PC
+
+The player page works upright, sideways, and in a desktop browser. Sideways and on a PC it uses the full
+width; the join, lobby and results screens switch to two columns. On a phone held sideways the typing box
+moves into the top row (and team HP bars float over the battlefield) so there's room to play with the
+keyboard open.
 
 **Heroes:** Knight (sword beam), Wizard (fireball), Elf Archer (arrow), Rogue (dagger volley),
 Cleric (holy light), Barbarian (spinning axe), each in 8 colors and 4 skin tones.
@@ -132,8 +155,9 @@ npm run bots -- ABCD 6
 ## Tuning
 
 Round length, fall speed, spawn rate and points multipliers are in the `ROUNDS` table at the top of
-`server.js`, next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo) and the team battle
-HP (`TEAM_HP`). Word lists are in `words.js`.
+`server.js`, next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings
+sit there too: `TEAM_HP`, how long attacks take to fly (`FLIGHT_MS`), how often power-ups appear and how long
+their effects last. Word lists are in `words.js`.
 
 ## Files
 
@@ -143,6 +167,6 @@ HP (`TEAM_HP`). Word lists are in `words.js`.
 - `public/host.html`, `public/js/host.js`: big screen (QR lobby, battlefield, leaderboard, podium)
 - `public/play.html`, `public/js/play.js`: phone (hero creator, lobby, solo, typing, results, Hall of Fame)
 - `public/js/arena.js`: shared pixel battlefield renderer (monsters, attacks, particles)
-- `public/js/art.js`: pixel sprites and palettes
+- `public/js/art.js`: pixel sprites and palettes (heroes, monsters, power-ups)
 - `public/js/common.js`: clock sync, DOM helper, 8-bit sound effects
 - `scripts/bots.js`: test bots
