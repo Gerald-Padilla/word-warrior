@@ -11,6 +11,7 @@ if (!code) {
 }
 
 const NAMES = ['Aria', 'Borin', 'Cyra', 'Dax', 'Elora', 'Fenn', 'Gwyn', 'Hale', 'Iris', 'Jarek', 'Kael', 'Lyra'];
+const LINES = ['hi everyone!', 'ready to type!', 'gl hf', 'who picked the wizard?', "let's go!", 'my fingers are warmed up', 'good luck all', 'first to 10k wins'];
 const CLASSES = ['knight', 'wizard', 'archer', 'rogue', 'cleric', 'barbarian', 'ninja', 'necromancer', 'druid', 'pirate', 'bard', 'valkyrie'];
 
 for (let i = 0; i < count; i++) {
@@ -41,6 +42,10 @@ for (let i = 0; i < count; i++) {
       if (res.ok) {
         me = res.you;
         trackTeam(res.snapshot.players);
+        // Say hello in the lobby chat now and then.
+        if (res.snapshot.state === 'lobby' && Math.random() < 0.6) {
+          setTimeout(() => socket.emit('chat:send', { text: LINES[Math.floor(Math.random() * LINES.length)] }, () => {}), 800 + Math.random() * 5000);
+        }
       }
     });
   });

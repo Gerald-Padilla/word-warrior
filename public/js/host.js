@@ -1,7 +1,7 @@
 // Host / big-screen controller: QR lobby, live battlefield, leaderboard and podium.
 (function () {
   const { $, el, syncClock, watchBuild, rankPlayers, TEAMS, Sfx, Music, EMOTES } = window.WW;
-  const { heroDataURL, powerDataURL, crownDataURL, POWERS } = window.Art;
+  const { heroDataURL, powerDataURL, crownDataURL, POWERS, COLORS } = window.Art;
 
   const socket = io();
   watchBuild(socket);
@@ -199,6 +199,7 @@
     rounds = snap.rounds;
     $('#roomCode').textContent = code;
     $('#hudCode').textContent = code;
+    chat = snap.chat || [];
     setPlayers(snap.players);
     arena.setWords(snap.words);
     applyState(snap);
@@ -280,6 +281,7 @@
       heroImg(p, 'px-sprite bob'),
       el('div', { class: 'nm' }, nameParts(p)),
       teamsOn ? el('div', { class: 'mv', text: p.team === 0 ? 'MOVE >' : '< MOVE' }) : null,
+      saying.has(p.id) ? el('div', { class: 'say', text: saying.get(p.id) }) : null,
       el('button', { class: 'x', type: 'button', title: `Remove ${p.name}`, text: 'X', onclick: remove }),
     ]);
   }
@@ -413,6 +415,7 @@
     if (s.players) setPlayers(s.players);
     else renderRoster();
     renderOptions();
+    renderChat();
     renderRoundChips();
     if (!pushedOptions && s.state === 'lobby') pushSavedOptions();
     const r = rounds[s.round];
@@ -485,6 +488,50 @@
     ])));
   }
 
+  // ---- lobby chat ----------------------------------------------------
+  let chat = []; // { id, by, name, color, text, at }, oldest first
+  const saying = new Map(); // playerId -> what they just said, shown on their tile for a few seconds
+  const sayTimers = new Map();
+
+  function renderChat(fresh) {
+    const on = Boolean(options.chat);
+    $('#lobbyMid').classList.toggle('no-chat', !on);
+    show('#chatPanel', on);
+    if (!on) return;
+    const list = $('#chatList');
+    list.innerHTML = '';
+    if (!chat.length) list.append(el('div', { class: 'chat-empty', text: 'Players can chat from their phones. Messages show up here.' }));
+    for (const m of chat) {
+      list.append(el('div', { class: `chat-msg${m.id === fresh ? ' new' : ''}` }, [
+        el('b', { text: m.name, style: `color:${(COLORS[m.color] || COLORS[0]).Q}` }), m.text,
+      ]));
+    }
+    list.scrollTop = list.scrollHeight;
+  }
+
+  socket.on('chat:msg', (m) => {
+    chat = chat.concat(m).slice(-30);
+    renderChat(m.id);
+    if (state.state !== 'lobby') return;
+    Sfx.play('emote');
+    saying.set(m.by, m.text.length > 40 ? `${m.text.slice(0, 39)}…` : m.text);
+    clearTimeout(sayTimers.get(m.by));
+    sayTimers.set(m.by, setTimeout(() => {
+      saying.delete(m.by);
+      renderRoster();
+    }, 5000));
+    renderRoster();
+  });
+  socket.on('chat:clear', () => {
+    chat = [];
+    saying.clear();
+    renderChat();
+    renderRoster();
+  });
+  $('#btnChatClear').onclick = () => {
+    if (confirm('Clear the chat for everyone?')) socket.emit('host:chatClear');
+  };
+
   // ---- game options --------------------------------------------------
   function renderOptions() {
     for (const b of document.querySelectorAll('.opt[data-opt]')) b.classList.toggle('on', Boolean(options[b.dataset.opt]));
@@ -507,6 +554,8 @@
     if (Object.keys(saved).length) socket.emit('host:options', saved);
   }
 
+  // Each option explains itself on hover too (short screens hide the description).
+  for (const b of document.querySelectorAll('.opt')) b.title = b.querySelector('small')?.textContent || '';
   for (const b of document.querySelectorAll('.opt[data-opt]')) {
     b.onclick = () => setOptions({ [b.dataset.opt]: !options[b.dataset.opt] });
   }

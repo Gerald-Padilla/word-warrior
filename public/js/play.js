@@ -2,7 +2,7 @@
 (function () {
   const { $, el, syncClock, watchBuild, rankPlayers, TEAMS, Sfx, Music, EMOTES } = window.WW;
   const { CLASSES, COLORS, SKINS, HAIRS, TRIMS, PETS, POWERS } = window.Art;
-  const { heroDataURL, petDataURL, powerDataURL, classByKey, classHasHair } = window.Art;
+  const { heroDataURL, petDataURL, powerDataURL, crownDataURL, classByKey, classHasHair } = window.Art;
 
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -344,6 +344,7 @@
     if (!solo) battleCode = code;
     else if (battleCode === code) battleCode = ''; // resumed a solo quest after a reload
     records = res.snapshot.records || {};
+    chat = res.snapshot.chat || [];
     $('#btnQuit').classList.toggle('hidden', !solo);
     if (solo) loadHof().then(updateTopbar);
     arena.selfId = you;
@@ -721,6 +722,59 @@
     store.set('ww_music', Music.on);
     syncMusic();
   };
+
+  // ---- lobby chat ----------------------------------------------------
+  let chat = []; // { id, by, name, color, text, at }, oldest first
+  const CHAT_REFUSED = {
+    slow: 'Easy there! Wait a moment before your next message.',
+    off: 'The host has turned chat off.',
+    'not-lobby': 'Chat is only open in the lobby.',
+  };
+
+  function renderChat() {
+    const on = Boolean(options.chat) && !solo && Boolean(you);
+    $('#chatBox').classList.toggle('hidden', !on);
+    if (!on) return;
+    const list = $('#chatList');
+    list.innerHTML = '';
+    if (!chat.length) list.append(el('div', { class: 'chat-empty', text: 'No messages yet. Say hi!' }));
+    for (const m of chat) {
+      list.append(el('div', { class: `chat-msg${m.by === you ? ' me' : ''}` }, [
+        el('b', { text: m.name, style: `color:${(COLORS[m.color] || COLORS[0]).Q}` }), m.text,
+      ]));
+    }
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function lobbyNote(text) {
+    $('#lobbyNote').textContent = text;
+    $('#lobbyNote').classList.remove('hidden');
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => $('#lobbyNote').classList.add('hidden'), 3000);
+  }
+
+  socket.on('chat:msg', (m) => {
+    chat = chat.concat(m).slice(-30);
+    renderChat();
+    if (m.by !== you && state.state === 'lobby') Sfx.play('emote');
+  });
+  socket.on('chat:clear', () => {
+    chat = [];
+    renderChat();
+  });
+  $('#chatForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = $('#chatIn').value.trim();
+    if (!text) return;
+    $('#chatIn').value = ''; // cleared now, so a quick next message isn't wiped when this one is confirmed
+    socket.emit('chat:send', { text }, (res) => {
+      if (res && res.ok) return;
+      if (!$('#chatIn').value) $('#chatIn').value = text; // refused: give it back to try again
+      if (res && CHAT_REFUSED[res.reason]) lobbyNote(CHAT_REFUSED[res.reason]);
+    });
+  });
+  // Tapping SEND keeps the keyboard up, so you can keep chatting.
+  $('#chatForm button').addEventListener('pointerdown', (e) => e.preventDefault());
 
   // ---- emotes --------------------------------------------------------
   let emoteAt = 0;
@@ -1113,6 +1167,7 @@
       if (options[k] && !(tb && (k === 'boss' || k === 'specials'))) opts.append(el('span', { text: label }));
     }
     if (options.wordCount) opts.append(el('span', { text: `${options.wordCount} HOST WORDS` }));
+    renderChat();
     const perk = options.perks && mine ? classByKey(mine.cls).perk : '';
     $('#lobbyPerk').textContent = perk ? `PERK: ${perk}` : '';
     $('#lobbyPerk').classList.toggle('hidden', !perk);
@@ -1127,20 +1182,26 @@
     }
   }
 
+  // The results. A battle shows what the big screen shows (podium, the rest of the field, the awards),
+  // headed by how it went for you: VICTORY or DEFEAT for your team, or your place in free for all.
+  // A solo quest shows your place in the Hall of Fame instead.
   function renderFinal() {
     const ranked = rankPlayers(players);
     const idx = ranked.findIndex((p) => p.id === you);
     const mine = ranked[idx];
     if (!mine) return;
     const rec = records[you];
+    const tb = teamBattle() && teams && winner !== null;
+    $('#scrFinal').classList.toggle('battle', !solo);
     $('#fHero').src = heroDataURL(mine);
     $('#fScore').textContent = mine.score;
     $('#fKills').textContent = mine.kills;
     $('#fRounds').textContent = rounds.map((r, i) => `${r.name} +${mine.roundScores[i] || 0}`).join('  ·  ');
     $('#fSoloActions').classList.toggle('hidden', !solo);
     $('#fWait').classList.toggle('hidden', solo);
-    $('#fScoreLbl').textContent = 'SCORE';
+    $('#fScoreLbl').textContent = tb ? 'DAMAGE + BLOCKS' : 'SCORE';
     $('#fKillsLbl').textContent = teamBattle() ? 'WORDS TYPED' : 'MONSTERS SLAIN';
+    $('#fTitle').style.color = '';
     $('#fPlace').style.color = '';
     // Your typing stats, and any awards you won.
     const st = summary?.stats?.[you];
@@ -1157,29 +1218,10 @@
     }
     const top = $('#fTop');
     top.innerHTML = '';
-    const topHeroes = (colorByTeam) => {
-      top.append(el('h3', { text: 'TOP HEROES' }));
-      ranked.slice(0, 3).forEach((p, i) => {
-        top.append(el('div', { class: `t3${p.id === you ? ' me' : ''}` }, [
-          el('span', { text: `${i + 1}.` }), heroImg(p),
-          el('span', { text: p.name, style: colorByTeam ? `color:${TEAMS[p.team].color}` : '' }),
-          el('span', { class: 'sc', text: p.score }),
-        ]));
-      });
-    };
-
-    if (teamBattle() && teams && winner !== null) {
-      const ours = myTeam();
-      $('#fTitle').textContent = winner === -1 ? 'DRAW!' : winner === ours ? 'VICTORY!' : 'DEFEAT...';
-      $('#fPlace').textContent = winner === -1
-        ? `${TEAMS[0].short} ${teams[0].hp} HP · ${TEAMS[1].short} ${teams[1].hp} HP`
-        : `${TEAMS[winner].name} WIN${ko ? ' BY K.O.!' : '!'}`;
-      $('#fPlace').style.color = winner >= 0 ? TEAMS[winner].color : '';
-      $('#fRecord').classList.add('hidden');
-      $('#fScoreLbl').textContent = 'DAMAGE + BLOCKS';
-      topHeroes(true);
-      return;
-    }
+    top.classList.toggle('hidden', !solo);
+    $('#fPodium').classList.toggle('hidden', solo);
+    $('#fField').classList.toggle('hidden', solo);
+    $('#fSub').classList.toggle('hidden', true);
 
     if (solo) {
       const board = daily ? 'daily' : 'solo';
@@ -1197,11 +1239,76 @@
       return;
     }
 
-    $('#fTitle').textContent = idx === 0 ? 'VICTORY!' : idx < 3 ? 'PODIUM!' : 'WELL FOUGHT!';
-    $('#fPlace').textContent = `#${idx + 1} of ${ranked.length}`;
+    // Headline: how it went for you.
+    if (tb) {
+      const ours = myTeam();
+      $('#fTitle').textContent = winner === -1 ? 'DRAW!' : winner === ours ? 'VICTORY!' : 'DEFEAT';
+      $('#fTitle').style.color = winner === -1 ? '' : winner === ours ? '#8be36b' : 'var(--red)';
+      $('#fPlace').textContent = `#${idx + 1} of ${ranked.length} · ${TEAMS[mine.team].name}`;
+      $('#fPlace').style.color = TEAMS[mine.team].color;
+    } else {
+      $('#fTitle').textContent = idx === 0 ? 'VICTORY!' : idx < 3 ? 'PODIUM!' : 'WELL FOUGHT!';
+      $('#fPlace').textContent = `#${idx + 1} of ${ranked.length}`;
+    }
     $('#fRecord').textContent = rec ? (rec.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${rec.rank}`) : '';
     $('#fRecord').classList.toggle('hidden', !rec);
-    topHeroes(false);
+    // The line under the big screen's title: how the teams finished, or what became of the boss.
+    let sub = '';
+    if (tb) {
+      sub = ko && winner >= 0
+        ? `K.O.! ${TEAMS[1 - winner].name} ran out of HP`
+        : `${TEAMS[0].short} ${teams[0].hp} HP · ${TEAMS[1].short} ${teams[1].hp} HP`;
+    } else if (boss) {
+      sub = boss.down ? 'The Dragon King has fallen!' : 'The Dragon King got away... this time.';
+    }
+    $('#fSub').textContent = sub;
+    $('#fSub').classList.toggle('hidden', !sub);
+
+    // Podium: second, first, third, like the big screen; team battles color names by team.
+    const nameStyle = (p) => (tb ? `color:${TEAMS[p.team].color}` : '');
+    const podium = $('#fPodium');
+    podium.innerHTML = '';
+    for (const [i, cls] of [[1, 'p2'], [0, 'p1'], [2, 'p3']]) {
+      const p = ranked[i];
+      if (!p) continue;
+      const r = records[p.id];
+      podium.append(el('div', { class: `mp ${cls}${p.id === you ? ' me' : ''}` }, [
+        i === 0 ? el('img', { class: 'crown', src: crownDataURL(), alt: '' }) : null,
+        el('img', { class: 'px-sprite h', src: heroDataURL(p), alt: '' }),
+        el('div', { class: 'nm', text: p.name, style: p.id === you ? '' : nameStyle(p) }),
+        el('div', { class: 'sc', text: `${p.score} PTS` }),
+        r ? el('div', { class: 'rc', text: r.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${r.rank}` }) : null,
+        el('div', { class: 'blk', text: i + 1 }),
+      ]));
+    }
+
+    // Everyone else, then the awards.
+    const box = $('#fField');
+    box.innerHTML = '';
+    if (ranked.length > 3) {
+      box.append(el('h3', { text: 'THE REST OF THE FIELD' }));
+      ranked.slice(3).forEach((p, i) => {
+        box.append(el('div', { class: `t3${p.id === you ? ' me' : ''}` }, [
+          el('span', { text: `${i + 4}.` }), heroImg(p),
+          el('span', { text: p.name, style: nameStyle(p) }),
+          el('span', { class: 'sc', text: p.score }),
+        ]));
+      });
+    }
+    const awards = summary?.awards || [];
+    if (awards.length) {
+      box.append(el('h3', { text: 'AWARDS', style: ranked.length > 3 ? 'margin-top:10px' : '' }));
+      for (const a of awards) {
+        const p = players.find((pl) => pl.id === a.id);
+        if (!p) continue;
+        box.append(el('div', { class: `award-row${a.id === you ? ' me' : ''}` }, [
+          heroImg(p),
+          el('b', { text: `${a.title} · ${p.name}` }),
+          el('small', { text: `${a.desc} · ${a.value}` }),
+        ]));
+      }
+    }
+    box.classList.toggle('hidden', !box.children.length);
   }
 
   $('#btnTeam').onclick = () => {

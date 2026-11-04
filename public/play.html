@@ -76,6 +76,16 @@
     .emotes button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
     .emotes.cool button { opacity: 0.4; }
     .field .emotes { position: absolute; left: 0; right: 0; bottom: 12px; z-index: 3; }
+    /* Lobby chat */
+    .chat { display: flex; flex-direction: column; gap: 8px; }
+    .chat-list { display: flex; flex-direction: column; gap: 6px; max-height: 190px; min-height: 60px; overflow-y: auto; padding: 6px; background: rgba(27, 20, 38, 0.6); }
+    .chat-msg { font-size: 8px; line-height: 1.7; word-break: break-word; }
+    .chat-msg b { font-weight: normal; margin-right: 6px; }
+    .chat-msg.me { background: rgba(255, 210, 63, 0.12); }
+    .chat-empty { font-size: 8px; color: var(--muted); text-align: center; padding: 12px 0; }
+    .chat-form { display: flex; gap: 6px; }
+    .chat-form .px-input { flex: 1; min-width: 0; font-size: 12px; padding: 10px; }
+    .chat-form .px-btn { margin: 0; flex: none; padding: 0 12px; font-size: 10px; }
 
     /* Team battle HP strip under the top bar */
     .hpstrip { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 6px 10px 8px; background: var(--panel); box-shadow: 0 3px 0 var(--ink); z-index: 2; }
@@ -168,6 +178,28 @@
     .final-actions { display: flex; gap: 8px; }
     .final-actions .px-btn { flex: 1; }
     .final img.hero { width: 128px; height: 128px; animation: hop 0.9s steps(4) infinite; }
+    .final.battle img.hero { width: 72px; height: 72px; }
+    /* Battle results, the same as the big screen: podium, the rest of the field and the awards */
+    .final .fsub { font-size: 9px; color: var(--cream); line-height: 1.7; }
+    .mini-podium { display: flex; align-items: flex-end; justify-content: center; gap: 6px; width: 100%; margin-top: 22px; }
+    .mp { position: relative; display: flex; flex-direction: column; align-items: center; width: 31%; animation: pod-in 0.35s steps(4) both; }
+    .mp.p3 { animation-delay: 0.3s; } .mp.p2 { animation-delay: 0.8s; } .mp.p1 { animation-delay: 1.4s; }
+    @keyframes pod-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
+    .mp img.h { width: 52px; height: 52px; }
+    .mp.p1 img.h { width: 68px; height: 68px; animation: hop 0.9s steps(4) infinite; }
+    .mp .crown { position: absolute; top: -22px; width: 33px; height: 21px; image-rendering: pixelated; }
+    .mp .nm { font-size: 8px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 4px 0 3px; }
+    .mp.me .nm { color: var(--gold); }
+    .mp .sc { font-size: 8px; color: var(--gold); }
+    .mp .rc { font-size: 6px; color: #8be36b; margin-top: 3px; }
+    .mp .blk { width: 100%; display: flex; justify-content: center; padding-top: 6px; margin-top: 5px; font-size: 16px; color: var(--ink); box-shadow: 0 0 0 3px var(--ink); }
+    .mp.p1 .blk { height: 64px; background: var(--gold); } .mp.p2 .blk { height: 46px; background: #d5dbe6; } .mp.p3 .blk { height: 32px; background: #e08a4a; }
+    .field-box { width: 100%; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+    .award-row { display: grid; grid-template-columns: 28px 1fr; gap: 2px 8px; align-items: center; padding: 6px 8px; background: rgba(27, 20, 38, 0.6); box-shadow: inset 0 0 0 2px var(--gold-dark); }
+    .award-row img { grid-row: 1 / span 2; width: 28px; height: 28px; }
+    .award-row b { font-weight: normal; font-size: 8px; color: var(--gold); }
+    .award-row small { font-size: 7px; color: var(--muted); line-height: 1.6; }
+    .award-row.me { box-shadow: inset 0 0 0 2px var(--gold); background: rgba(255, 210, 63, 0.12); }
     .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
     .stat { background: var(--ink); padding: 12px 6px; font-size: 8px; color: var(--muted); }
     .stat b { display: block; font-size: 16px; color: var(--gold); font-weight: normal; margin-top: 8px; }
@@ -203,12 +235,12 @@
       #scrJoin, #scrLobby { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 18px; align-content: start; }
       #scrJoin > *, #scrLobby > * { grid-column: 1; }
       #scrJoin > #heroBox { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
-      #scrLobby > .px-box { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
+      #scrLobby > .px-box:not(.chat) { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
       #scrFinal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; align-content: center; justify-items: center; }
       #scrFinal > * { grid-column: 1; }
       #scrFinal > :first-child { margin-top: 0; }
-      #scrFinal > #fTop { grid-column: 2; grid-row: 1 / span 5; align-self: start; }
-      #scrFinal > .final-foot { grid-column: 2; grid-row: 6; margin-bottom: 0; }
+      #scrFinal > #fTop, #scrFinal > #fField { grid-column: 2; grid-row: 1 / span 10; align-self: start; }
+      #scrFinal > .final-foot { grid-column: 2; grid-row: 11; margin-bottom: 0; }
       .typebar { display: flex; justify-content: center; }
       .type-wrap { max-width: 760px; }
     }
@@ -315,6 +347,14 @@
       <p class="mode-line" id="lobbyMode"></p>
       <div class="opt-line" id="lobbyOpts"></div>
       <div class="emotes hidden" id="emoteLobby"></div>
+      <div class="px-box chat hidden" id="chatBox">
+        <h3>TAVERN CHAT</h3>
+        <div class="chat-list" id="chatList"></div>
+        <form class="chat-form" id="chatForm" autocomplete="off">
+          <input id="chatIn" class="px-input" maxlength="80" autocomplete="off" spellcheck="true" enterkeyhint="send" placeholder="Say something...">
+          <button class="px-btn" type="submit">SEND</button>
+        </form>
+      </div>
       <div class="px-box">
         <h3>HEROES IN THE TAVERN: <span id="lobbyCount">0</span></h3>
         <div class="mini-roster" id="lobbyRoster"></div>
@@ -371,6 +411,8 @@
 
     <section id="scrFinal" class="screen final hidden">
       <h1 class="logo sm" id="fTitle">VICTORY!</h1>
+      <div class="fsub hidden" id="fSub"></div>
+      <div class="mini-podium hidden" id="fPodium"></div>
       <div class="place" id="fPlace">#1 of 8</div>
       <div class="record blink hidden" id="fRecord"></div>
       <img id="fHero" class="px-sprite hero" alt="">
@@ -386,6 +428,7 @@
       <div class="my-awards" id="fAwards"></div>
       <div class="rounds-line" id="fRounds"></div>
       <div class="px-box top3" id="fTop"></div>
+      <div class="px-box field-box hidden" id="fField"></div>
       <div class="final-foot">
         <div class="final-actions hidden" id="fSoloActions">
           <button id="btnAgain" class="px-btn green">PLAY AGAIN</button>

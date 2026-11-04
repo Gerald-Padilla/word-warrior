@@ -122,14 +122,29 @@ const SKILL_LAUNCHES = 3; // team battle: a strike with nothing to block fires u
 const CLUTCH_PROGRESS = 0.85; // a word typed past this far down counts as a clutch save
 
 // Host options. Solo quests always play with the defaults.
-const OPTION_KEYS = ['streaks', 'specials', 'boss', 'perks', 'skills', 'awards', 'emotes'];
+const OPTION_KEYS = ['streaks', 'specials', 'boss', 'perks', 'skills', 'awards', 'emotes', 'chat'];
 const DEFAULT_OPTIONS = {
-  streaks: true, specials: true, boss: true, perks: true, skills: true, awards: true, emotes: true, onlyMine: false,
+  streaks: true, specials: true, boss: true, perks: true, skills: true, awards: true, emotes: true, chat: true, onlyMine: false,
 };
 const MY_WORDS_MAX = 300; // custom words the host can add
 const MY_WORDS_MIN = 6; // "only my words" needs at least this many for a round, or the built-in words fill in
 const EMOTE_COUNT = 6;
 const EMOTE_GAP_MS = 1200; // per player
+
+// Lobby chat (option): short messages from phones, shown on the big screen and every phone in the lobby.
+const CHAT_MAX = 80; // characters per message
+const CHAT_LOG = 30; // messages kept per room, so newcomers see the conversation so far
+const CHAT_GAP_MS = 1500; // per player
+// A basic filter for an office crowd: these words (English and Tagalog) are masked with asterisks. Short
+// ones only match as whole words ("bobo", not "boboto"); the rest also catch longer forms ("putangina").
+const CHAT_WHOLE = ['puta', 'bobo', 'tanga', 'gago', 'gaga', 'ulol', 'puki', 'tite', 'cunt', 'dick', 'slut', 'whore', 'fag', 'nigga'];
+const CHAT_STEMS = ['fuck', 'shit', 'bitch', 'asshole', 'bastard', 'motherf', 'nigger', 'pussy', 'putang', 'tangina',
+  'tangna', 'pakyu', 'punyeta', 'tarantado', 'kupal', 'hayop ka', 'leche ka'];
+const CHAT_FILTER = new RegExp(`\\b(?:(?:${CHAT_WHOLE.join('|')})\\b|(?:${CHAT_STEMS.join('|')})[a-z]*)`, 'gi');
+function cleanChat(text) {
+  const t = String(text || '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
+  return t.replace(CHAT_FILTER, (m) => m[0] + '*'.repeat(m.length - 1));
+}
 
 // Daily quest: one seeded run a day, the same words for everyone. The day turns over at midnight here.
 const DAILY_TZ = process.env.DAILY_TZ || 'Asia/Manila';
@@ -336,6 +351,7 @@ function createRoom(solo = false, daily = false) {
     boss: null, // boss round: { hp, max, down }
     iceUntil: 0, // special words: everything falls slower until then
     summary: null, // finished: { stats, awards }
+    chat: [], // lobby chat: { id, by, name, color, text, at }, oldest first
     mode: 'ffa', // or 'teams'
     hostToken: token(),
     hostSocketId: null,
@@ -389,7 +405,7 @@ function stateOf(room) {
 }
 
 function snapshot(room) {
-  return { ...stateOf(room), code: room.code, solo: room.solo, words: [...room.words.values()] };
+  return { ...stateOf(room), code: room.code, solo: room.solo, words: [...room.words.values()], chat: room.chat };
 }
 
 function broadcastPlayers(room) {
@@ -1439,6 +1455,31 @@ io.on('connection', (socket) => {
     useSkill(room, player, Date.now());
     sendCharge(room, player);
     reply(cb, { ok: true });
+  });
+
+  // Lobby chat. Replies { ok } or { ok: false, reason } so the phone can say why a message didn't go.
+  socket.on('chat:send', (data, cb) => {
+    const { room, player } = ctx();
+    if (!player || room.solo) return reply(cb, { ok: false, reason: 'not-here' });
+    if (!room.options.chat) return reply(cb, { ok: false, reason: 'off' });
+    if (room.state !== 'lobby') return reply(cb, { ok: false, reason: 'not-lobby' });
+    const text = cleanChat(data?.text);
+    if (!text) return reply(cb, { ok: false, reason: 'empty' });
+    const t = Date.now();
+    if (t - (player.lastChat || 0) < CHAT_GAP_MS || text === player.lastChatText) return reply(cb, { ok: false, reason: 'slow' });
+    player.lastChat = t;
+    player.lastChatText = text;
+    const msg = { id: shortId(), by: player.id, name: player.name, color: player.color, text, at: t };
+    room.chat = room.chat.concat(msg).slice(-CHAT_LOG);
+    io.to(channel(room)).emit('chat:msg', msg);
+    reply(cb, { ok: true });
+  });
+
+  socket.on('host:chatClear', () => {
+    const { room, isHost } = ctx();
+    if (!isHost) return;
+    room.chat = [];
+    io.to(channel(room)).emit('chat:clear');
   });
 
   socket.on('player:emote', (data) => {

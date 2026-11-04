@@ -28,7 +28,7 @@
     #netPick { font-size: 10px; background: var(--ink); color: var(--muted); border: 2px solid var(--panel-3); padding: 6px; max-width: 360px; }
     .net-help { font-size: 9px; color: var(--muted); max-width: 340px; line-height: 1.7; }
 
-    .lobby-right { display: flex; flex-direction: column; min-height: 0; gap: 12px; }
+    .lobby-right { display: flex; flex-direction: column; min-height: 0; max-height: calc(88vh - 48px); gap: 12px; }
     .lobby-right h2 { margin: 0; font-size: 16px; color: var(--cream); }
     .lobby-right h2 span { color: var(--gold); }
     .roster { flex: 1; min-height: 96px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; align-content: start; padding: 6px; background: rgba(27, 20, 38, 0.6); }
@@ -62,6 +62,21 @@
     .words-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: 9px; }
     .words-row label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
     #wordsCount { color: var(--gold); }
+    /* Lobby chat: a panel beside the heroes, and what a hero just said in a bubble on their tile */
+    /* Heroes and chat scroll inside the card, so START stays on screen however many join */
+    .lobby-mid { flex: 1; min-height: 96px; display: grid; grid-template-columns: minmax(0, 1fr) 280px; grid-template-rows: minmax(0, 1fr); gap: 10px; }
+    .lobby-mid.no-chat { grid-template-columns: minmax(0, 1fr); }
+    .lobby-mid .roster { min-height: 0; }
+    .chat-panel { display: flex; flex-direction: column; gap: 6px; min-height: 0; padding: 8px; background: rgba(27, 20, 38, 0.6); }
+    .chat-head { display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: var(--gold); }
+    .chat-head button { font: inherit; font-size: 7px; padding: 4px 6px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); }
+    .chat-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+    .chat-msg { font-size: 9px; line-height: 1.7; word-break: break-word; }
+    .chat-msg b { font-weight: normal; margin-right: 6px; }
+    .chat-msg.new { animation: chat-in 0.4s steps(3); }
+    @keyframes chat-in { 0% { background: rgba(255, 210, 63, 0.35); } 100% { background: transparent; } }
+    .chat-empty { font-size: 8px; color: var(--muted); line-height: 1.8; text-align: center; padding: 16px 4px; }
+    .hero-tile .say { position: absolute; top: 2px; left: 4px; right: 4px; font-size: 7px; line-height: 1.5; padding: 4px 5px; background: #fff; color: var(--ink); box-shadow: 0 0 0 2px var(--ink); word-break: break-word; pointer-events: none; z-index: 1; animation: hop 0.4s steps(3); }
     .hero-tile .emo { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-size: 30px; animation: hop 0.5s steps(3); pointer-events: none; }
     /* The last ten seconds of a round: the edges of the screen glow red. */
     #tension { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 12vh 2vh rgba(232, 55, 28, 0.55); animation: pulse 1s steps(4) infinite; }
@@ -194,6 +209,17 @@
     .hof-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 20px; }
     .hof-foot .hint { text-align: left; line-height: 1.8; }
     .hof-foot .hint b { color: var(--cream); font-weight: normal; }
+    /* Short screens (720p): smaller lobby controls leave room for the heroes and the chat. The option
+       descriptions move into tooltips. */
+    @media (max-height: 800px) {
+      .opt small { display: none; }
+      .opt { padding: 6px; }
+      .round-chip { padding: 5px; }
+      .start-row { gap: 10px; }
+      .start-row .px-btn { font-size: 11px; padding: 10px 12px; }
+      .start-row .px-btn.big { font-size: 14px; padding: 12px 18px; }
+      .start-row .hint { flex-basis: 100%; }
+    }
   </style>
 </head>
 <body class="host">
@@ -252,7 +278,13 @@
           <button class="mode-btn" type="button" data-mode="teams">TEAM BATTLE<small>Red vs Blue: attack, block, grab power-ups</small></button>
         </div>
         <h2>HEROES IN THE TAVERN: <span id="count">0</span></h2>
-        <div id="roster" class="roster"></div>
+        <div class="lobby-mid" id="lobbyMid">
+          <div id="roster" class="roster"></div>
+          <div class="chat-panel" id="chatPanel">
+            <div class="chat-head">TAVERN CHAT <button id="btnChatClear" type="button" title="Clear the chat for everyone">CLEAR</button></div>
+            <div class="chat-list" id="chatList"></div>
+          </div>
+        </div>
         <div class="rounds" id="roundChips"></div>
         <div class="opts" id="opts">
           <button class="opt" type="button" data-opt="streaks">STREAKS<small>Words in a row without a typo: up to x3</small></button>
@@ -262,6 +294,7 @@
           <button class="opt" type="button" data-opt="skills">SKILLS<small>Every 8 words charges a class skill</small></button>
           <button class="opt" type="button" data-opt="awards">AWARDS<small>Speed Demon, Sharpshooter and more</small></button>
           <button class="opt" type="button" data-opt="emotes">EMOTES<small>Players send emojis from their phones</small></button>
+          <button class="opt" type="button" data-opt="chat">CHAT<small>Players chat from their phones in the lobby</small></button>
           <button class="opt words" type="button" id="btnWords">MY WORDS: <b id="wordCount">0</b><small>Add your own words to the mix</small></button>
           <button class="opt words" type="button" id="btnMusicLobby">MUSIC: <b id="musicState">ON</b><small>Chiptune soundtrack on the big screen</small></button>
         </div>
