@@ -78,7 +78,7 @@
   const CLASSES = [
     {
       key: 'knight', name: 'Knight', attack: 'Sword Beam', blurb: 'Hurls a shining crescent of steel.',
-      perk: 'SWIFT BLADE: +40% on words of 7 letters or fewer',
+      perk: 'SWIFT BLADE: +45% on words of 7 letters or fewer',
       skill: 'RALLY: your next 3 words score double',
       pal: {},
       rows: [
@@ -102,7 +102,7 @@
     },
     {
       key: 'wizard', name: 'Wizard', attack: 'Fireball', blurb: 'Lobs a roaring ball of flame.',
-      perk: 'ARCANE MIND: +35% on long words (11+ letters)',
+      perk: 'ARCANE MIND: +40% on long words (11+ letters)',
       skill: 'METEOR: hits the 2 most valuable words for +20%',
       pal: { F: '#5ee0ff', H: '#f4f4f8', h: '#c9cfdc' },
       rows: [
@@ -150,7 +150,7 @@
     },
     {
       key: 'rogue', name: 'Rogue', attack: 'Dagger Volley', blurb: 'Three blades, zero hesitation.',
-      perk: 'SLY: +20% on words with an S',
+      perk: 'SLY: +25% on words with an S',
       skill: 'BACKSTAB: hits the 3 words closest to the ground',
       pal: {},
       rows: [
@@ -198,7 +198,7 @@
     },
     {
       key: 'barbarian', name: 'Barbarian', attack: 'Spinning Axe', blurb: 'Throws first. Asks never.',
-      perk: 'CLEAVE: +20% on 8-10 letter words',
+      perk: 'CLEAVE: +18% on 8-10 letter words',
       skill: 'BERSERK: your next 2 words score x2.5',
       pal: { H: '#d9682b', h: '#9c4317' },
       rows: [
@@ -246,7 +246,7 @@
     },
     {
       key: 'necromancer', name: 'Necromancer', attack: 'Soul Bolt', blurb: 'The words it slays stay slain.',
-      perk: 'SOUL HARVEST: +50% on words with a double letter (ll, ee, ss...)',
+      perk: 'SOUL HARVEST: +60% on words with a double letter (ll, ee, ss...)',
       skill: 'RAISE DEAD: scores up to 3 words that got away this round',
       pal: { E: '#7dff6b' },
       rows: [
@@ -270,7 +270,7 @@
     },
     {
       key: 'druid', name: 'Druid', attack: 'Thorn Vine', blurb: 'The forest answers every word.',
-      perk: 'LIFE BLOOM: +30% on words with 4 or more vowels',
+      perk: 'LIFE BLOOM: +25% on words with 4 or more vowels',
       skill: 'OVERGROWTH: your next 6 words score x1.5',
       pal: { V: '#4fa865', H: '#7a4a26', h: '#4f2e15' },
       rows: [
@@ -342,7 +342,7 @@
     },
     {
       key: 'valkyrie', name: 'Valkyrie', attack: 'Storm Spear', blurb: 'Rides the thunder into battle.',
-      perk: 'BATTLE CRY: +55% on words that start with a vowel',
+      perk: 'BATTLE CRY: +65% on words that start with a vowel',
       skill: 'THUNDERCLAP: hits up to 6 words for half their points',
       pal: { H: '#f4d58d', h: '#c9a43a' },
       rows: [

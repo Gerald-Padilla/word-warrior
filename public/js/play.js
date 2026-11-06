@@ -812,7 +812,7 @@
     if (st === 'countdown' && r) {
       const n = Math.ceil(left / 1000);
       banner.classList.remove('hidden');
-      $('#fb1').textContent = r.key === 'boss' ? 'FINAL ROUND' : `ROUND ${state.round + 1}`;
+      $('#fb1').textContent = r.key === 'boss' ? 'FINAL ROUND' : rounds.length === 1 ? 'ONE ROUND' : `ROUND ${state.round + 1}`;
       $('#fb2').textContent = r.name;
       $('#fb2').className = `fb-2 d-${r.key}`;
       $('#fb3').textContent = teamBattle()
@@ -856,7 +856,7 @@
 
   function updateTopbar() {
     const r = rounds[state.round];
-    $('#gRound').textContent = r ? `${daily ? 'DAILY ' : ''}R${state.round + 1} ${r.name}` : '';
+    $('#gRound').textContent = r ? `${daily ? 'DAILY ' : ''}${rounds.length === 1 ? '' : `R${state.round + 1} `}${r.name}` : '';
     const mine = me();
     $('#gScore').textContent = mine ? mine.score : 0;
     $('#gRank').style.color = '';
@@ -1162,9 +1162,14 @@
     // What the host has switched on, and your class's perk when perks are on.
     const opts = $('#lobbyOpts');
     opts.innerHTML = '';
+    // What the host picked: the game's length and difficulty first, then the switches that are on.
+    const one = options.length === 'one';
+    const level = String(options.level || 'normal').toUpperCase();
+    opts.append(el('span', { class: 'pick', text: one ? `ONE ROUND · ${rounds[0]?.title || ''}` : `${rounds.length} ROUNDS` }));
+    opts.append(el('span', { class: `pick d-${level.toLowerCase()}`, text: `${level} DIFFICULTY` }));
     const names = { streaks: 'STREAKS', specials: 'SPECIAL WORDS', boss: 'BOSS FINALE', perks: 'CLASS PERKS', skills: 'SKILLS', awards: 'AWARDS' };
     for (const [k, label] of Object.entries(names)) {
-      if (options[k] && !(tb && (k === 'boss' || k === 'specials'))) opts.append(el('span', { text: label }));
+      if (options[k] && !(tb && (k === 'boss' || k === 'specials')) && !(one && k === 'boss')) opts.append(el('span', { text: label }));
     }
     if (options.wordCount) opts.append(el('span', { text: `${options.wordCount} HOST WORDS` }));
     renderChat();

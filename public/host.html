@@ -45,6 +45,15 @@
     .round-chip { padding: 8px; font-size: 10px; text-align: center; background: var(--ink); line-height: 1.8; }
     .round-chip small { display: block; font-size: 8px; color: var(--muted); }
     .round-chip.easy { color: #8be36b; } .round-chip.medium { color: #b99cff; } .round-chip.hard { color: #ff7b4a; } .round-chip.boss { color: #ff4d4d; }
+    /* Game length and difficulty: pick one of each */
+    .setup { display: grid; grid-template-columns: 2fr 3fr; gap: 10px; }
+    .seg { display: flex; align-items: stretch; gap: 4px; }
+    .seg span { align-self: center; font-size: 8px; color: var(--muted); margin-right: 4px; white-space: nowrap; }
+    .seg button { flex: 1; font: inherit; font-size: 9px; padding: 8px 4px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); white-space: nowrap; }
+    .seg button.on { background: var(--gold); color: var(--ink); }
+    .seg button[data-level="easy"].on { background: #8be36b; }
+    .seg button[data-level="hard"].on { background: #ff7b4a; }
+    .opt.na { opacity: 0.45; }
     /* Game options: on/off switches the host flips before a game */
     .opts { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
     .opt { font: inherit; font-size: 9px; padding: 7px 6px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); text-align: left; line-height: 1.6; }
@@ -215,6 +224,7 @@
       .opt small { display: none; }
       .opt { padding: 6px; }
       .round-chip { padding: 5px; }
+      .seg button { padding: 6px 4px; }
       .start-row { gap: 10px; }
       .start-row .px-btn { font-size: 11px; padding: 10px 12px; }
       .start-row .px-btn.big { font-size: 14px; padding: 12px 18px; }
@@ -283,6 +293,19 @@
           <div class="chat-panel" id="chatPanel">
             <div class="chat-head">TAVERN CHAT <button id="btnChatClear" type="button" title="Clear the chat for everyone">CLEAR</button></div>
             <div class="chat-list" id="chatList"></div>
+          </div>
+        </div>
+        <div class="setup">
+          <div class="seg" id="segLength" title="A full game climbs from easy to hard; one round plays just the round that matches the difficulty">
+            <span>GAME</span>
+            <button type="button" data-length="full">FULL GAME</button>
+            <button type="button" data-length="one">ONE ROUND</button>
+          </div>
+          <div class="seg" id="segLevel" title="Easy: words fall slower and come less often. Hard: faster and more at once">
+            <span>DIFFICULTY</span>
+            <button type="button" data-level="easy">EASY</button>
+            <button type="button" data-level="normal">NORMAL</button>
+            <button type="button" data-level="hard">HARD</button>
           </div>
         </div>
         <div class="rounds" id="roundChips"></div>

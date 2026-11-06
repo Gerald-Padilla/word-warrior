@@ -16,14 +16,26 @@ const ON_RENDER = Boolean(process.env.RENDER);
 const PUBLIC_URL = (process.env.PUBLIC_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/, '');
 
 // ---- Game tuning -----------------------------------------------------------
+// flight: team battle, how long an attack takes to cross the field.
 const ROUNDS = [
   { key: 'easy', name: 'EASY', title: 'Slime Swarm', monster: 'slime', duration: 45000,
-    spawnEvery: [1500, 2200], fall: [9500, 11500], maxActive: 5, multiplier: 1 },
+    spawnEvery: [1500, 2200], fall: [9500, 11500], maxActive: 5, multiplier: 1, flight: 7000 },
   { key: 'medium', name: 'MEDIUM', title: 'Bat Storm', monster: 'bat', duration: 50000,
-    spawnEvery: [1350, 1900], fall: [9000, 10500], maxActive: 6, multiplier: 2 },
+    spawnEvery: [1350, 1900], fall: [9000, 10500], maxActive: 6, multiplier: 2, flight: 6500 },
   { key: 'hard', name: 'HARD', title: 'Skull Inferno', monster: 'skull', duration: 55000,
-    spawnEvery: [1250, 1750], fall: [8500, 10000], maxActive: 7, multiplier: 3 },
+    spawnEvery: [1250, 1750], fall: [8500, 10000], maxActive: 7, multiplier: 3, flight: 6000 },
 ];
+// Game length and difficulty (host options). A full game climbs through all three rounds (then the boss
+// finale, if it's on); one round plays just the round that matches the difficulty. Difficulty also sets
+// the pace of every round: how long words take to fall (or attacks to fly), how often new ones come and
+// how many can be on screen at once.
+const LENGTHS = ['full', 'one'];
+const LEVELS = {
+  easy: { round: 0, fall: 1.3, spawn: 1.25, active: -1 },
+  normal: { round: 1, fall: 1, spawn: 1, active: 0 },
+  hard: { round: 2, fall: 0.8, spawn: 0.8, active: 1 },
+};
+const LEVEL_KEYS = Object.keys(LEVELS);
 const COUNTDOWN_MS = 4000;
 const INTERMISSION_MS = 9000;
 const SOLO_INTERMISSION_MS = 5000;
@@ -31,7 +43,6 @@ const SPAWN_LEAD_MS = 150; // words start slightly in the future so every client
 const STOP_SPAWN_BEFORE_END_MS = 3000;
 const TEAM_HP = 6000; // each team's HP in a team battle, scaled up for bigger teams
 const KO_DELAY_MS = 1500; // let the knockout blow land before the results
-const FLIGHT_MS = [7000, 6500, 6000]; // team battle: how long an attack takes to cross the field, per round
 const POWERS = ['potion', 'slow', 'haste', 'shield', 'fury'];
 const POWER_FIRST_MS = [6000, 10000]; // first power-up of a round appears this long after it starts
 const POWER_EVERY_MS = [9000, 15000]; // then this long after the last one is taken or fades
@@ -84,15 +95,15 @@ const BOMB_SHARE = 0.5; // a bomb blasts every word on screen and pays this shar
 const vowels = (t) => (t.match(/[aeiou]/g) || []).length;
 const specialsOn = (room) => room.options.specials && room.mode !== 'teams';
 const PERKS = {
-  knight: { bonus: 0.4, test: (w) => w.text.length <= 7 }, // 24% of a game's points
-  barbarian: { bonus: 0.2, test: (w) => w.text.length >= 8 && w.text.length <= 10 }, // 46%
-  wizard: { bonus: 0.35, test: (w) => w.text.length >= 11 }, // 30%
-  archer: { bonus: 0.25, test: (w) => /[jkqvwxyz]/.test(w.text) }, // 44%
-  rogue: { bonus: 0.2, test: (w) => w.text.includes('s') }, // 47%
-  necromancer: { bonus: 0.5, test: (w) => /(.)\1/.test(w.text) }, // 21%
-  druid: { bonus: 0.3, test: (w) => vowels(w.text) >= 4 }, // 35%
-  valkyrie: { bonus: 0.55, test: (w) => /^[aeiou]/.test(w.text) }, // 19%
-  bard: { bonus: 0.35, test: (w, pl) => pl.lastLen === w.text.length }, // 27%
+  knight: { bonus: 0.45, test: (w) => w.text.length <= 7 }, // 22% of a game's points
+  barbarian: { bonus: 0.18, test: (w) => w.text.length >= 8 && w.text.length <= 10 }, // 52%
+  wizard: { bonus: 0.4, test: (w) => w.text.length >= 11 }, // 25%
+  archer: { bonus: 0.25, test: (w) => /[jkqvwxyz]/.test(w.text) }, // 42%
+  rogue: { bonus: 0.25, test: (w) => w.text.includes('s') }, // 39%
+  necromancer: { bonus: 0.6, test: (w) => /(.)\1/.test(w.text) }, // 18%
+  druid: { bonus: 0.25, test: (w) => vowels(w.text) >= 4 }, // 40%
+  valkyrie: { bonus: 0.65, test: (w) => /^[aeiou]/.test(w.text) }, // 16%
+  bard: { bonus: 0.35, test: (w, pl) => pl.lastLen === w.text.length }, // 26%
   pirate: { bonus: 0.5, test: (w, pl) => (pl.typed + 1) % 5 === 0 }, // 20%
   ninja: { bonus: 0.12, test: (w, pl) => !pl.typoSince }, // ~80% for most typists
   // Special words fall only in free for all and solo; without them the cleric gets a little on everything.
@@ -125,6 +136,7 @@ const CLUTCH_PROGRESS = 0.85; // a word typed past this far down counts as a clu
 const OPTION_KEYS = ['streaks', 'specials', 'boss', 'perks', 'skills', 'awards', 'emotes', 'chat'];
 const DEFAULT_OPTIONS = {
   streaks: true, specials: true, boss: true, perks: true, skills: true, awards: true, emotes: true, chat: true, onlyMine: false,
+  length: 'full', level: 'normal',
 };
 const MY_WORDS_MAX = 300; // custom words the host can add
 const MY_WORDS_MIN = 6; // "only my words" needs at least this many for a round, or the built-in words fill in
@@ -378,8 +390,22 @@ function createRoom(solo = false, daily = false) {
   return room;
 }
 
-// The boss finale only fits free for all and solo; a team battle is its own fight.
-const roundsFor = (room) => (room.options.boss && room.mode !== 'teams' ? ROUNDS.concat(BOSS_ROUND) : ROUNDS);
+// The rounds a game will play, paced for its difficulty. The boss finale ends a full game in free for all
+// and solo; a team battle is its own fight.
+function roundsFor(room) {
+  const o = room.options;
+  const lv = LEVELS[o.level] || LEVELS.normal;
+  let list = ROUNDS;
+  if (o.length === 'one') list = [ROUNDS[lv.round]];
+  else if (o.boss && room.mode !== 'teams') list = ROUNDS.concat(BOSS_ROUND);
+  return list.map((r) => ({
+    ...r,
+    pace: lv.fall, // falling words and flying attacks take this much longer
+    spawnEvery: r.spawnEvery.map((ms) => Math.round(ms * lv.spawn)),
+    maxActive: r.maxActive + lv.active,
+    flight: r.flight && Math.round(r.flight * lv.fall),
+  }));
+}
 
 const channel = (room) => `room:${room.code}`;
 
@@ -390,7 +416,8 @@ function publicPlayer(p) {
 
 function publicOptions(room) {
   const o = room.options;
-  return { ...Object.fromEntries(OPTION_KEYS.map((k) => [k, o[k]])), onlyMine: o.onlyMine, wordCount: o.words.length };
+  return { ...Object.fromEntries(OPTION_KEYS.map((k) => [k, o[k]])), onlyMine: o.onlyMine, wordCount: o.words.length,
+    length: o.length, level: o.level };
 }
 
 // Everything about the room's phase that clients redraw from; the snapshot adds what a newcomer needs.
@@ -502,7 +529,11 @@ function startGame(room) {
   room.teams = null;
   if (room.mode === 'teams') {
     balanceTeams(room, false);
-    const max = Math.round((TEAM_HP * crowdFactor(Math.max(1, ...teamCounts(room)))) / 100) * 100;
+    // A one-round battle starts with that round's share of the damage a full game deals, so it can
+    // still end in a knockout.
+    const weight = (list) => list.reduce((sum, r) => sum + r.duration * r.multiplier, 0);
+    const share = weight(room.rounds) / weight(ROUNDS);
+    const max = Math.max(500, Math.round((TEAM_HP * share * crowdFactor(Math.max(1, ...teamCounts(room)))) / 100) * 100);
     room.teams = [{ hp: max, max }, { hp: max, max }];
   }
   room.round = -1;
@@ -744,7 +775,7 @@ function spawnWord(room, cfg, now) {
     x: pickX(room, now),
     spawn: now + SPAWN_LEAD_MS,
     at: now + SPAWN_LEAD_MS, // when it appeared; `spawn` moves when ice retimes it
-    dur: Math.round((roll(room, cfg.fall[0], cfg.fall[1]) + Math.max(0, text.length - 5) * 220) * (iced ? ICE_FACTOR : 1)),
+    dur: Math.round((roll(room, cfg.fall[0], cfg.fall[1]) + Math.max(0, text.length - 5) * 220) * (cfg.pace || 1) * (iced ? ICE_FACTOR : 1)),
     points: text.length * 10 * cfg.multiplier,
   };
   if (iced) word.iced = true;
@@ -1031,7 +1062,7 @@ const effectOn = (room, team, name, now) => (room.effects[team][name] || 0) > no
 
 // Flight time for a new attack from `team`: Haste on the attacker speeds it up, Slow Time on the target slows it.
 function flightMs(room, team, now) {
-  let ms = FLIGHT_MS[room.round];
+  let ms = room.rounds[room.round].flight;
   if (effectOn(room, team, 'haste', now)) ms *= HASTE_FACTOR;
   if (effectOn(room, 1 - team, 'slow', now)) ms *= SLOW_FACTOR;
   return Math.round(ms);
@@ -1243,6 +1274,8 @@ io.on('connection', (socket) => {
     if (!isHost || !['lobby', 'finished'].includes(room.state)) return;
     for (const k of OPTION_KEYS) if (typeof data?.[k] === 'boolean') room.options[k] = data[k];
     if (typeof data?.onlyMine === 'boolean') room.options.onlyMine = data.onlyMine;
+    if (LENGTHS.includes(data?.length)) room.options.length = data.length;
+    if (LEVEL_KEYS.includes(data?.level)) room.options.level = data.level;
     if (typeof data?.words === 'string') room.options.words = cleanWords(data.words);
     room.rounds = roundsFor(room);
     broadcastState(room);

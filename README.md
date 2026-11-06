@@ -18,10 +18,13 @@ Players scan the QR code on it. Phones must be able to reach this laptop (see *N
 
 | Round | Monsters | Words | Points | Sky |
 |-------|----------|-------|--------|-----|
-| 1 · EASY | Slime Swarm | 3–5 letters (`orc`, `sword`) | 10 per letter | sunny morning, drifting clouds |
-| 2 · MEDIUM | Bat Storm | 6–8 letters (`dragon`, `gauntlet`) | 20 per letter | dusk, setting sun, bats |
-| 3 · HARD | Skull Inferno | 8–13 letters (`necromancer`) | 30 per letter | burning night, rising embers |
+| 1 · EASY | Slime Swarm | 3–5 letters (`orc`, `sword`), 219 words | 10 per letter | sunny morning, drifting clouds |
+| 2 · MEDIUM | Bat Storm | 5–8 letters (`dragon`, `gauntlet`), 201 words | 20 per letter | dusk, setting sun, bats |
+| 3 · HARD | Skull Inferno | 8–13 letters (`necromancer`), 147 words | 30 per letter | burning night, rising embers |
 | 4 · BOSS | The Dragon King | 8–13 letters | 30 per letter | volcano lair, lightning (option) |
+
+That's a full game. The host can also play just **one round**, and pick the **difficulty** (see *Game length and
+difficulty* below).
 
 - Free-for-all: whoever finishes typing a word first gets it. Nobody else can score that word.
 - No Enter key needed. The word fires the moment it's spelled correctly. Enter clears the whole word;
@@ -39,6 +42,22 @@ Players scan the QR code on it. Phones must be able to reach this laptop (see *N
 - Each monster goes out its own way: slimes splat, bats burst into feathers, skulls shatter. Long words shake
   the screen, points float up with any bonus (`x2 STREAK`, `PERK`, `GOLD x3`), and in the last ten seconds of
   a round the edges glow red, the clock ticks and the music speeds up.
+
+## Game length and difficulty
+
+Above the options in the lobby, the host picks two things (remembered on that computer, like the options):
+
+- **GAME:** **FULL GAME** plays every round above, from easy to hard, then the boss if it's on. **ONE ROUND**
+  plays a single round, the one that matches the difficulty: Slime Swarm on easy, Bat Storm on normal, Skull
+  Inferno on hard. It goes straight to the results afterwards, and there's no boss.
+- **DIFFICULTY:** sets the pace of every round. **EASY**: words take 30% longer to fall, the gaps between new
+  words are 25% longer, and one fewer fits on screen. **NORMAL**: as described above. **HARD**: words fall in 20%
+  less time, arrive 20% closer together, and one more fits on screen. In a team battle it sets how long attacks
+  take to fly. Points per word don't change, but harder games have more words to score.
+
+The lobby shows the rounds the game will play, and every phone shows the host's pick in its lobby. A one-round
+team battle starts each team with HP to match that round (so a knockout is still on the cards). Solo quests
+and the daily quest are always a full game on normal.
 
 ## Game options
 
@@ -99,7 +118,7 @@ host lobby (it needs at least 2 heroes).
   - **Haste** makes your team's attacks fly faster for 10s, so the enemy has less time to block.
   - **Shield** blocks every attack that hits your team for 6s.
   - **Fury** doubles your team's damage for 10s.
-- A team at 0 HP is knocked out on the spot. If both survive the three rounds, the team with more HP wins.
+- A team at 0 HP is knocked out on the spot. If both survive to the end, the team with more HP wins.
 - Your score is the damage your attacks dealt plus the damage you blocked. The podium shows the best heroes
   from both teams. Team battles aren't recorded in the Hall of Fame.
 
@@ -127,23 +146,23 @@ their attack (tap it to attack again), with their perk and skill, and has **RAND
 
 | Class | Attack | Perk (when CLASS PERKS is on) | Skill (when SKILLS is on) |
 |-------|--------|-------------------------------|---------------------------|
-| Knight | Sword Beam | **Swift Blade:** +40% on words of 7 letters or fewer | **Rally:** your next 3 words score double |
-| Barbarian | Spinning Axe | **Cleave:** +20% on 8–10 letter words | **Berserk:** your next 2 words score x2.5 |
-| Wizard | Fireball | **Arcane Mind:** +35% on 11+ letter words | **Meteor:** hits the 2 most valuable words for +20% |
+| Knight | Sword Beam | **Swift Blade:** +45% on words of 7 letters or fewer | **Rally:** your next 3 words score double |
+| Barbarian | Spinning Axe | **Cleave:** +18% on 8–10 letter words | **Berserk:** your next 2 words score x2.5 |
+| Wizard | Fireball | **Arcane Mind:** +40% on 11+ letter words | **Meteor:** hits the 2 most valuable words for +20% |
 | Elf Archer | Piercing Arrow | **Eagle Eye:** +25% on words with J, K, Q, V, W, X, Y or Z | **Arrow Rain:** hits the 3 newest words |
-| Rogue | Dagger Volley | **Sly:** +20% on words with an S | **Backstab:** hits the 3 words closest to the ground |
+| Rogue | Dagger Volley | **Sly:** +25% on words with an S | **Backstab:** hits the 3 words closest to the ground |
 | Cleric | Holy Light | **Blessed:** +60% on special words (+10% on all words when they're off); team battle power-ups last or heal 50% more | **Divine Favor:** your next 4 words score x1.75 |
 | Ninja | Shuriken | **Clean Cut:** +12% on every word typed without a typo | **Shuriken Storm:** hits 3 random words |
-| Necromancer | Soul Bolt | **Soul Harvest:** +50% on words with a double letter (ll, ee, ss…) | **Raise Dead:** scores up to 3 words that got away this round (team battle: heals the last 3 hits your team took) |
-| Druid | Thorn Vine | **Life Bloom:** +30% on words with 4+ vowels | **Overgrowth:** your next 6 words score x1.5 |
+| Necromancer | Soul Bolt | **Soul Harvest:** +60% on words with a double letter (ll, ee, ss…) | **Raise Dead:** scores up to 3 words that got away this round (team battle: heals the last 3 hits your team took) |
+| Druid | Thorn Vine | **Life Bloom:** +25% on words with 4+ vowels | **Overgrowth:** your next 6 words score x1.5 |
 | Pirate | Cannonball | **Plunder:** +50% on every 5th word you type | **Cannon Barrage:** hits 4 random words for 75% |
 | Bard | Power Chord | **Echo:** +35% on a word the same length as your last one | **Encore:** scores your last 3 words again (team battle: hits the other team directly) |
-| Valkyrie | Storm Spear | **Battle Cry:** +55% on words that start with a vowel | **Thunderclap:** hits up to 6 words for half their points |
+| Valkyrie | Storm Spear | **Battle Cry:** +65% on words that start with a vowel | **Thunderclap:** hits up to 6 words for half their points |
 
 **How they're balanced.** Every perk is sized to add about 10% to an average game. Each one was measured
 over simulated games with the real word lists: a perk that fires on fewer of your points gets a bigger
-bonus. That's why the Knight gets +40% on short words, which only show up in the cheap first round, while
-the Barbarian gets +20% on the 8–10 letter words that carry much of a game's points. All twelve land between
+bonus. That's why the Knight gets +45% on short words, which only show up in the cheap first round, while
+the Barbarian gets +18% on the 8–10 letter words that carry much of a game's points. All twelve land between
 +9% and +11%. Perks only look at the word (and your own typing), never at *when* you hit it, so they're
 worth the same in solo, in a crowd and in a team battle.
 
@@ -166,7 +185,7 @@ Players who lose connection (phone locked, Wi-Fi blip) rejoin automatically with
 Anyone can practice alone, without a host screen: open `/play` (for example `http://192.168.1.20:3000/play`),
 build a hero and tap **PLAY SOLO**. It works on a laptop with a keyboard too.
 
-- Same rounds as a battle with every game option on (streaks, special words, the boss, perks), and shorter
+- A full game on normal difficulty with every game option on (streaks, special words, the boss, perks), and shorter
   breaks (5 seconds instead of 9).
 - When you clear every monster, the next one appears right away, so faster typists score more.
 - The top bar shows **HI**, the best solo score so far. Tap **X** to abandon a run; abandoned runs aren't saved.
@@ -245,10 +264,10 @@ npm run bots -- ABCD 6
 
 ## Tuning
 
-Round length, fall speed, spawn rate and points multipliers are in the `ROUNDS` table at the top of
-`server.js`, next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings
-sit there too: `TEAM_HP`, how long attacks take to fly (`FLIGHT_MS`), how often power-ups appear and how long
-their effects last. The game options have their own settings: the boss round (`BOSS_ROUND`, `BOSS_HP`, bonuses),
+Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
+`ROUNDS` table at the top of `server.js`, and what each difficulty does to them is the `LEVELS` table below it,
+next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings sit there too:
+`TEAM_HP`, how often power-ups appear and how long their effects last. The game options have their own settings: the boss round (`BOSS_ROUND`, `BOSS_HP`, bonuses),
 streak steps (`STREAK_STEPS`), special words (`SPECIAL_CHANCE`, `GOLD_FACTOR`, `ICE_MS`, `BOMB_SHARE`) and class
 perks (`PERKS`), skills (`SKILLS`, `SKILL_WORDS`). The auto-typer limits are the `KEY_*` and `FLAG_AFTER`
 settings. Word lists are in `words.js`; if you change them a lot, the perk bonuses may need re-measuring.

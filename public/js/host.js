@@ -449,9 +449,9 @@
     }
     if (r) {
       arena.setTheme(r.monster);
-      $('#hudRound').textContent = `ROUND ${s.round + 1} · ${r.name}`;
-      $('#hudTitle').textContent = `${r.title} · x${r.multiplier} ${teamsOn ? 'damage' : 'points'}`;
-      $('#bRound').textContent = r.key === 'boss' ? 'FINAL ROUND' : `ROUND ${s.round + 1}`;
+      $('#hudRound').textContent = `${roundLabel(s.round)} · ${r.name}`;
+      $('#hudTitle').textContent = `${r.title} · x${r.multiplier} ${teamsOn ? 'damage' : 'points'}${paceNote(' · ', ' DIFFICULTY')}`;
+      $('#bRound').textContent = r.key === 'boss' ? 'FINAL ROUND' : roundLabel(s.round);
       $('#bDiff').textContent = r.name;
       $('#bDiff').className = `b-diff d-${r.key}`;
       $('#bTitle').textContent = r.key === 'boss'
@@ -480,11 +480,16 @@
     Music.play(musicFor(st, r));
   }
 
+  // A one-round game has no round numbers; easy and hard difficulty say so wherever the round is named.
+  const roundLabel = (i) => (rounds.length === 1 ? 'ONE ROUND' : `ROUND ${i + 1}`);
+  const paceNote = (before, after = '') => (options.level && options.level !== 'normal' ? `${before}${options.level.toUpperCase()}${after}` : '');
+
   function renderRoundChips() {
     const box = $('#roundChips');
     box.innerHTML = '';
+    const pace = { easy: ' · slower', hard: ' · faster' }[options.level] || '';
     rounds.forEach((r, i) => box.append(el('div', { class: `round-chip ${r.key}` }, [
-      `${i + 1} · ${r.name}`, el('small', { text: `${r.title} · x${r.multiplier}` }),
+      rounds.length === 1 ? `ONE ROUND · ${r.name}` : `${i + 1} · ${r.name}`, el('small', { text: `${r.title} · x${r.multiplier}${pace}` }),
     ])));
   }
 
@@ -535,8 +540,13 @@
   // ---- game options --------------------------------------------------
   function renderOptions() {
     for (const b of document.querySelectorAll('.opt[data-opt]')) b.classList.toggle('on', Boolean(options[b.dataset.opt]));
+    for (const b of document.querySelectorAll('[data-length]')) b.classList.toggle('on', b.dataset.length === (options.length || 'full'));
+    for (const b of document.querySelectorAll('[data-level]')) b.classList.toggle('on', b.dataset.level === (options.level || 'normal'));
     const bossBtn = $('.opt[data-opt="boss"]');
-    bossBtn.title = mode === 'teams' ? 'The boss finale is for free for all; a team battle is its own fight.' : '';
+    const noBoss = mode === 'teams' ? 'The boss finale is for free for all; a team battle is its own fight.'
+      : options.length === 'one' ? 'The boss finale ends a full game; one round skips it.' : '';
+    bossBtn.title = noBoss || bossBtn.querySelector('small').textContent;
+    bossBtn.classList.toggle('na', Boolean(noBoss));
     $('#wordCount').textContent = options.wordCount || 0;
     $('#musicState').textContent = Music.on ? 'ON' : 'OFF';
     $('#btnMusic').textContent = Music.on ? 'MUSIC ON' : 'MUSIC OFF';
@@ -559,6 +569,8 @@
   for (const b of document.querySelectorAll('.opt[data-opt]')) {
     b.onclick = () => setOptions({ [b.dataset.opt]: !options[b.dataset.opt] });
   }
+  for (const b of document.querySelectorAll('[data-length]')) b.onclick = () => setOptions({ length: b.dataset.length });
+  for (const b of document.querySelectorAll('[data-level]')) b.onclick = () => setOptions({ level: b.dataset.level });
 
   // Same rules as the server: letters only, 3 to 13 long, no repeats.
   const cleanWords = (text) => [...new Set(String(text).toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && w.length <= 13))];
