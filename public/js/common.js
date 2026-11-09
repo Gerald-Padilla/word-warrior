@@ -41,8 +41,11 @@
     });
   }
 
+  // Highest score first. Battle royale: heroes still standing come first (by score while the battle is on,
+  // by their final place after), then the knocked-out by place; anyone who joined too late to play, last.
+  const placeKey = (p) => (p.out ? p.place || 1e6 : p.place || 0);
   function rankPlayers(players) {
-    return [...players].sort((a, b) => b.score - a.score || b.kills - a.kills || a.name.localeCompare(b.name));
+    return [...players].sort((a, b) => placeKey(a) - placeKey(b) || b.score - a.score || b.kills - a.kills || a.name.localeCompare(b.name));
   }
 
   // Team battle sides, by the team index the server uses.

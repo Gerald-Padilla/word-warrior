@@ -112,6 +112,10 @@
       this.cutins = []; // fighting-game banners naming the hero and their skill
       this.auras = new Map(); // playerId -> { left, color }: a skill boost on their next words
       this.hiddenUntil = new Map(); // playerId -> time: a Rogue mid-Backstab is out of sight
+      this.royale = false; // battle royale: each hero fights their own monsters (phones show only yours)
+      this.royaleMax = 100; // full HP
+      this.hurtAt = new Map(); // playerId -> when a monster last reached them
+      this.ghosts = []; // battle royale big screen: monsters popping up over heroes, or crashing into them
       this.onHit = null;
       this.onEscape = null;
       this.lastFrame = performance.now();
@@ -170,6 +174,14 @@
       const px = cssPx * (this.dpr || 1);
       if (px === this.reserveTop) return;
       this.reserveTop = px;
+      this.layoutHeroes();
+    }
+
+    setRoyale(on, maxHp = 100) {
+      this.royaleMax = maxHp;
+      if (this.royale === on) return;
+      this.royale = on;
+      this.ghosts = [];
       this.layoutHeroes();
     }
 
@@ -436,7 +448,8 @@
         return;
       }
       if (this.mode === 'phone') {
-        this.layoutCrowd([...this.players.keys()]);
+        // Battle royale: these monsters are yours alone, so only your hero stands here.
+        this.layoutCrowd(this.royale ? [this.selfId] : [...this.players.keys()]);
         return;
       }
       const list = [...this.players.values()];
@@ -705,6 +718,72 @@
 
     emote(playerId, e) {
       this.emotes.set(playerId, { e, t0: performance.now() });
+    }
+
+    // ---- battle royale -------------------------------------------------
+    // The big screen doesn't see anyone's words, so it shows each hero's fight in miniature: a monster
+    // pops up over a hero who scored and their attack takes it out; one crashes into a hero who was hit.
+    royaleScore(id, points) {
+      const pos = this.heroPos.get(id);
+      if (!pos) return;
+      const p = this.players.get(id);
+      const color = this.colorOf(id);
+      const hu = pos.hu;
+      const spread = Math.min(pos.spacing || 20 * hu, 24 * hu) * 0.35;
+      const to = { x: pos.x + rand(-spread, spread), y: (pos.feet ?? this.feetY) - rand(34, 50) * hu };
+      const ghost = { x: to.x, y0: to.y, y1: to.y, hu, t0: performance.now(), dur: 1, life: 1500 };
+      this.ghosts.push(ghost);
+      this.heroHop.set(id, performance.now());
+      this.launch(p ? p.cls : 'knight', this.heroOrigin(id), to, color, () => {
+        ghost.life = 0;
+        this.puff(to.x, to.y, MONSTERS[this.monster].fx, 10);
+        this.floatText(to.x, to.y - 6 * hu, `+${points}`, color.Q, null);
+        if (this.onHit) this.onHit(id);
+      });
+    }
+
+    // A monster reached the hero. drop: show it crashing down (the big screen); phones already saw it fall.
+    royaleHurt(id, dmg, drop = true) {
+      const pos = this.heroPos.get(id);
+      if (!pos) return;
+      const o = this.heroOrigin(id);
+      const hit = () => {
+        this.hurtAt.set(id, performance.now());
+        this.puff(o.x, o.y, ['#ff5a4d', '#ffffff', ...MONSTERS[this.monster].fx], 10);
+        this.floatText(o.x, o.y - 8 * pos.hu, `-${dmg}`, '#ff5a4d', null);
+      };
+      if (!drop) {
+        hit();
+        return;
+      }
+      this.ghosts.push({ x: o.x, y0: o.y - 36 * pos.hu, y1: o.y - 6 * pos.hu, hu: pos.hu, t0: performance.now(), dur: 280, life: 280, onDone: hit });
+    }
+
+    // Knocked out: a burst where they stood (they stay, faded, with OUT under them on the big screen).
+    royaleOut(id) {
+      const pos = this.heroPos.get(id);
+      if (!pos) return;
+      const o = this.heroOrigin(id);
+      this.explode(o.x, o.y, this.colorOf(id));
+      this.puff(o.x, o.y + 4 * pos.hu, ['#6c6485', '#9c93b5', '#1b1426'], 22);
+      this.shake(2, 300);
+    }
+
+    drawGhosts(t) {
+      const keep = [];
+      for (const g of this.ghosts) {
+        const age = t - g.t0;
+        if (age >= g.life) {
+          if (g.onDone) g.onDone();
+          continue;
+        }
+        keep.push(g);
+        const k = clamp(age / g.dur, 0, 1);
+        const spr = monsterSprite(this.monster, Math.floor(t / 200) % 2);
+        const s = Math.max(1, Math.round(g.hu * 0.8));
+        this.drawSprite(spr, Math.round(g.x - (spr.width * s) / 2), Math.round(lerp(g.y0, g.y1, k * k) - (spr.height * s) / 2), s);
+      }
+      this.ghosts = keep;
     }
 
     // ---- class skills ----------------------------------------------------
@@ -1596,6 +1675,7 @@
           this.drawPlate(d.w, d.L, t, d.color.Q);
         }
         if (iced) this.drawIce(t, now);
+        if (this.ghosts.length) this.drawGhosts(t);
       }
       this.dying = this.dying.filter((d) => t - d.t0 <= 1800);
 
@@ -1986,7 +2066,11 @@
         const feet = pos.feet ?? this.feetY;
         const x = Math.round(pos.x - 8 * hu);
         const y = Math.round(feet - 16 * hu + bob - hop);
-        ctx.globalAlpha = p.connected === false ? 0.35 : 1;
+        const out = this.royale && p.out;
+        // Battle royale: a hero blinks when a monster reaches them; knocked-out heroes stay, faded.
+        const hurtT = t - (this.hurtAt.get(id) || -1e9);
+        if (hurtT < 420 && Math.floor(hurtT / 70) % 2 === 0) continue;
+        ctx.globalAlpha = p.connected === false || out ? 0.3 : 1;
         ctx.fillStyle = 'rgba(0,0,0,0.35)';
         ctx.fillRect(Math.round(pos.x - 5 * hu), feet - hu, 10 * hu, hu);
         // A pet trots just behind its hero, hopping a beat after them.
@@ -2000,16 +2084,33 @@
         }
         this.drawSprite(spr, x, y, hu, pos.flip);
         ctx.globalAlpha = 1;
-        if ((p.streak || 0) >= 3 && p.connected !== false) this.aura(id, pos, feet, hu, p.streak, t);
-        const boosted = this.auras.get(id);
-        if (boosted) this.boostGlow(id, pos, feet, hu, boosted.color, t);
-        this.drawEmote(id, pos, feet, hu, t);
+        // Battle royale on the big screen: everyone's HP over their head.
+        if (this.royale && this.mode === 'host' && !out && !p.late) {
+          const bw = Math.max(10, 11 * hu);
+          const bh = Math.max(3, Math.round(hu * 0.9));
+          const bx = Math.round(pos.x - bw / 2);
+          const by = Math.round(y - 2 * hu - bh);
+          const frac = clamp((p.hp ?? this.royaleMax) / this.royaleMax, 0, 1);
+          ctx.fillStyle = '#0e0a17';
+          ctx.fillRect(bx - 2, by - 2, bw + 4, bh + 4);
+          ctx.fillStyle = '#3a2e52';
+          ctx.fillRect(bx, by, bw, bh);
+          ctx.fillStyle = frac > 0.5 ? '#5bd46a' : frac > 0.25 ? '#ffd23f' : '#ff5a4d';
+          ctx.fillRect(bx, by, Math.round(bw * frac), bh);
+        }
+        if (!out) {
+          if ((p.streak || 0) >= 3 && p.connected !== false) this.aura(id, pos, feet, hu, p.streak, t);
+          const boosted = this.auras.get(id);
+          if (boosted) this.boostGlow(id, pos, feet, hu, boosted.color, t);
+          this.drawEmote(id, pos, feet, hu, t);
+        }
 
         if (this.mode === 'host' && !this.teamMode) {
           const fs = hu >= 4 ? 16 : 8;
           const maxChars = Math.max(3, Math.floor((pos.spacing - 4) / fs));
-          const name = p.name.length > maxChars ? p.name.slice(0, maxChars - 1) + '.' : p.name;
-          labels.push({ text: name, x: pos.x, y: this.feetY + hu, fs, color: this.colorOf(id).Q });
+          const full = out ? (p.place ? `#${p.place} OUT` : 'WATCHING') : p.name;
+          const name = full.length > maxChars ? full.slice(0, maxChars - 1) + '.' : full;
+          labels.push({ text: name, x: pos.x, y: this.feetY + hu, fs, color: out ? '#9c93b5' : this.colorOf(id).Q });
         } else if (id !== this.selfId && hopT >= 0 && hopT < 6) {
           // No room for every name (phones, armies), so a hero's name pops up while they attack.
           const fs = Math.max(8, Math.round((this.fontPx * 0.67) / 8) * 8);

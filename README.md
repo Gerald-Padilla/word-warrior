@@ -47,13 +47,14 @@ difficulty* below).
 
 Above the options in the lobby, the host picks two things (remembered on that computer, like the options):
 
-- **GAME:** **FULL GAME** plays every round above, from easy to hard, then the boss if it's on. **ONE ROUND**
+- **GAME** (free for all and team battle): **FULL GAME** plays every round above, from easy to hard, then the boss if it's on. **ONE ROUND**
   plays a single round, the one that matches the difficulty: Slime Swarm on easy, Bat Storm on normal, Skull
   Inferno on hard. It goes straight to the results afterwards, and there's no boss.
 - **DIFFICULTY:** sets the pace of every round. **EASY**: words take 30% longer to fall, the gaps between new
   words are 25% longer, and one fewer fits on screen. **NORMAL**: as described above. **HARD**: words fall in 20%
   less time, arrive 20% closer together, and one more fits on screen. In a team battle it sets how long attacks
-  take to fly. Points per word don't change, but harder games have more words to score.
+  take to fly, and in a battle royale the pace of every stage. Points per word don't change, but harder games
+  have more words to score.
 
 The lobby shows the rounds the game will play, and every phone shows the host's pick in its lobby. A one-round
 team battle starts each team with HP to match that round (so a knockout is still on the cards). Solo quests
@@ -130,6 +131,33 @@ What it looks like:
   words just above their heads; attacks fly up and down between you.
 - **Phone on its side or a PC:** like the big screen, but your team is always on the left.
 
+## Battle royale
+
+Every hero for themselves. Pick **BATTLE ROYALE** in the host lobby (one hero is enough to try it).
+
+- Each hero fights **their own monsters**: the words on your phone are yours alone, so nobody can steal
+  them, and your phone shows only your hero.
+- Everyone starts with **100 HP**. A word that reaches you hurts: 10 HP on easy, 15 on medium, 20 on hard.
+  At 0 HP you're **knocked out**: your phone says where you finished and you watch the rest.
+- **No rounds or breaks.** The battle starts easy (Slime Swarm), turns medium at 0:40 (Bat Storm) and hard at
+  1:40 (Skull Inferno). After that, every 30 seconds the monsters come and fall faster, so it always ends.
+  The difficulty setting changes the pace of all of it.
+- **The last hero standing wins.** Places count up from the bottom as heroes go out (heroes who go out at
+  the same moment are placed by score). Points still count for the standings while everyone's in, and
+  for the awards.
+- **Live standings everywhere.** Under the top bar, every phone shows your HP, how many heroes are left,
+  and the top three with their HP and scores (plus you, if you're further down). The big screen has the
+  full standings with HP bars, an HP bar over every hero, and shows each hero's fight in miniature: a
+  monster pops up over a hero who scores and their attack takes it out; one crashes into a hero who gets
+  hit. Knocked-out heroes stay on the field, faded, with their place.
+- **Skills work as usual**, on your own monsters: strikes clear words before they reach you, boosts add
+  points. The Necromancer's **Raise Dead** heals the last 3 hits you took instead of scoring. The big
+  screen shows the skill's banner; other phones don't, so nobody gets distracted.
+- Special words, streaks, perks and awards all work. The boss finale and game length don't apply.
+- Someone who joins mid-battle watches this one and plays the next. **SKIP** on the big screen jumps to
+  the next stage (or the next speed-up). Battle royale scores aren't recorded in the Hall of Fame (each
+  hero had different words).
+
 ## Landscape and PC
 
 The player page works upright, sideways, and in a desktop browser. Sideways and on a PC it uses the full
@@ -203,7 +231,8 @@ Every finished game is recorded on one of three boards:
 
 - **Solo**: best solo quests.
 - **Daily**: today's daily quest.
-- **Battle**: best individual scores from multiplayer battles, with the place and player count of that battle.
+- **Battle**: best individual scores from free-for-all battles, with the place and player count of that battle
+  (team battles and battle royales aren't recorded).
 
 They're kept separate because in a battle the words are shared between everyone, so scores aren't comparable.
 Each board keeps the top 100. Ties go to whoever set the score first. Games with 0 points and test bots aren't recorded.
@@ -261,10 +290,12 @@ npm run bots -- ABCD 6
 ```
 
 (`ABCD` is the room code shown on the host screen; `6` is how many bots. Bots never appear in the Hall of Fame.)
+Each bot types one word at a time at its own speed, so in a battle royale the slower bots get knocked out first.
 
 ## Tuning
 
-Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
+Battle royale has its own block (`ROYALE_HP`, `ROYALE_STAGES` with when each stage starts and how hard its
+hits are, `ROYALE_RAMP_MS` / `ROYALE_RAMP` for the speed-ups). Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
 `ROUNDS` table at the top of `server.js`, and what each difficulty does to them is the `LEVELS` table below it,
 next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings sit there too:
 `TEAM_HP`, how often power-ups appear and how long their effects last. The game options have their own settings: the boss round (`BOSS_ROUND`, `BOSS_HP`, bonuses),

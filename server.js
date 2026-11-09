@@ -75,6 +75,22 @@ const BOSS_FINISH_BONUS = 1000; // for the hero who lands the final blow
 const BOSS_CLEAR_BONUS = 500; // for everyone who hurt the boss, when it goes down
 const BOSS_DOWN_MS = 3000; // the boss's fall plays out before the results
 
+// Battle royale: every hero fights their own monsters with ROYALE_HP. A word that reaches a hero hurts
+// them; at 0 HP they're out. There are no rounds or breaks: the stages below take over one after another
+// (`at` ms into the battle), the last one keeps speeding up, and the last hero standing wins. Each hero
+// types alone, so the pace is gentler than a shared round's.
+const ROYALE_HP = 100;
+const ROYALE_STAGES = [
+  { at: 0, spawnEvery: [1700, 2400], fall: [10000, 12000], maxActive: 4, damage: 10 },
+  { at: 40000, spawnEvery: [1800, 2400], fall: [9500, 11000], maxActive: 5, damage: 15 },
+  { at: 100000, spawnEvery: [2000, 2600], fall: [9000, 10500], maxActive: 5, damage: 20 },
+];
+const ROYALE_RAMP_MS = 30000; // in the last stage, every this long...
+const ROYALE_RAMP = 0.88; // ...words come and fall this much faster
+const ROYALE_RAMP_MAX = 8;
+const ROYALE_MAX_MS = 12 * 60000; // a battle still going after this ends, healthiest hero first
+const ROYALE_BOARD_MS = 250; // how often changed HP and scores go out to every screen
+
 // Streaks (option): words in a row without a typo multiply their points.
 const STREAK_STEPS = [[10, 3], [6, 2], [3, 1.5]];
 const TEAM_STREAK_MAX = 2; // team battle damage multiplier tops out here
@@ -343,11 +359,34 @@ function newPlayer(data) {
     score: 0, kills: 0, roundScores: ROUNDS.map(() => 0), team: 0, streak: 0, stats: newStats(), ...newKit(),
     socketId: null, connected: true, joinedAt: Date.now(), bot: Boolean(data.bot),
     keyGaps: [], strikes: 0, flagged: false, // auto-type guard
+    ...newRoyale(),
   };
 }
 
+// Battle royale: HP, whether (and in what place) the hero was knocked out, and their own field of words.
+// `late`: joined after the battle started, so they watch this one.
+const newRoyale = () => ({ hp: ROYALE_HP, out: false, place: null, late: false, field: null });
+
 // The spawn clock for falling words, plus the words used recently so they don't repeat too soon.
 const newStream = (nextSpawnAt = 0) => ({ nextSpawnAt, lastSpawnAt: 0, used: new Set() });
+
+// A battle royale hero's own field. Free for all and solo use the room itself as the one shared field
+// (room.words, room.stream, room.iceUntil, room.escaped). hits: damage taken, latest last.
+const newField = (owner, now) => ({ owner, words: new Map(), stream: newStream(now + 200), iceUntil: 0, escaped: [], hits: [] });
+const fieldOf = (room, player) => (room.mode === 'royale' ? player.field : room);
+
+// Where a field's events go: the whole room for a shared field, just its hero for their own.
+function fieldOut(room, f) {
+  if (f === room) return io.to(channel(room));
+  return f.owner.socketId ? io.to(f.owner.socketId) : { emit() {} };
+}
+
+// Battle royale: a hero's skill plays on their own phone and the big screen, not on everyone's.
+function skillOut(room, player) {
+  if (room.mode !== 'royale') return io.to(channel(room));
+  const to = [player.socketId, room.hostSocketId].filter(Boolean);
+  return to.length ? io.to(to) : { emit() {} };
+}
 const crowdFactor = (heroes) => Math.min(2.2, 1 + 0.12 * (heroes - 1));
 
 // Solo rooms run the same rounds with one player and no host screen. A daily quest is a solo room with
@@ -361,6 +400,7 @@ function createRoom(solo = false, daily = false) {
     options: { ...DEFAULT_OPTIONS, words: [] },
     rounds: ROUNDS,
     boss: null, // boss round: { hp, max, down }
+    royale: null, // battle royale: { start, nextAt, ramp, total, left }
     iceUntil: 0, // special words: everything falls slower until then
     summary: null, // finished: { stats, awards }
     chat: [], // lobby chat: { id, by, name, color, text, at }, oldest first
@@ -391,12 +431,15 @@ function createRoom(solo = false, daily = false) {
 }
 
 // The rounds a game will play, paced for its difficulty. The boss finale ends a full game in free for all
-// and solo; a team battle is its own fight.
+// and solo; a team battle is its own fight. A battle royale's "rounds" are its stages, played without a
+// break (duration: until the next stage, 0 for the last).
 function roundsFor(room) {
   const o = room.options;
   const lv = LEVELS[o.level] || LEVELS.normal;
   let list = ROUNDS;
-  if (o.length === 'one') list = [ROUNDS[lv.round]];
+  if (room.mode === 'royale') {
+    list = ROUNDS.map((r, i) => ({ ...r, ...ROYALE_STAGES[i], duration: (ROYALE_STAGES[i + 1]?.at ?? ROYALE_STAGES[i].at) - ROYALE_STAGES[i].at }));
+  } else if (o.length === 'one') list = [ROUNDS[lv.round]];
   else if (o.boss && room.mode !== 'teams') list = ROUNDS.concat(BOSS_ROUND);
   return list.map((r) => ({
     ...r,
@@ -411,8 +454,14 @@ const channel = (room) => `room:${room.code}`;
 
 function publicPlayer(p) {
   return { id: p.id, name: p.name, cls: p.cls, color: p.color, skin: p.skin, hair: p.hair, trim: p.trim, pet: p.pet, team: p.team,
-    score: p.score, kills: p.kills, roundScores: p.roundScores, connected: p.connected, flagged: p.flagged, streak: p.streak };
+    score: p.score, kills: p.kills, roundScores: p.roundScores, connected: p.connected, flagged: p.flagged, streak: p.streak,
+    hp: p.hp, out: p.out, place: p.place, late: p.late };
 }
+
+const royaleOf = (room) => {
+  const R = room.royale;
+  return R && { start: R.start, nextAt: R.nextAt, ramp: R.ramp, total: R.total, left: R.left, hp: ROYALE_HP, damage: room.rounds.map((r) => r.damage) };
+};
 
 function publicOptions(room) {
   const o = room.options;
@@ -424,15 +473,19 @@ function publicOptions(room) {
 function stateOf(room) {
   return {
     state: room.state, round: room.round, phaseEndsAt: room.phaseEndsAt,
-    rounds: room.rounds.map(({ key, name, title, monster, duration, multiplier }) => ({ key, name, title, monster, duration, multiplier })),
+    rounds: room.rounds.map(({ key, name, title, monster, duration, multiplier, at, damage }) => ({ key, name, title, monster, duration, multiplier, at, damage })),
     players: [...room.players.values()].map(publicPlayer), records: room.records,
     mode: room.mode, teams: room.teams, winner: room.winner, ko: room.ko, effects: room.effects,
     options: publicOptions(room), boss: room.boss, iceUntil: room.iceUntil, summary: room.summary, daily: room.daily,
+    royale: royaleOf(room),
   };
 }
 
-function snapshot(room) {
-  return { ...stateOf(room), code: room.code, solo: room.solo, words: [...room.words.values()], chat: room.chat };
+// For the big screen, or (battle royale) the words on this player's own field.
+function snapshot(room, player = null) {
+  const f = player && room.mode === 'royale' ? player.field : room;
+  const words = f ? [...f.words.values()] : [];
+  return { ...stateOf(room), code: room.code, solo: room.solo, words, chat: room.chat, iceUntil: f ? f.iceUntil : 0 };
 }
 
 function broadcastPlayers(room) {
@@ -513,7 +566,7 @@ function resetPlayers(room) {
     p.roundScores = room.rounds.map(() => 0);
     p.streak = 0;
     p.stats = newStats();
-    Object.assign(p, newKit());
+    Object.assign(p, newKit(), newRoyale());
     sendCharge(room, p);
   }
 }
@@ -527,6 +580,7 @@ function startGame(room) {
   room.winner = null;
   room.ko = false;
   room.teams = null;
+  room.royale = null;
   if (room.mode === 'teams') {
     balanceTeams(room, false);
     // A one-round battle starts with that round's share of the damage a full game deals, so it can
@@ -573,7 +627,8 @@ function beginPlaying(room) {
     room.boss = { hp: max, max, down: false };
   }
   if (room.mode === 'teams') startDuel(room, Date.now());
-  setPhase(room, 'playing', cfg.duration, () => endRound(room));
+  if (room.mode === 'royale') beginRoyale(room, Date.now());
+  else setPhase(room, 'playing', cfg.duration, () => endRound(room));
   clearInterval(room.ticker);
   room.ticker = setInterval(() => tick(room), 100);
 }
@@ -640,7 +695,8 @@ function summarize(room) {
 }
 
 function recordScores(room) {
-  if (room.mode === 'teams') return; // team damage isn't comparable with free-for-all scores
+  // Team damage and battle royale scores (each hero on their own field) aren't comparable with free for all.
+  if (room.mode === 'teams' || room.mode === 'royale') return;
   // A daily run counts only on the day it was for.
   if (room.daily && room.daily !== dayKey()) return;
   const board = room.daily ? 'daily' : room.solo ? 'solo' : 'battle';
@@ -664,6 +720,7 @@ function backToLobby(room) {
   room.summary = null;
   room.boss = null;
   room.teams = null;
+  room.royale = null;
   room.winner = null;
   room.ko = false;
   room.effects = [{}, {}];
@@ -680,6 +737,10 @@ function tick(room) {
   for (const [id, k] of room.recentKills) if (now - k.at > 5000) room.recentKills.delete(id);
   if (room.mode === 'teams') {
     duelTick(room, now);
+    return;
+  }
+  if (room.mode === 'royale') {
+    royaleTick(room, now);
     return;
   }
   const cfg = room.rounds[room.round];
@@ -725,10 +786,10 @@ function poolFor(room, cfg) {
   return mine.length ? WORDS[key].concat(mine, mine) : WORDS[key];
 }
 
-function pickWord(room, cfg) {
-  const pool = room.stream.pool || poolFor(room, cfg);
-  const { used, order } = room.stream;
-  const active = [...room.words.values()].map((w) => w.text);
+function pickWord(room, cfg, f = room) {
+  const pool = f.stream.pool || poolFor(room, cfg);
+  const { used, order } = f.stream;
+  const active = [...f.words.values()].map((w) => w.text);
   // Never let one active word be a prefix of another - typing would auto-hit the shorter one.
   const ok = (t) => !used.has(t) && !active.some((a) => a.startsWith(t) || t.startsWith(a));
   // A daily quest takes the next word in its fixed order; otherwise any word that fits.
@@ -747,9 +808,9 @@ function pickWord(room, cfg) {
   return text;
 }
 
-function pickX(room, now) {
+function pickX(room, now, f = room) {
   // Keep new words away from words that are still near the top of the field.
-  const near = [...room.words.values()]
+  const near = [...f.words.values()]
     .filter((w) => (now - w.spawn) / w.dur < 0.4)
     .map((w) => w.x);
   let best = 0.5;
@@ -765,14 +826,15 @@ function pickX(room, now) {
   return Math.round(best * 1000) / 1000;
 }
 
-function spawnWord(room, cfg, now) {
-  const text = pickWord(room, cfg);
+// f: the field it falls on (the room's shared one, or a battle royale hero's own).
+function spawnWord(room, cfg, now, f = room) {
+  const text = pickWord(room, cfg, f);
   if (!text) return;
-  const iced = room.iceUntil > now;
+  const iced = f.iceUntil > now;
   const word = {
     id: room.nextWordId++,
     text,
-    x: pickX(room, now),
+    x: pickX(room, now, f),
     spawn: now + SPAWN_LEAD_MS,
     at: now + SPAWN_LEAD_MS, // when it appeared; `spawn` moves when ice retimes it
     dur: Math.round((roll(room, cfg.fall[0], cfg.fall[1]) + Math.max(0, text.length - 5) * 220) * (cfg.pace || 1) * (iced ? ICE_FACTOR : 1)),
@@ -781,18 +843,18 @@ function spawnWord(room, cfg, now) {
   if (iced) word.iced = true;
   const specialRoll = room.rng();
   const kindRoll = room.rng();
-  if (room.options.specials && specialRoll < SPECIAL_CHANCE && ![...room.words.values()].some((w) => w.special)) {
+  if (room.options.specials && specialRoll < SPECIAL_CHANCE && ![...f.words.values()].some((w) => w.special)) {
     word.special = SPECIALS[Math.floor(kindRoll * SPECIALS.length)];
   }
-  room.words.set(word.id, word);
-  room.stream.lastSpawnAt = now;
-  io.to(channel(room)).emit('word:spawn', word);
+  f.words.set(word.id, word);
+  f.stream.lastSpawnAt = now;
+  fieldOut(room, f).emit('word:spawn', word);
 }
 
 // Stretch or squeeze the falling words that match, keeping them where they are on screen.
-function retimeFalling(room, match, factor, now, iced) {
+function retimeFalling(room, match, factor, now, iced, f = room) {
   const changed = [];
-  for (const w of room.words.values()) {
+  for (const w of f.words.values()) {
     if (!match(w)) continue;
     const p = clamp01((now - w.spawn) / w.dur);
     w.dur = Math.round(w.dur * factor);
@@ -800,29 +862,29 @@ function retimeFalling(room, match, factor, now, iced) {
     w.iced = iced;
     changed.push({ id: w.id, spawn: w.spawn, dur: w.dur });
   }
-  if (changed.length) io.to(channel(room)).emit('word:retime', changed);
+  if (changed.length) fieldOut(room, f).emit('word:retime', changed);
 }
 
-// Ice: every word on screen (and every new one) falls slower for a while.
-function freeze(room, now) {
-  if (room.iceUntil <= now) retimeFalling(room, (w) => !w.iced, ICE_FACTOR, now, true);
-  room.iceUntil = now + ICE_MS;
-  io.to(channel(room)).emit('fx:ice', { until: room.iceUntil });
+// Ice: every word on the field (and every new one) falls slower for a while.
+function freeze(room, now, f = room) {
+  if (f.iceUntil <= now) retimeFalling(room, (w) => !w.iced, ICE_FACTOR, now, true, f);
+  f.iceUntil = now + ICE_MS;
+  fieldOut(room, f).emit('fx:ice', { until: f.iceUntil });
 }
 
-// Bomb: blasts every other word on screen; the hero who typed it gets a share of their points.
-function blast(room, player, now) {
+// Bomb: blasts every other word on the field; the hero who typed it gets a share of their points.
+function blast(room, player, now, f = room) {
   let total = 0;
-  for (const w of [...room.words.values()]) {
+  for (const w of [...f.words.values()]) {
     if (now < w.spawn) continue; // not on screen yet
     const points = Math.round(w.points * BOMB_SHARE);
-    room.words.delete(w.id);
+    f.words.delete(w.id);
     room.recentKills.set(w.id, { by: player.id, at: now });
     total += points;
     player.score += points;
     player.kills += 1;
     player.roundScores[room.round] += points;
-    io.to(channel(room)).emit('word:kill', {
+    fieldOut(room, f).emit('word:kill', {
       id: w.id, by: player.id, points, score: player.score, kills: player.kills,
       roundScore: player.roundScores[room.round], bomb: true,
     });
@@ -905,7 +967,7 @@ function planStrike(room, player, pick, count, now) {
       .sort((a, b) => a.id - b.id).slice(0, launches);
     return { words, slots, missed: 0 };
   }
-  const list = [...room.words.values()].filter((w) => now >= w.spawn);
+  const list = [...fieldOf(room, player).words.values()].filter((w) => now >= w.spawn);
   const words = pickTargets(list, pick, (x) => (now - x.spawn) / x.dur, (x) => x.points).slice(0, count);
   return { words, slots: [], missed: count - words.length };
 }
@@ -917,16 +979,17 @@ function applyStrike(room, player, plan, share, now) {
     const had = player.empower;
     player.empower = { left: (had ? had.left : 0) + plan.missed, extra: Math.max(share, had ? had.extra : 0) };
   }
+  const f = fieldOf(room, player);
   for (const w of plan.words) {
     const points = Math.round((w.kind ? w.dmg : w.points * (w.special === 'gold' ? GOLD_FACTOR : 1)) * share);
-    room.words.delete(w.id);
+    f.words.delete(w.id);
     room.recentKills.set(w.id, { by: player.id, at: now });
     addScore(room, player, points);
     player.kills += 1;
     total += points;
     const common = { id: w.id, by: player.id, score: player.score, kills: player.kills, roundScore: player.roundScores[room.round], skill: true };
     if (w.kind) io.to(channel(room)).emit('duel:block', { ...common, gained: points });
-    else io.to(channel(room)).emit('word:kill', { ...common, points });
+    else fieldOut(room, f).emit('word:kill', { ...common, points });
   }
   const cfg = room.rounds[room.round];
   for (const slot of plan.slots) {
@@ -945,18 +1008,21 @@ function applyStrike(room, player, plan, share, now) {
 function useSkill(room, player, now) {
   const s = SKILLS[player.cls] || SKILLS.knight;
   const teams = room.mode === 'teams';
+  const royale = room.mode === 'royale';
   let plan = { words: [], slots: [], missed: 0 };
   let back = [];
+  let heal = 0;
   if (s.kind === 'strike') plan = planStrike(room, player, s.pick, s.count, now);
   if (s.kind === 'raise') {
     // Words that got away this round come back as points; in a team battle, the last hits your team took
-    // are healed. If there aren't enough, the rest strike like a Rogue's Backstab.
-    const pool = teams ? room.hits[player.team] : room.escaped;
+    // are healed, and in a battle royale your own last hits. If there aren't enough, the rest strike like
+    // a Rogue's Backstab.
+    const pool = teams ? room.hits[player.team] : royale ? player.field.hits : room.escaped;
     back = pool.splice(Math.max(0, pool.length - s.count));
     if (back.length < s.count) plan = planStrike(room, player, 'low', s.count - back.length, now);
   }
   // Everyone hears about it first, so the effect plays from this hero to these targets as the hits land.
-  io.to(channel(room)).emit('skill:cast', {
+  skillOut(room, player).emit('skill:cast', {
     id: player.id, skill: player.cls, name: s.name, kind: s.kind,
     targets: plan.words.map((w) => w.id), launches: plan.slots.map((w) => w.id), souls: back.length,
     boost: s.kind === 'empower' ? s.count : plan.missed,
@@ -971,6 +1037,11 @@ function useSkill(room, player, now) {
     if (teams) {
       const t = room.teams[player.team];
       t.hp = Math.min(t.max, t.hp + total);
+    } else if (royale) {
+      const before = player.hp;
+      player.hp = Math.min(ROYALE_HP, player.hp + total);
+      heal = player.hp - before;
+      total = 0;
     } else {
       addScore(room, player, total);
     }
@@ -985,11 +1056,13 @@ function useSkill(room, player, now) {
     }
   }
   if (!teams) hurtBoss(room, player, total);
-  io.to(channel(room)).emit('skill:use', {
+  skillOut(room, player).emit('skill:use', {
     id: player.id, cls: player.cls, name: s.name, kind: s.kind, total,
     score: player.score, roundScore: player.roundScores[room.round], kills: player.kills,
     hp: room.teams ? room.teams.map((t) => t.hp) : null,
+    heal, myHp: royale ? player.hp : null,
   });
+  if (royale) markRoyale(room, player);
   if (teams && s.kind === 'encore' && room.teams[1 - player.team].hp === 0) knockOut(room, player.team);
 }
 
@@ -1030,6 +1103,144 @@ function hurtBoss(room, player, dmg) {
   io.to(channel(room)).emit('boss:down', { by: player.id, finish: BOSS_FINISH_BONUS, clear: BOSS_CLEAR_BONUS });
   broadcastPlayers(room);
   setPhase(room, 'playing', BOSS_DOWN_MS, () => endRound(room));
+}
+
+// ---- Battle royale -----------------------------------------------------------
+// Every hero gets their own field, fed from the same stage. Words go only to their hero's phone; the
+// big screen and every phone get everyone's HP and score as a running standings feed (royale:board).
+
+function beginRoyale(room, now) {
+  const heroes = [...room.players.values()].filter((p) => !p.late);
+  const cfg = room.rounds[0];
+  for (const p of heroes) {
+    p.field = newField(p, now);
+    p.field.stream.pool = poolFor(room, cfg);
+  }
+  room.royale = { start: now, nextAt: now + room.rounds[1].at, ramp: 0, total: heroes.length, left: heroes.length };
+  room.royaleCfg = cfg;
+  room.royaleDirty = new Set();
+  room.royaleFlushAt = 0;
+  setPhase(room, 'playing', ROYALE_MAX_MS, () => endRoyale(room));
+}
+
+// The next stage; in the last one, faster again.
+function royaleStep(room, now) {
+  const R = room.royale;
+  const last = room.rounds.length - 1;
+  if (room.round < last) {
+    room.round += 1;
+    const cfg = room.rounds[room.round];
+    for (const p of room.players.values()) {
+      if (!p.field) continue;
+      p.field.stream.pool = poolFor(room, cfg);
+      p.field.stream.used.clear();
+    }
+    R.nextAt = room.round < last ? R.start + room.rounds[room.round + 1].at : now + ROYALE_RAMP_MS;
+  } else {
+    R.ramp = Math.min(ROYALE_RAMP_MAX, R.ramp + 1);
+    R.nextAt = now + ROYALE_RAMP_MS;
+  }
+  const cfg = room.rounds[room.round];
+  const k = ROYALE_RAMP ** R.ramp;
+  room.royaleCfg = { ...cfg, pace: cfg.pace * k, spawnEvery: cfg.spawnEvery.map((ms) => Math.round(ms * k)), maxActive: cfg.maxActive + Math.floor(R.ramp / 2) };
+  broadcastState(room);
+  io.to(channel(room)).emit('royale:stage', { round: room.round, ramp: R.ramp });
+}
+
+const markRoyale = (room, player) => room.royaleDirty && room.royaleDirty.add(player.id);
+
+// Changed HP and scores, a few times a second, to every screen.
+function flushRoyale(room, now, force = false) {
+  const dirty = room.royaleDirty;
+  if (!dirty || !dirty.size || (!force && now < room.royaleFlushAt)) return;
+  room.royaleFlushAt = now + ROYALE_BOARD_MS;
+  const list = [...dirty].map((id) => room.players.get(id)).filter(Boolean)
+    .map((p) => ({ id: p.id, hp: p.hp, score: p.score, kills: p.kills, out: p.out, place: p.place, streak: p.streak }));
+  dirty.clear();
+  if (list.length) io.to(channel(room)).emit('royale:board', list);
+}
+
+function royaleTick(room, now) {
+  const R = room.royale;
+  if (!R) return;
+  if (now >= R.nextAt) royaleStep(room, now);
+  const cfg = room.royaleCfg;
+  const down = [];
+  for (const p of room.players.values()) {
+    const f = p.field;
+    if (!f || p.out) continue;
+    // Words that reach the hero hurt them.
+    for (const w of [...f.words.values()]) {
+      if (now < w.spawn + w.dur) continue;
+      f.words.delete(w.id);
+      p.hp = Math.max(0, p.hp - cfg.damage);
+      f.hits.push(cfg.damage);
+      fieldOut(room, f).emit('word:escape', { id: w.id, dmg: cfg.damage, hp: p.hp });
+      markRoyale(room, p);
+      if (p.hp === 0) break;
+    }
+    if (p.hp === 0) {
+      down.push(p);
+      continue;
+    }
+    if (f.iceUntil && now >= f.iceUntil) {
+      f.iceUntil = 0;
+      retimeFalling(room, (w) => w.iced, 1 / ICE_FACTOR, now, false, f);
+    }
+    // Fast typists who clear their field get the next word right away.
+    const fieldEmpty = f.words.size === 0 && now - f.stream.lastSpawnAt > 500;
+    if (now >= f.stream.nextSpawnAt || fieldEmpty) {
+      if (f.words.size < cfg.maxActive) {
+        spawnWord(room, cfg, now, f);
+        f.stream.nextSpawnAt = now + roll(room, cfg.spawnEvery[0], cfg.spawnEvery[1]);
+      } else {
+        f.stream.nextSpawnAt = now + 300;
+      }
+    }
+  }
+  if (down.length) knockOutHeroes(room, down, now);
+  if (room.royale) flushRoyale(room, now);
+}
+
+// Heroes at 0 HP are out. Places count up from the bottom; heroes who fall in the same moment are
+// placed by score.
+function knockOutHeroes(room, list, now) {
+  const R = room.royale;
+  let place = [...room.players.values()].filter((p) => !p.out && !p.late).length;
+  list.sort((a, b) => a.score - b.score);
+  for (const p of list) {
+    p.out = true;
+    p.place = place--;
+    p.field.words.clear();
+    fieldOut(room, p.field).emit('word:clear');
+    markRoyale(room, p);
+  }
+  R.left = [...room.players.values()].filter((p) => !p.out && !p.late).length;
+  flushRoyale(room, now, true);
+  for (const p of list) io.to(channel(room)).emit('royale:out', { id: p.id, place: p.place, left: R.left, total: R.total });
+  checkRoyaleEnd(room);
+}
+
+// One hero left (or none, if everyone fell at once or it was a lone hero) ends the battle.
+function checkRoyaleEnd(room) {
+  const R = room.royale;
+  if (!R || room.state !== 'playing') return;
+  R.left = [...room.players.values()].filter((p) => !p.out && !p.late).length;
+  if (R.left === 0 || (R.total >= 2 && R.left <= 1)) endRoyale(room);
+}
+
+// The heroes still standing take the top places, healthiest first.
+function endRoyale(room) {
+  if (!room.royale || room.state !== 'playing') return;
+  clearInterval(room.ticker);
+  room.ticker = null;
+  const standing = [...room.players.values()].filter((p) => !p.out && !p.late)
+    .sort((a, b) => b.hp - a.hp || b.score - a.score);
+  standing.forEach((p, i) => { p.place = i + 1; });
+  for (const p of room.players.values()) if (p.field) p.field.words.clear();
+  room.royale.left = standing.length;
+  io.to(channel(room)).emit('word:clear');
+  finishGame(room);
 }
 
 // ---- Team battle (duel) ----------------------------------------------------
@@ -1263,7 +1474,7 @@ io.on('connection', (socket) => {
   socket.on('host:mode', (data) => {
     const { room, isHost } = ctx();
     if (!isHost || room.state !== 'lobby') return;
-    room.mode = data?.mode === 'teams' ? 'teams' : 'ffa';
+    room.mode = ['teams', 'royale'].includes(data?.mode) ? data.mode : 'ffa';
     room.rounds = roundsFor(room);
     broadcastState(room);
   });
@@ -1301,6 +1512,7 @@ io.on('connection', (socket) => {
     if (!isHost || room.ko) return;
     if (room.state === 'countdown') beginPlaying(room);
     else if (room.state === 'intermission') nextRound(room);
+    else if (room.state === 'playing' && room.royale) royaleStep(room, Date.now()); // on to the next stage, or faster
     else if (room.state === 'playing') endRound(room);
   });
 
@@ -1324,6 +1536,7 @@ io.on('connection', (socket) => {
       }
     }
     broadcastPlayers(room);
+    checkRoyaleEnd(room);
   });
 
   // Players ------------------------------------------------------------
@@ -1371,10 +1584,12 @@ io.on('connection', (socket) => {
     const p = newPlayer({ ...data, name });
     p.roundScores = room.rounds.map(() => 0); // may include the boss round
     p.team = smallerTeam(room);
+    // A battle royale already under way: watch this one, play the next.
+    if (room.mode === 'royale' && room.state === 'playing') Object.assign(p, { late: true, out: true, hp: 0 });
     room.players.set(p.id, p);
     attachPlayer(room, p);
     broadcastPlayers(room);
-    reply(cb, { ok: true, token: p.token, you: p.id, snapshot: snapshot(room) });
+    reply(cb, { ok: true, token: p.token, you: p.id, snapshot: snapshot(room, p) });
     sendCharge(room, p);
   });
 
@@ -1411,7 +1626,7 @@ io.on('connection', (socket) => {
     if (!p) return reply(cb, { ok: false });
     attachPlayer(room, p);
     broadcastPlayers(room);
-    reply(cb, { ok: true, token: p.token, you: p.id, snapshot: snapshot(room) });
+    reply(cb, { ok: true, token: p.token, you: p.id, snapshot: snapshot(room, p) });
     sendCharge(room, p);
   });
 
@@ -1427,8 +1642,11 @@ io.on('connection', (socket) => {
   socket.on('player:claim', (data, cb) => {
     const { room, player } = ctx();
     if (!player || room.state !== 'playing' || room.ko) return reply(cb, { ok: false, reason: 'not-playing' });
+    // Battle royale: only your own words, and only while you're still in.
+    const f = fieldOf(room, player);
+    if (!f || player.out) return reply(cb, { ok: false, reason: 'not-playing' });
     const id = Number(data?.id);
-    const word = room.words.get(id);
+    const word = f.words.get(id);
     if (!word) {
       const k = room.recentKills.get(id);
       const by = k && room.players.get(k.by);
@@ -1450,20 +1668,21 @@ io.on('connection', (socket) => {
     const p = clamp01((now - word.spawn) / word.dur);
     const g = boost(room, player, word);
     const points = Math.round(word.points * g.factor) + Math.round(word.points * g.extra);
-    room.words.delete(id);
+    f.words.delete(id);
     room.recentKills.set(id, { by: player.id, at: now });
     player.score += points;
     player.kills += 1;
     player.roundScores[room.round] += points;
     trackStats(player, word, data.keys, p);
-    io.to(channel(room)).emit('word:kill', {
+    fieldOut(room, f).emit('word:kill', {
       id, by: player.id, points, score: player.score, kills: player.kills, roundScore: player.roundScores[room.round],
       streak: g.streak, mult: g.mult, perk: g.perk, boosted: g.extra > 0, special: word.special || null,
     });
     let dealt = points;
-    if (word.special === 'ice') freeze(room, now);
-    if (word.special === 'bomb') dealt += blast(room, player, now);
+    if (word.special === 'ice') freeze(room, now, f);
+    if (word.special === 'bomb') dealt += blast(room, player, now, f);
     hurtBoss(room, player, dealt);
+    if (f !== room) markRoyale(room, player);
     reply(cb, { ok: true, points });
   });
 
@@ -1481,7 +1700,8 @@ io.on('connection', (socket) => {
 
   socket.on('player:skill', (_data, cb) => {
     const { room, player } = ctx();
-    const live = player && room.options.skills && room.state === 'playing' && !room.ko && !(room.boss && room.boss.down);
+    const live = player && room.options.skills && room.state === 'playing' && !room.ko && !(room.boss && room.boss.down)
+      && fieldOf(room, player) && !player.out;
     if (!live) return reply(cb, { ok: false, reason: 'not-now' });
     if (player.charge < SKILL_WORDS) return reply(cb, { ok: false, reason: 'charging' });
     player.charge = 0;

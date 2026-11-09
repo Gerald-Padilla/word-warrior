@@ -22,6 +22,7 @@
   let options = {}; // the room's game options (on/off switches, plus how many of your own words)
   let summary = null; // finished: { stats, awards }
   let boss = null; // boss round: { hp, max, down }
+  let royale = null; // battle royale: { start, nextAt, ramp, total, left, hp, damage }
   let pushedOptions = false;
   let lastCount = 0;
   let lastBeep = null;
@@ -101,14 +102,59 @@
   });
 
   // A hero used their class skill: the banner and effect come first (skill:cast), then the result.
+  // Battle royale: their targets are on their own phone, so the big screen just shows the banner and hero.
   socket.on('skill:cast', (c) => {
-    arena.castSkill(c, window.Art.classByKey(c.skill).skill.split(': ')[1] || '');
+    arena.castSkill(mode === 'royale' ? { ...c, targets: [] } : c, window.Art.classByKey(c.skill).skill.split(': ')[1] || '');
     Sfx.play(`skill:${c.skill}`);
   });
   socket.on('skill:use', (u) => {
     setScore(u.id, u.score, u.roundScore, u.kills);
     if (u.hp) setHp(u.hp);
+    if (u.heal) {
+      const o = arena.heroOrigin(u.id);
+      setTimeout(() => arena.floatText(o.x, o.y - 10 * arena.U, `+${u.heal} HP`, '#7dff6b', null, 'SKILL'), 650);
+    }
     arena.skillTotal(u.id, u.total);
+    scheduleBoard();
+  });
+
+  // Battle royale ---------------------------------------------------------
+  // Everyone's HP and score, a few times a second. Rising scores are attacks, falling HP is a monster
+  // getting through; the big screen plays both over that hero.
+  let hurtSfxAt = 0;
+  const hurtRows = new Set();
+  socket.on('royale:board', (list) => {
+    for (const u of list) {
+      const p = players.find((pl) => pl.id === u.id);
+      if (!p) continue;
+      if (u.score > p.score) arena.royaleScore(p.id, u.score - p.score);
+      if (u.hp < p.hp && !u.out) {
+        arena.royaleHurt(p.id, p.hp - u.hp);
+        hurtRows.add(p.id);
+        if (performance.now() - hurtSfxAt > 350) {
+          hurtSfxAt = performance.now();
+          Sfx.play('escape');
+        }
+      }
+      Object.assign(p, u);
+    }
+    scheduleBoard();
+  });
+  socket.on('royale:stage', ({ round, ramp }) => {
+    const r = rounds[round];
+    if (!r) return;
+    if (ramp) arena.callout('FASTER!', '#ff7b4a', `The monsters speed up · hits do ${r.damage}`);
+    else arena.callout(`${r.name}!`, { easy: '#8be36b', medium: '#b99cff', hard: '#ff7b4a' }[r.key] || '#ffd23f', `${r.title} · hits do ${r.damage}`);
+    arena.shake(2, 400);
+    Sfx.play('round');
+  });
+  socket.on('royale:out', ({ id, place, left }) => {
+    const p = players.find((pl) => pl.id === id);
+    if (p) Object.assign(p, { out: true, place, hp: 0 });
+    if (royale) royale.left = left;
+    arena.royaleOut(id);
+    arena.callout(`${p ? p.name : 'A hero'} IS OUT!`, '#ff5a4d', left > 1 ? `#${place} · ${left} heroes left` : left === 1 ? 'One hero left standing!' : '');
+    Sfx.play('boom');
     scheduleBoard();
   });
 
@@ -312,6 +358,8 @@
     else if (teamsOn && enough) {
       const red = players.filter((p) => p.team === 0).length;
       $('#startHint').textContent = `${red} red vs ${players.length - red} blue. Click a hero to move them to the other team.`;
+    } else if (mode === 'royale' && players.length) {
+      $('#startHint').textContent = `${players.length} hero${players.length === 1 ? '' : 'es'} ready. Each fights their own monsters; the last one standing wins!`;
     } else {
       $('#startHint').textContent = players.length
         ? `${players.length} hero${players.length === 1 ? '' : 'es'} ready. Start when everyone is in!`
@@ -361,18 +409,34 @@
     }, 150);
   }
 
+  const hpColor = (frac) => (frac > 0.5 ? '#5bd46a' : frac > 0.25 ? '#ffd23f' : '#ff5a4d');
+
   function renderBoard() {
     const list = $('#boardList');
+    const ry = mode === 'royale' && royale;
+    $('#board').classList.toggle('royale', Boolean(ry));
+    $('#boardTitle').textContent = ry ? 'STANDINGS' : 'LEADERBOARD';
+    show('#boardLeft', Boolean(ry));
+    if (ry) $('#boardLeft').textContent = `${royale.left} OF ${royale.total} HEROES LEFT`;
     list.innerHTML = '';
     rankPlayers(players).slice(0, 10).forEach((p, i) => {
       const bumped = prevScores.has(p.id) && prevScores.get(p.id) !== p.score;
-      list.append(el('li', { class: `row r${i + 1}${bumped ? ' bump' : ''}` }, [
+      // Battle royale: HP under the name, or how they went out.
+      let nm = nameParts(p);
+      if (ry) {
+        nm = nm.concat(p.out
+          ? el('small', { text: p.late ? 'JOINED LATE' : `OUT · #${p.place}` })
+          : el('span', { class: 'hpm' }, [el('i', { style: `width:${(100 * (p.hp ?? royale.hp)) / royale.hp}%;background:${hpColor((p.hp ?? royale.hp) / royale.hp)}` })]));
+      }
+      const cls = `row r${i + 1}${bumped ? ' bump' : ''}${ry && p.out ? ' out' : ''}${hurtRows.has(p.id) ? ' hurt' : ''}`;
+      list.append(el('li', { class: cls }, [
         el('span', { class: 'rk', text: `${i + 1}.` }),
         heroImg(p),
-        el('span', { class: 'nm' }, nameParts(p)),
+        el('span', { class: 'nm' }, nm),
         el('span', { class: 'sc', text: p.score }),
       ]));
     });
+    hurtRows.clear();
     // Drop rows that would be cut off on shorter screens.
     const board = $('#board');
     while (list.children.length > 3 && board.scrollHeight > board.clientHeight) list.lastChild.remove();
@@ -407,6 +471,8 @@
     arena.setBoss(s.state === 'finished' ? null : boss); // the results screen has the boss's fate in words
     arena.setIce(s.iceUntil);
     mode = s.mode || 'ffa';
+    royale = s.royale || null;
+    arena.setRoyale(mode === 'royale', royale ? royale.hp : 100);
     teams = s.teams || null;
     winner = s.winner ?? null;
     ko = Boolean(s.ko);
@@ -447,7 +513,15 @@
       arena.setTheme('slime');
       arena.clearWords();
     }
-    if (r) {
+    if (r && mode === 'royale') {
+      // No rounds: the stage changes as the battle goes on (the line under it counts down in tick()).
+      arena.setTheme(r.monster);
+      $('#hudRound').textContent = `BATTLE ROYALE · ${r.name}`;
+      $('#bRound').textContent = 'BATTLE ROYALE';
+      $('#bDiff').textContent = `${royale ? royale.hp : 100} HP`;
+      $('#bDiff').className = 'b-diff d-boss';
+      $('#bTitle').textContent = 'Everyone fights their own monsters. Words that reach you hurt. Last hero standing wins!';
+    } else if (r) {
       arena.setTheme(r.monster);
       $('#hudRound').textContent = `${roundLabel(s.round)} · ${r.name}`;
       $('#hudTitle').textContent = `${r.title} · x${r.multiplier} ${teamsOn ? 'damage' : 'points'}${paceNote(' · ', ' DIFFICULTY')}`;
@@ -488,10 +562,22 @@
     const box = $('#roundChips');
     box.innerHTML = '';
     const pace = { easy: ' · slower', hard: ' · faster' }[options.level] || '';
+    if (mode === 'royale') {
+      // One battle, no breaks: when each stage takes over and how hard its hits are.
+      rounds.forEach((r, i) => box.append(el('div', { class: `round-chip ${r.key}` }, [
+        `${clock(r.at || 0)} · ${r.name}`,
+        el('small', { text: `${r.title} · hits do ${r.damage}${i === rounds.length - 1 ? ' · then faster' : ''}${pace}` }),
+      ])));
+      return;
+    }
     rounds.forEach((r, i) => box.append(el('div', { class: `round-chip ${r.key}` }, [
       rounds.length === 1 ? `ONE ROUND · ${r.name}` : `${i + 1} · ${r.name}`, el('small', { text: `${r.title} · x${r.multiplier}${pace}` }),
     ])));
   }
+  const clock = (ms) => {
+    const secs = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  };
 
   // ---- lobby chat ----------------------------------------------------
   let chat = []; // { id, by, name, color, text, at }, oldest first
@@ -544,9 +630,15 @@
     for (const b of document.querySelectorAll('[data-level]')) b.classList.toggle('on', b.dataset.level === (options.level || 'normal'));
     const bossBtn = $('.opt[data-opt="boss"]');
     const noBoss = mode === 'teams' ? 'The boss finale is for free for all; a team battle is its own fight.'
-      : options.length === 'one' ? 'The boss finale ends a full game; one round skips it.' : '';
+      : mode === 'royale' ? 'A battle royale has no boss: the monsters just keep getting tougher.'
+        : options.length === 'one' ? 'The boss finale ends a full game; one round skips it.' : '';
     bossBtn.title = noBoss || bossBtn.querySelector('small').textContent;
     bossBtn.classList.toggle('na', Boolean(noBoss));
+    // A battle royale is one battle that keeps going, so it has no game length to pick.
+    const seg = $('#segLength');
+    seg.classList.toggle('na', mode === 'royale');
+    seg.title = mode === 'royale' ? 'A battle royale has no rounds: it goes on until one hero is left.'
+      : 'A full game climbs from easy to hard; one round plays just the round that matches the difficulty';
     $('#wordCount').textContent = options.wordCount || 0;
     $('#musicState').textContent = Music.on ? 'ON' : 'OFF';
     $('#btnMusic').textContent = Music.on ? 'MUSIC ON' : 'MUSIC OFF';
@@ -649,7 +741,12 @@
     } else if (boss) {
       $('#finalSub').textContent = boss.down ? 'The Dragon King has fallen!' : 'The Dragon King got away... this time.';
     }
-    show('#finalSub', tb || Boolean(boss));
+    const ry = mode === 'royale' && ranked[0];
+    if (ry) {
+      const top = ranked[0];
+      $('#finalSub').textContent = top.out ? `${top.name} outlasted everyone!` : `${top.name} is the last hero standing with ${top.hp} HP!`;
+    }
+    show('#finalSub', tb || Boolean(boss) || Boolean(ry));
     const podium = $('#podium');
     podium.innerHTML = '';
     const pods = [];
@@ -664,7 +761,7 @@
         el('div', { class: 'nm', style: teamStyle(p) }, nameParts(p)),
         rec ? el('div', { class: 'rec blink', text: rec.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${rec.rank}` }) : null,
         el('div', { class: 'sc', text: `${p.score} PTS` }),
-        el('div', { class: 'ko', text: `${p.kills} ${tb ? 'WORDS' : 'MONSTERS SLAIN'}` }),
+        el('div', { class: 'ko', text: ry ? (p.out ? `${p.kills} SLAIN · OUT` : `${p.kills} SLAIN · ${p.hp} HP LEFT`) : `${p.kills} ${tb ? 'WORDS' : 'MONSTERS SLAIN'}` }),
         el('div', { class: 'block', text: idx + 1 }),
       ]);
       pods[idx] = pod;
@@ -736,6 +833,10 @@
       $('#bCount').textContent = label;
     }
     const r = rounds[state.round];
+    if (mode === 'royale' && r && (state.state === 'playing' || state.state === 'countdown')) {
+      royaleTick(r);
+      return;
+    }
     // The last ten seconds of a round: red edges, a ticking clock, faster music.
     const tense = state.state === 'playing' && Boolean(r) && left > 0 && left <= 10000 && !(boss && boss.down);
     show('#tension', tense);
@@ -764,6 +865,26 @@
     }
   }
   setInterval(tick, 100);
+
+  // Battle royale HUD: how long the battle has gone on, and a bar running down to the next stage (or, in
+  // the last one, the next speed-up). The final two heroes get the red edges and faster music.
+  function royaleTick(r) {
+    const t = now();
+    const playing = state.state === 'playing' && royale;
+    const elapsed = playing ? t - royale.start : 0;
+    const next = rounds[state.round + 1];
+    const stepMs = playing ? Math.max(0, royale.nextAt - t) : 0;
+    const span = next ? next.at - r.at : 30000;
+    $('#timeText').textContent = clock(elapsed);
+    $('#timeFill').style.width = `${playing ? Math.min(100, (100 * stepMs) / span) : 100}%`;
+    $('#timeFill').classList.toggle('low', Boolean(playing && stepMs < 5000));
+    const ahead = !playing ? '' : next ? ` · ${next.name} IN ${clock(stepMs)}` : ` · FASTER IN ${clock(stepMs)}`;
+    const count = royale ? ` · ${royale.left} OF ${royale.total} LEFT` : '';
+    $('#hudTitle').textContent = `${r.title} · hits do ${r.damage}${count}${ahead}`;
+    const tense = Boolean(playing && royale.total >= 2 && royale.left === 2);
+    show('#tension', tense);
+    Music.setFast(tense);
+  }
 
   // ---- hall of fame --------------------------------------------------
   const fmtDate = (t) => new Date(t).toLocaleDateString('en', { day: 'numeric', month: 'short' }).toUpperCase();

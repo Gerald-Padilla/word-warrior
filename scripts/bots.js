@@ -17,7 +17,7 @@ const CLASSES = ['knight', 'wizard', 'archer', 'rogue', 'cleric', 'barbarian', '
 for (let i = 0; i < count; i++) {
   const socket = io(url, { transports: ['websocket'] });
   const cps = 2.5 + Math.random() * 3; // typing speed, characters per second
-  const alive = new Set();
+  const alive = new Map(); // falling words on screen
   const name = NAMES[i % NAMES.length] + (i >= NAMES.length ? i : '');
   let me = null;
   let team = 0;
@@ -65,17 +65,14 @@ for (let i = 0; i < count; i++) {
   const duel = new Map(); // team battle words: attack slots, attacks in the air, power-ups
   let busyUntil = 0;
 
+  // Falling words: one at a time, like a person (see the loop at the bottom). A slow bot falls behind
+  // when words come faster than it types; in a battle royale, that hurts.
   socket.on('word:spawn', (w) => {
     if (w.kind) {
       duel.set(w.id, w);
       return;
     }
-    alive.add(w.id);
-    // Wait until the word is visible, "read" it, then type it.
-    const delay = Math.max(0, w.spawn - Date.now()) + 500 + Math.random() * 1500 + (w.text.length / cps) * 1000;
-    setTimeout(() => {
-      if (alive.has(w.id) && Math.random() < 0.85) claim(w);
-    }, delay);
+    alive.set(w.id, w);
   });
   socket.on('duel:launch', ({ slot, missile }) => {
     duel.delete(slot);
@@ -92,6 +89,24 @@ for (let i = 0; i < count; i++) {
     alive.clear();
     duel.clear();
   });
+  socket.on('royale:out', ({ id, place }) => {
+    if (id === me) console.log(`${name} was knocked out (#${place})`);
+  });
+
+  // Falling words: when free, "read" a word on screen (usually the one closest to the ground) and type it.
+  // If someone else gets it first, that time was wasted, as it would be for a person.
+  setInterval(() => {
+    const now = Date.now();
+    if (!alive.size || now < busyUntil) return;
+    const shown = [...alive.values()].filter((w) => now >= w.spawn).sort((a, b) => (now - b.spawn) / b.dur - (now - a.spawn) / a.dur);
+    if (!shown.length) return;
+    const target = Math.random() < 0.7 ? shown[0] : shown[Math.floor(Math.random() * shown.length)];
+    const ms = 400 + Math.random() * 900 + (target.text.length / cps) * 1000;
+    busyUntil = now + ms;
+    setTimeout(() => {
+      if (alive.has(target.id) && Math.random() < 0.9) claim(target);
+    }, ms);
+  }, 150);
 
   // Team battle: when free, block the most urgent incoming attack, go for a power-up, or launch an attack.
   setInterval(() => {
