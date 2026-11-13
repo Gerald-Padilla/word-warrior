@@ -1,6 +1,6 @@
 // Host / big-screen controller: QR lobby, live battlefield, leaderboard and podium.
 (function () {
-  const { $, el, syncClock, watchBuild, rankPlayers, TEAMS, Sfx, Music, EMOTES } = window.WW;
+  const { $, el, syncClock, watchBuild, rankPlayers, drawStandings, TEAMS, Sfx, Music, EMOTES } = window.WW;
   const { heroDataURL, powerDataURL, crownDataURL, POWERS, COLORS } = window.Art;
 
   const socket = io();
@@ -235,7 +235,7 @@
     const lvl = $('#dsLevel');
     lvl.className = `ds-tag ${D.level || ''}${D.level ? '' : ' hidden'}`;
     lvl.textContent = D.level ? `${LEVEL_NAMES[D.level]} · ${D.points} PTS` : '';
-    const letters = D.phase === 'draw' ? D.hint.replace(/ /g, '').length : 0;
+    const letters = D.phase === 'draw' ? D.hint.replace(/[^a-z_]/gi, '').length : 0;
     $('#dsLen').classList.toggle('hidden', !letters);
     $('#dsLen').textContent = `${letters} LETTERS${D.hint && D.hint.includes(' ') ? ` · ${D.hint.split(' ').length} WORDS` : ''}`;
 
@@ -247,9 +247,25 @@
       over.append(
         el('div', { class: 'o1', text: `${roundLabelDraw()} · TURN ${D.turn} OF ${D.turns}` }),
         heroImg(drawer, 'px-sprite'),
-        el('div', { class: 'o2', text: `${drawer.name} IS PICKING A WORD` }),
+        el('div', { class: 'o2', text: `${drawer.name} IS PICKING A ${characters() ? 'CHARACTER' : 'WORD'}` }),
         el('div', { class: 'o3', text: 'Get ready to guess on your phone!' }),
       );
+    } else if (D.phase === 'reveal' && D.standings) {
+      // Between turns: everyone's scores, what they just scored and how far they moved.
+      over.className = 'ds-over standings';
+      const list = el('div', { class: 'ds-stand' });
+      for (const s of drawStandings(players, D)) {
+        list.append(el('div', { class: `row r${s.rank}${s.gain ? ' up' : ''}`, style: `--i:${s.rank - 1}` }, [
+          el('span', { class: 'rk', text: `${s.rank}.` }),
+          heroImg(s.p),
+          el('span', { class: 'nm', text: s.p.name }),
+          el('span', { class: `mv${s.move > 0 ? ' climb' : s.move < 0 ? ' drop' : ''}`, text: s.move > 0 ? `▲${s.move}` : s.move < 0 ? `▼${-s.move}` : '' }),
+          el('span', { class: 'gn', text: s.gain ? `+${s.gain}` : '' }),
+          el('span', { class: 'sc', text: s.p.score }),
+        ]));
+      }
+      over.append(el('div', { class: 'o1', text: `STANDINGS · TURN ${D.turn} OF ${D.turns}` }), list);
+      while (list.children.length > 3 && over.scrollHeight > over.clientHeight) list.lastChild.remove();
     } else if (D.phase === 'reveal') {
       over.className = 'ds-over reveal';
       const got = D.guessed.length;
@@ -257,11 +273,12 @@
       const line = D.why === 'left' ? `${by} left the battle`
         : got === 0 ? 'Nobody got it!'
           : `${got === D.guessers && got > 0 ? 'Everyone' : `${got} of ${Math.max(got, D.guessers)}`} got it · ${by} +${D.drawerPts} for the drawing`;
-      over.append(el('div', { class: 'o1', text: 'THE WORD WAS' }), el('div', { class: 'o2', text: (D.word || '?').toUpperCase() }), el('div', { class: 'o3', text: line }));
+      over.append(el('div', { class: 'o1', text: characters() ? 'IT WAS' : 'THE WORD WAS' }), el('div', { class: 'o2', text: (D.word || '?').toUpperCase() }), el('div', { class: 'o3', text: line }));
     }
     renderDrawPlayers();
   }
   const roundLabelDraw = () => (rounds.length === 1 ? 'ONE ROUND' : `ROUND ${state.round + 1} OF ${rounds.length}`);
+  const characters = () => options.drawSet === 'characters';
 
   function renderDrawPlayers() {
     if (mode !== 'draw') return;
@@ -625,6 +642,7 @@
       if (draw.phase === 'draw') Sfx.play('go');
       if (draw.phase === 'reveal') Sfx.play(draw.guessed.length ? 'reveal' : 'miss');
     }
+    if (draw && prevDraw && prevDraw.turn === draw.turn && draw.standings && !prevDraw.standings) Sfx.play('join');
     if (draw && draw.phase === 'choose' && (!prevDraw || prevDraw.turn !== draw.turn)) Sfx.play('beep');
     teams = s.teams || null;
     winner = s.winner ?? null;
@@ -664,11 +682,13 @@
     if (r && drawOn) {
       // Turns, not monsters: the HUD names the round and whose turn it is (tick() keeps the line fresh).
       arena.setTheme('slime');
-      $('#hudRound').textContent = `DRAW BATTLE · ${roundLabelDraw()}`;
+      $('#hudRound').textContent = `${characters() ? 'CHARACTER EDITION' : 'DRAW BATTLE'} · ${roundLabelDraw()}`;
       $('#bRound').textContent = 'DRAW BATTLE';
-      $('#bDiff').textContent = 'DRAW!';
+      $('#bDiff').textContent = characters() ? 'CHARACTER EDITION' : 'DRAW!';
       $('#bDiff').className = 'b-diff d-medium';
-      $('#bTitle').textContent = `Take turns drawing on your phone. Everyone else guesses! ${Math.round((r.time || 80000) / 1000)} seconds a drawing.`;
+      $('#bTitle').textContent = characters()
+        ? `Draw famous characters from cartoons, anime, Disney, Pixar and DreamWorks. Everyone else guesses! ${Math.round((r.time || 80000) / 1000)} seconds a drawing.`
+        : `Take turns drawing on your phone. Everyone else guesses! ${Math.round((r.time || 80000) / 1000)} seconds a drawing.`;
       renderDraw();
     } else if (r && mode === 'royale') {
       // No rounds: the stage changes as the battle goes on (the line under it counts down in tick()).
@@ -745,14 +765,14 @@
       // Every hero draws once a round: about how long the game runs with this many heroes.
       const secs = Math.round((rounds[0]?.time || 80000) / 1000);
       const turns = rounds.length * Math.max(2, players.length);
-      const mins = Math.max(1, Math.round((turns * (secs * 0.8 + 16)) / 60));
+      const mins = Math.max(1, Math.round((turns * (secs * 0.8 + 20)) / 60));
       box.append(el('div', { class: 'round-chip medium' }, [
         rounds.length === 1 ? 'ONE ROUND · EVERYONE DRAWS ONCE' : `${rounds.length} ROUNDS · EVERYONE DRAWS ${rounds.length} TIMES`,
         el('small', { text: `${secs} seconds a drawing · ${turns} turns${players.length >= 2 ? '' : ' with 2 heroes'} · about ${mins} min` }),
       ]));
-      box.append(el('div', { class: 'round-chip easy' }, [
-        'PICK A WORD: EASY · MEDIUM · HARD', el('small', { text: '100 · 150 · 200 points: faster guesses score more' }),
-      ]));
+      box.append(el('div', { class: 'round-chip easy' }, characters()
+        ? ['CHARACTER EDITION', el('small', { text: 'Cartoons, anime, Disney, Pixar, DreamWorks · 100 · 150 · 200 points' })]
+        : ['PICK A WORD: EASY · MEDIUM · HARD', el('small', { text: '100 · 150 · 200 points: faster guesses score more' })]));
       return;
     }
     if (mode === 'royale') {
@@ -821,6 +841,8 @@
     for (const b of document.querySelectorAll('.opt[data-opt]')) b.classList.toggle('on', Boolean(options[b.dataset.opt]));
     for (const b of document.querySelectorAll('[data-length]')) b.classList.toggle('on', b.dataset.length === (options.length || 'full'));
     for (const b of document.querySelectorAll('[data-level]')) b.classList.toggle('on', b.dataset.level === (options.level || 'normal'));
+    for (const b of document.querySelectorAll('[data-set]')) b.classList.toggle('on', b.dataset.set === (options.drawSet || 'classic'));
+    show('#segSet', mode === 'draw');
     const bossBtn = $('.opt[data-opt="boss"]');
     const noBoss = mode === 'teams' ? 'The boss finale is for free for all; a team battle is its own fight.'
       : mode === 'royale' ? 'A battle royale has no boss: the monsters just keep getting tougher.'
@@ -872,6 +894,7 @@
   }
   for (const b of document.querySelectorAll('[data-length]')) b.onclick = () => setOptions({ length: b.dataset.length });
   for (const b of document.querySelectorAll('[data-level]')) b.onclick = () => setOptions({ level: b.dataset.level });
+  for (const b of document.querySelectorAll('[data-set]')) b.onclick = () => setOptions({ drawSet: b.dataset.set });
 
   // Same rules as the server: letters only, 3 to 13 long, no repeats.
   const cleanWords = (text) => [...new Set(String(text).toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3 && w.length <= 13))];
@@ -1108,7 +1131,7 @@
     $('#timeFill').style.width = `${D && D.span ? Math.min(100, (100 * left) / D.span) : 100}%`;
     $('#timeFill').classList.toggle('low', Boolean(D && D.phase === 'draw' && left < 10000));
     $('#timeText').textContent = D ? clock(left) : '';
-    $('#hudRound').textContent = `DRAW BATTLE · ${roundLabelDraw()}`;
+    $('#hudRound').textContent = `${characters() ? 'CHARACTER EDITION' : 'DRAW BATTLE'} · ${roundLabelDraw()}`;
     if (!D) {
       $('#hudTitle').textContent = 'Get your phones ready!';
     } else {

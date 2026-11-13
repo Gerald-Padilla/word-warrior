@@ -10,6 +10,7 @@ const { Server } = require('socket.io');
 const QRCode = require('qrcode');
 const WORDS = require('./words');
 const DRAW_WORDS = require('./draw-words');
+const DRAW_CHARACTERS = require('./draw-characters');
 
 const PORT = Number(process.env.PORT) || 3000;
 // Render sets RENDER and RENDER_EXTERNAL_URL; there the only address phones can reach is the public one.
@@ -95,11 +96,14 @@ const ROYALE_BOARD_MS = 250; // how often changed HP and scores go out to every 
 // Draw battle: heroes take turns drawing a word on their phone while everyone else guesses it. The drawer
 // picks one of three words (easy, medium, hard: harder ones are worth more). Guessers score more the
 // sooner they get it, the first three get a bonus on top, and the drawer scores for every hero who gets it.
-// No streaks, perks, skills or special words here.
+// No streaks, perks, skills or special words here. The host picks the words: everyday things, or the
+// character edition (famous cartoon, anime, Disney, Pixar and DreamWorks characters).
+const DRAW_SETS = { classic: DRAW_WORDS, characters: DRAW_CHARACTERS };
 const DRAW_ROUNDS = { full: 2, one: 1 }; // how many times every hero draws, by game length
 const DRAW_TIME = { easy: 100000, normal: 80000, hard: 60000 }; // drawing time per turn, by difficulty
 const DRAW_CHOOSE_MS = 12000; // the drawer picks a word (or gets the medium one)
-const DRAW_REVEAL_MS = 6000; // the word, and who got it
+const DRAW_REVEAL_MS = 4500; // the word, and who got it
+const DRAW_STANDINGS_MS = 5000; // then everyone's scores, before the next turn (not after the last: the results follow)
 const DRAW_ALL_IN_MS = 1500; // everyone guessed it: a moment to see that before the reveal
 const DRAW_GONE_MS = 6000; // a drawer who drops out this long loses the turn
 const DRAW_POINTS = { easy: 100, medium: 150, hard: 200 }; // what a word is worth
@@ -173,7 +177,7 @@ const CLUTCH_PROGRESS = 0.85; // a word typed past this far down counts as a clu
 const OPTION_KEYS = ['streaks', 'specials', 'boss', 'perks', 'skills', 'awards', 'emotes', 'chat'];
 const DEFAULT_OPTIONS = {
   streaks: true, specials: true, boss: true, perks: true, skills: true, awards: true, emotes: true, chat: true, onlyMine: false,
-  length: 'full', level: 'normal',
+  length: 'full', level: 'normal', drawSet: 'classic',
 };
 const MY_WORDS_MAX = 300; // custom words the host can add
 const MY_WORDS_MIN = 6; // "only my words" needs at least this many for a round, or the built-in words fill in
@@ -464,7 +468,7 @@ function roundsFor(room) {
   // Draw battle: a round is everyone drawing once.
   if (room.mode === 'draw') {
     return Array.from({ length: DRAW_ROUNDS[o.length] || DRAW_ROUNDS.full }, (_, i) => ({
-      key: 'draw', name: `ROUND ${i + 1}`, title: 'Draw Battle', monster: 'slime', duration: 0, multiplier: 1, time: DRAW_TIME[o.level] || DRAW_TIME.normal,
+      key: 'draw', name: `ROUND ${i + 1}`, title: o.drawSet === 'characters' ? 'Character Edition' : 'Draw Battle', monster: 'slime', duration: 0, multiplier: 1, time: DRAW_TIME[o.level] || DRAW_TIME.normal,
     }));
   }
   if (room.mode === 'royale') {
@@ -496,7 +500,7 @@ const royaleOf = (room) => {
 function publicOptions(room) {
   const o = room.options;
   return { ...Object.fromEntries(OPTION_KEYS.map((k) => [k, o[k]])), onlyMine: o.onlyMine, wordCount: o.words.length,
-    length: o.length, level: o.level };
+    length: o.length, level: o.level, drawSet: o.drawSet };
 }
 
 // Everything about the room's phase that clients redraw from; the snapshot adds what a newcomer needs.
@@ -1319,15 +1323,16 @@ function nearMiss(g, w) {
   return false;
 }
 
-// Built-in words for that difficulty plus the host's own words that fit it ("only my words": just theirs,
-// when they have a few).
+// Built-in words (or characters) for that difficulty plus the host's own words that fit it ("only my
+// words": just theirs, when they have a few).
 function drawPool(room, level) {
   const mine = room.options.words.filter((w) => FITS[level](w.length));
   if (room.options.onlyMine && mine.length >= 3) return mine;
-  return DRAW_WORDS[level].concat(mine);
+  return (DRAW_SETS[room.options.drawSet] || DRAW_WORDS)[level].concat(mine);
 }
 
-// One word from each difficulty, none used earlier in the game.
+// One word from each difficulty, none used earlier in the game. `also`: other names that count as right
+// (a character's first name, say); kept on the server.
 function drawChoices(room) {
   const D = room.draw;
   return ['easy', 'medium', 'hard'].map((level) => {
@@ -1336,9 +1341,10 @@ function drawChoices(room) {
       for (const w of drawPool(room, level)) D.used.delete(w);
       pool = drawPool(room, level).filter((w) => !D.used.has(w));
     }
-    const text = pool[Math.floor(Math.random() * pool.length)];
-    D.used.add(text);
-    return { text, level, points: DRAW_POINTS[level] };
+    const entry = pool[Math.floor(Math.random() * pool.length)];
+    D.used.add(entry);
+    const [text, ...also] = entry.split('|');
+    return { text, level, points: DRAW_POINTS[level], also };
   });
 }
 
@@ -1358,7 +1364,7 @@ function drawOf(room) {
     level: D.phase === 'choose' ? null : D.level, points: D.phase === 'choose' ? 0 : DRAW_POINTS[D.level] || 0,
     hint: D.phase === 'draw' ? D.hint.join('') : null, word: D.phase === 'reveal' ? D.word : null,
     guessed: [...D.guessed].map(([id, g]) => ({ id, points: g.points, order: g.order })),
-    guessers: D.guessers, drawerPts: D.drawerPts, why: D.why,
+    guessers: D.guessers, drawerPts: D.drawerPts, why: D.why, standings: D.phase === 'reveal' && D.standings,
   };
 }
 
@@ -1366,7 +1372,7 @@ function drawOf(room) {
 function drawSecret(room, player) {
   const D = room.draw;
   if (!D || room.state !== 'playing') return null;
-  if (D.phase === 'choose' && player.id === D.drawer) return { choices: D.choices };
+  if (D.phase === 'choose' && player.id === D.drawer) return { choices: D.choices.map(({ text, level, points }) => ({ text, level, points })) };
   if (D.phase === 'draw' && (player.id === D.drawer || D.guessed.has(player.id))) return { word: D.word };
   return null;
 }
@@ -1385,7 +1391,7 @@ function beginDraw(room, now) {
   room.draw = {
     order, queue: order.slice(), turn: 0, drawer: null, phase: 'choose', endsAt: 0, span: 0, choices: [], word: null, level: null,
     hint: [], reveals: [], guessed: new Map(), guessers: 0, drawerPts: 0, strokes: [], ink: 0, feed: [], used: new Set(),
-    start: 0, allInAt: 0, goneSince: 0, why: null,
+    start: 0, allInAt: 0, goneSince: 0, why: null, accept: [], parts: [], boardAt: 0, standings: false,
   };
   clearTimeout(room.timer);
   room.state = 'playing';
@@ -1412,6 +1418,7 @@ function startDrawTurn(room, p, now) {
   Object.assign(D, {
     turn: D.turn + 1, drawer: p.id, phase: 'choose', endsAt: now + DRAW_CHOOSE_MS, span: DRAW_CHOOSE_MS, word: null, level: null,
     hint: [], reveals: [], guessed: new Map(), guessers: 0, drawerPts: 0, strokes: [], ink: 0, feed: [], allInAt: 0, goneSince: 0, why: null,
+    accept: [], parts: [], boardAt: 0, standings: false,
   });
   D.choices = drawChoices(room);
   room.phaseEndsAt = D.endsAt;
@@ -1420,16 +1427,20 @@ function startDrawTurn(room, p, now) {
 }
 
 // The drawer's word (the medium one if they let the clock run out). Longer words get more letters
-// filled in as the time runs down.
+// filled in as the time runs down. The blanks hide letters only: spaces, dashes and digits show.
+// accept: the word and its other names, squashed, any of which is right; parts: the words in a longer
+// name ("simpson"), which tell a guesser they're close.
 function pickDrawWord(room, i, now) {
   const D = room.draw;
   const c = D.choices[i] || D.choices[1];
   const total = room.rounds[room.round].time;
   const letters = squash(c.text).length;
   const n = letters <= 3 ? 0 : letters <= 5 ? 1 : letters <= 8 ? 2 : 3;
+  const accept = [...new Set([c.text, ...(c.also || [])].map(squash).filter(Boolean))];
   Object.assign(D, {
     phase: 'draw', word: c.text, level: c.level, start: now, span: total, endsAt: now + total,
-    hint: [...c.text].map((ch) => (ch === ' ' ? ' ' : '_')),
+    accept, parts: c.text.split(/[^a-z]+/).filter((w) => w.length >= 4 && !accept.includes(w)),
+    hint: [...c.text].map((ch) => (/[a-z]/.test(ch) ? '_' : ch)),
     reveals: Array.from({ length: n }, (_, k) => now + Math.round(total * (n === 1 ? 0.6 : 0.4 + (0.4 * k) / (n - 1)))),
     guessers: [...room.players.values()].filter((pl) => pl.connected && pl.id !== D.drawer).length,
   });
@@ -1448,9 +1459,13 @@ function revealLetter(room) {
 }
 
 // why: 'time', 'all' (everyone got it), 'left' (the drawer dropped out) or 'skip' (the host).
+// The word first, then (unless the results come next) everyone's scores.
 function endDrawTurn(room, why, now) {
   const D = room.draw;
-  Object.assign(D, { phase: 'reveal', why, endsAt: now + DRAW_REVEAL_MS, span: DRAW_REVEAL_MS, allInAt: 0, reveals: [] });
+  const last = room.round >= room.rounds.length - 1 && !D.queue.some((id) => room.players.get(id)?.connected);
+  const span = DRAW_REVEAL_MS + (last ? 0 : DRAW_STANDINGS_MS);
+  Object.assign(D, { phase: 'reveal', why, endsAt: now + span, span, allInAt: 0, reveals: [], standings: false,
+    boardAt: last ? 0 : now + DRAW_REVEAL_MS });
   room.phaseEndsAt = D.endsAt;
   broadcastState(room);
 }
@@ -1490,6 +1505,10 @@ function drawTick(room, now) {
     if (D.allInAt && now >= D.allInAt) endDrawTurn(room, 'all', now);
     else if (now >= D.endsAt) endDrawTurn(room, 'time', now);
   } else if (D.phase === 'reveal' && now >= D.endsAt) nextDrawTurn(room, now);
+  else if (D.phase === 'reveal' && D.boardAt && !D.standings && now >= D.boardAt) {
+    D.standings = true;
+    broadcastState(room);
+  }
 }
 
 // A right guess: more points the sooner it comes, plus a bonus for the first three. The drawer's share
@@ -1770,6 +1789,7 @@ io.on('connection', (socket) => {
     if (typeof data?.onlyMine === 'boolean') room.options.onlyMine = data.onlyMine;
     if (LENGTHS.includes(data?.length)) room.options.length = data.length;
     if (LEVEL_KEYS.includes(data?.level)) room.options.level = data.level;
+    if (Object.keys(DRAW_SETS).includes(data?.drawSet)) room.options.drawSet = data.drawSet;
     if (typeof data?.words === 'string') room.options.words = cleanWords(data.words);
     room.rounds = roundsFor(room);
     broadcastState(room);
@@ -2075,11 +2095,12 @@ io.on('connection', (socket) => {
     const now = Date.now();
     if (now - (player.lastGuess || 0) < DRAW_GUESS_GAP_MS) return reply(cb, { ok: false, reason: 'slow' });
     player.lastGuess = now;
-    const w = squash(D.word);
+    // Any of its names is right; one with something around it, or a slip away, gives it away.
+    const givesAway = D.accept.some((w) => (w.length >= 3 && g.includes(w)) || nearMiss(g, w));
     const done = D.guessed.has(player.id);
-    if (done && (g.includes(w) || nearMiss(g, w))) return reply(cb, { ok: false, reason: 'answer' });
-    if (!done && g === w) return reply(cb, guessedIt(room, player, now));
-    if (!done && (g.includes(w) || nearMiss(g, w))) return reply(cb, { ok: true, close: true });
+    if (done && givesAway) return reply(cb, { ok: false, reason: 'answer' });
+    if (!done && D.accept.includes(g)) return reply(cb, guessedIt(room, player, now));
+    if (!done && (givesAway || D.parts.includes(g))) return reply(cb, { ok: true, close: true });
     const msg = { id: shortId(), by: player.id, name: player.name, color: player.color, text, done };
     D.feed = D.feed.concat(msg).slice(-DRAW_FEED);
     io.to(channel(room)).emit('draw:say', msg);

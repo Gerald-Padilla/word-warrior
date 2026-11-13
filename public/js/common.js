@@ -48,6 +48,21 @@
     return [...players].sort((a, b) => placeKey(a) - placeKey(b) || b.score - a.score || b.kills - a.kills || a.name.localeCompare(b.name));
   }
 
+  // Draw battle: the standings after a turn, with what each hero scored in it (guessing, or the drawer's
+  // share) and how many places they climbed (or dropped). Places count ties as equal, and while everyone
+  // was still level (the first turn) nobody had a place to move from.
+  function drawStandings(players, D) {
+    const got = new Map((D ? D.guessed : []).map((g) => [g.id, g.points]));
+    const gain = (p) => (got.get(p.id) || 0) + (D && p.id === D.drawer ? D.drawerPts : 0);
+    const before = players.map((p) => p.score - gain(p));
+    const after = players.map((p) => p.score);
+    const place = (score, all) => 1 + all.filter((s) => s > score).length;
+    const level = before.every((s) => s === before[0]);
+    return rankPlayers(players).map((p, i) => ({
+      p, rank: i + 1, gain: gain(p), move: level ? 0 : place(p.score - gain(p), before) - place(p.score, after),
+    }));
+  }
+
   // Team battle sides, by the team index the server uses.
   const TEAMS = [
     { name: 'RED DRAGONS', short: 'RED', color: '#ff5a4d', dark: '#8a2118' },
@@ -287,5 +302,5 @@
   // Emotes players can send from their phones.
   const EMOTES = ['👍', '😂', '😮', '🔥', '👏', '😭'];
 
-  window.WW = { $, el, syncClock, watchBuild, rankPlayers, TEAMS, Sfx, Music, EMOTES };
+  window.WW = { $, el, syncClock, watchBuild, rankPlayers, drawStandings, TEAMS, Sfx, Music, EMOTES };
 })();

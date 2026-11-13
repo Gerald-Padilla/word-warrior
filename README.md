@@ -189,6 +189,9 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
   - The drawer earns points for every hero who guesses, up to the word's full points if everyone gets it.
 - The turn ends when time runs out or everyone has guessed. The reveal then shows the word, who got it and the
   drawer's points.
+- **Standings after every turn.** After the reveal, the big screen and every phone show the standings for 5
+  seconds: each hero's total, what they scored that turn and how many places they climbed or dropped. Phones
+  always keep your own row in view. After the last turn the results come straight away instead.
 - **Turn changes.**
   - A hero who joins mid-game can guess right away and draws at the end of the round.
   - A drawer who disconnects for 6 seconds loses the turn.
@@ -197,8 +200,17 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
 - Streaks, special words, the boss, class perks and skills are off in this mode (greyed out in the lobby).
 - **Awards:** Master Artist (most drawing points), Eagle Eye (most words guessed), First! (most first guesses)
   and Quick Eye (fastest correct guess).
-- The words are things you can draw, with a few local and office favorites (jeepney, karaoke, halo halo,
-  deadline, payday). The host's own words (**MY WORDS**) are added to the choices, sorted by length.
+- **WORDS** (in the lobby, under the difficulty) picks what gets drawn:
+  - **EVERYDAY THINGS:** things you can draw, with a few local and office favorites (jeepney, karaoke, halo
+    halo, deadline, payday).
+  - **CHARACTER EDITION:** famous characters from cartoons, anime, Disney, Pixar and DreamWorks (Mickey Mouse,
+    Pikachu, SpongeBob, Doraemon, Buzz Lightyear, Shrek, Goku, Voltes V and about 200 more). Easy ones are
+    the most famous and simplest to draw.
+    - Well-known short names count too: "buzz" for Buzz Lightyear, "pooh" for Winnie the Pooh.
+    - Typing part of a longer name ("simpson" for Bart Simpson) shows "SO CLOSE!".
+    - The blanks show any dashes and digits ("____-_" for WALL-E, "___ 10" for Ben 10). Guesses ignore them,
+      so "walle" counts.
+  - The host's own words (**MY WORDS**) are added to either set, sorted by length.
 - Draw battle scores aren't recorded in the Hall of Fame.
 
 ## PC, tablet and phone
@@ -350,14 +362,15 @@ npm run bots -- ABCD 6
 
 (`ABCD` is the room code shown on the host screen; `6` is how many bots. Bots never appear in the Hall of Fame.)
 Each bot types one word at a time at its own speed, so in a battle royale the slower bots get knocked out first.
-In a draw battle, bots scribble on their turn and guess words from the list that fit the blanks.
+In a draw battle, bots scribble on their turn and guess words (or characters) from the lists that fit the blanks.
 
 ## Tuning
 
 Battle royale has its own block (`ROYALE_HP`, `ROYALE_STAGES` with when each stage starts and how hard its
 hits are, `ROYALE_RAMP_MS` / `ROYALE_RAMP` for the speed-ups). So does draw battle: `DRAW_ROUNDS`,
-`DRAW_TIME`, `DRAW_POINTS`, `DRAW_ORDER_BONUS`, how long picking and the reveal take, and the guess limits.
-Its words are in `draw-words.js`, and the drawing colors and brush sizes in `public/js/sketch.js`. Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
+`DRAW_TIME`, `DRAW_POINTS`, `DRAW_ORDER_BONUS`, how long picking, the reveal and the standings take, and the
+guess limits. Its words are in `draw-words.js` and its characters in `draw-characters.js` (other accepted names
+go after a `|`, as in `'buzz lightyear|buzz'`), and the drawing colors and brush sizes in `public/js/sketch.js`. Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
 `ROUNDS` table at the top of `server.js`, and what each difficulty does to them is the `LEVELS` table below it,
 next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings sit there too:
 `TEAM_HP`, how often power-ups appear and how long their effects last. The game options have their own settings: the boss round (`BOSS_ROUND`, `BOSS_HP`, bonuses),
@@ -372,6 +385,7 @@ The music tracks are the `TRACKS` table in `public/js/common.js`.
 - `data/highscores.json`: saved Hall of Fame (created after the first finished game)
 - `words.js`: easy / medium / hard word pools
 - `draw-words.js`: draw battle words (easy / medium / hard)
+- `draw-characters.js`: draw battle character edition (easy / medium / hard, with other accepted names)
 - `public/js/sketch.js`: draw battle board, shared by the big screen and phones
 - `public/host.html`, `public/js/host.js`: big screen (QR lobby, battlefield, leaderboard, podium)
 - `public/play.html`, `public/js/play.js`: phone (hero creator, lobby, solo, typing, results, Hall of Fame)

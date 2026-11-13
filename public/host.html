@@ -53,6 +53,8 @@
     .seg button.on { background: var(--gold); color: var(--ink); }
     .seg button[data-level="easy"].on { background: #8be36b; }
     .seg button[data-level="hard"].on { background: #ff7b4a; }
+    .seg button[data-set="characters"].on { background: #7fd4ff; }
+    #segSet { grid-column: 1 / -1; }
     .seg.na { opacity: 0.4; }
     .opt.na { opacity: 0.45; }
     /* Game options: on/off switches the host flips before a game */
@@ -185,6 +187,16 @@
     .ds-over .o1 { font-size: 12px; color: var(--muted); }
     .ds-over .o2 { font-size: clamp(22px, 2.6vw, 40px); color: var(--gold); text-shadow: 4px 4px 0 var(--ink); }
     .ds-over .o3 { font-size: 11px; color: var(--cream); line-height: 1.8; }
+    /* Between turns: the standings over the board */
+    .ds-over.standings { justify-content: flex-start; gap: 10px; padding: 18px 22px; overflow: hidden; background: rgba(27, 20, 38, 0.95); }
+    .ds-stand { display: flex; flex-direction: column; gap: 5px; width: min(100%, 580px); }
+    .ds-stand .row { grid-template-columns: 30px 34px minmax(0, 1fr) 44px 64px 72px; font-size: 11px; text-align: left; animation: chat-in 0.4s steps(3) both; animation-delay: calc(var(--i, 0) * 70ms); }
+    .ds-stand .row img { width: 34px; height: 34px; animation: none; }
+    .ds-stand .row.up { background: rgba(91, 212, 106, 0.18); }
+    .ds-stand .mv { font-size: 12px; }
+    .ds-stand .mv.climb { color: #8be36b; } .ds-stand .mv.drop { color: var(--red); }
+    .ds-stand .gn { color: #8be36b; text-align: right; }
+    .ds-stand .sc { text-align: right; }
     .ds-feed { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
     .ds-feed .m { font-size: 10px; line-height: 1.6; word-break: break-word; }
     .ds-feed .m b { font-weight: normal; margin-right: 6px; }
@@ -356,6 +368,11 @@
       .ds-over .o1 { font-size: 8px; }
       .ds-over .o2 { font-size: 16px; }
       .ds-over .o3 { font-size: 8px; }
+      .ds-over.standings { padding: 10px; gap: 6px; }
+      .ds-stand { gap: 3px; }
+      .ds-stand .row { grid-template-columns: 18px 22px minmax(0, 1fr) 28px 40px 48px; gap: 5px; padding: 2px 5px; font-size: 8px; }
+      .ds-stand .row img { width: 22px; height: 22px; }
+      .ds-stand .mv { font-size: 9px; }
       .ds-side { padding: 8px 6px; gap: 6px; }
       .ds-side h3 { font-size: 9px; }
       .ds-feed .m { font-size: 8px; }
@@ -513,6 +530,11 @@
             <button type="button" data-level="easy">EASY</button>
             <button type="button" data-level="normal">NORMAL</button>
             <button type="button" data-level="hard">HARD</button>
+          </div>
+          <div class="seg hidden" id="segSet" title="Everyday things, or famous characters from cartoons, anime, Disney, Pixar and DreamWorks">
+            <span>WORDS</span>
+            <button type="button" data-set="classic">EVERYDAY THINGS</button>
+            <button type="button" data-set="characters">CHARACTER EDITION</button>
           </div>
         </div>
         <div class="rounds" id="roundChips"></div>
