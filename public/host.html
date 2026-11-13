@@ -93,7 +93,7 @@
     @keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
     .start-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
     .hint { font-size: 10px; color: var(--muted); margin: 0; }
-    .mode-pick { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    .mode-pick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
     .mode-btn { font: inherit; font-size: 12px; padding: 12px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); line-height: 1.7; }
     .mode-btn small { display: block; font-size: 8px; }
     .mode-btn.on { background: var(--gold); color: var(--ink); }
@@ -157,6 +157,40 @@
     .row.hurt { animation: hurt 0.4s steps(2); }
     @keyframes hurt { 0%, 100% { background: rgba(27, 20, 38, 0.55); } 50% { background: rgba(232, 55, 28, 0.55); } }
     #board .left { margin: -6px 0 10px; font-size: 8px; color: var(--muted); text-align: center; }
+
+    /* Draw battle: the scores, the drawing with the word's blanks above it, and the guesses */
+    #drawStage { display: grid; grid-template-columns: 270px minmax(0, 1fr) 300px; gap: 16px; padding: 0 16px 16px; }
+    .ds-side { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 12px 10px; background: rgba(45, 35, 66, 0.92); }
+    .ds-side h3 { margin: 0; font-size: 11px; color: var(--gold); text-align: center; }
+    .ds-list { display: flex; flex-direction: column; gap: 5px; min-height: 0; overflow: hidden; }
+    .ds-list .row { grid-template-columns: 24px 30px 1fr auto; font-size: 9px; }
+    .ds-list .row img { width: 30px; height: 30px; }
+    .ds-list .row .nm small { display: block; margin-top: 5px; font-size: 7px; color: var(--muted); }
+    .ds-list .row.drawer { box-shadow: inset 0 0 0 2px var(--gold); }
+    .ds-list .row.drawer .nm small { color: var(--gold); }
+    .ds-list .row.got { background: rgba(91, 212, 106, 0.28); }
+    .ds-list .row.got .nm small { color: #8be36b; }
+    .ds-mid { display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 0; }
+    .ds-word { display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 52px; padding: 8px 18px; background: rgba(27, 20, 38, 0.92); box-shadow: 0 0 0 3px var(--ink); max-width: 100%; }
+    #dsHint { font-size: clamp(20px, 2.4vw, 34px); letter-spacing: 0.35em; color: var(--cream); white-space: pre; }
+    #dsHint.word { color: var(--gold); letter-spacing: 0.1em; }
+    #dsHint.note { font-size: clamp(12px, 1.2vw, 16px); letter-spacing: 0; color: var(--muted); }
+    .ds-tag { font-size: 9px; padding: 5px 7px; background: var(--ink); color: var(--muted); white-space: nowrap; }
+    .ds-tag.easy { color: #8be36b; } .ds-tag.medium { color: #b99cff; } .ds-tag.hard { color: #ff7b4a; }
+    .ds-board { position: relative; aspect-ratio: 4 / 3; width: min(100%, calc((100vh - var(--ds-top, 120px) - 100px) * 4 / 3)); box-shadow: 0 0 0 6px var(--ink), 0 0 0 10px var(--gold-dark); background: #fff; }
+    .ds-board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .ds-over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 20px; background: rgba(27, 20, 38, 0.86); }
+    .ds-over.reveal { inset: auto 0 0 0; padding: 16px 20px 18px; background: rgba(27, 20, 38, 0.9); }
+    .ds-over img { width: 120px; height: 120px; animation: hop 0.9s steps(4) infinite; }
+    .ds-over .o1 { font-size: 12px; color: var(--muted); }
+    .ds-over .o2 { font-size: clamp(22px, 2.6vw, 40px); color: var(--gold); text-shadow: 4px 4px 0 var(--ink); }
+    .ds-over .o3 { font-size: 11px; color: var(--cream); line-height: 1.8; }
+    .ds-feed { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+    .ds-feed .m { font-size: 10px; line-height: 1.6; word-break: break-word; }
+    .ds-feed .m b { font-weight: normal; margin-right: 6px; }
+    .ds-feed .m.got { color: #8be36b; background: rgba(91, 212, 106, 0.15); padding: 3px 5px; }
+    .ds-feed .m.new { animation: chat-in 0.4s steps(3); }
+    .ds-empty { font-size: 8px; color: var(--muted); line-height: 1.8; text-align: center; padding: 16px 4px; }
 
     /* Round banner / countdown */
     #banner { flex-direction: column; text-align: center; gap: 18px; }
@@ -282,6 +316,24 @@
     <ol id="boardList"></ol>
   </aside>
 
+  <section id="drawStage" class="overlay hidden">
+    <aside class="ds-side px-box">
+      <h3>SCORES</h3>
+      <div class="ds-list" id="dsPlayers"></div>
+    </aside>
+    <div class="ds-mid">
+      <div class="ds-word"><span class="ds-tag hidden" id="dsLevel"></span><span id="dsHint"></span><span class="ds-tag hidden" id="dsLen"></span></div>
+      <div class="ds-board">
+        <canvas id="dsCanvas"></canvas>
+        <div class="ds-over hidden" id="dsOver"></div>
+      </div>
+    </div>
+    <aside class="ds-side px-box">
+      <h3>GUESSES</h3>
+      <div class="ds-feed" id="dsFeed"></div>
+    </aside>
+  </section>
+
   <section id="lobby" class="overlay">
     <div class="lobby-card px-box">
       <div class="lobby-left">
@@ -298,6 +350,7 @@
           <button class="mode-btn on" type="button" data-mode="ffa">FREE FOR ALL<small>First to type a word scores it</small></button>
           <button class="mode-btn" type="button" data-mode="teams">TEAM BATTLE<small>Red vs Blue: attack, block, grab power-ups</small></button>
           <button class="mode-btn" type="button" data-mode="royale">BATTLE ROYALE<small>Own monsters, 100 HP: last hero standing wins</small></button>
+          <button class="mode-btn" type="button" data-mode="draw">DRAW BATTLE<small>Take turns drawing on your phone; everyone guesses</small></button>
         </div>
         <h2>HEROES IN THE TAVERN: <span id="count">0</span></h2>
         <div class="lobby-mid" id="lobbyMid">
@@ -426,6 +479,7 @@
   <script src="/js/common.js"></script>
   <script src="/js/art.js"></script>
   <script src="/js/arena.js"></script>
+  <script src="/js/sketch.js"></script>
   <script src="/js/host.js"></script>
 </body>
 </html>

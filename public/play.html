@@ -249,6 +249,51 @@
     .msg h2 { font-size: 16px; color: var(--gold); margin: 0; }
     .msg p { font-size: 10px; color: var(--muted); line-height: 1.9; }
 
+    /* Draw battle: the word (or its blanks), the board, then the drawer's tools or the guesses and a box to
+       guess in. */
+    #scrDraw { padding: 0; gap: 0; overflow: hidden; }
+    .d-word { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 6px 10px; background: rgba(27, 20, 38, 0.9); text-align: center; }
+    #dHint { font-size: 16px; letter-spacing: 0.3em; white-space: pre; color: var(--cream); }
+    #dHint.mine { color: var(--gold); letter-spacing: 0.08em; }
+    #dHint.note { font-size: 10px; letter-spacing: 0; line-height: 1.6; white-space: normal; }
+    .d-tag { font-size: 7px; padding: 4px 5px; background: var(--ink); color: var(--muted); white-space: nowrap; }
+    .d-tag.easy { color: #8be36b; } .d-tag.medium { color: #b99cff; } .d-tag.hard { color: #ff7b4a; }
+    .d-board { position: relative; width: 100%; aspect-ratio: 4 / 3; flex: none; background: #fff; box-shadow: 0 3px 0 var(--ink); }
+    .d-board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .d-board.mine canvas { cursor: crosshair; }
+    .d-over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; text-align: center; background: rgba(27, 20, 38, 0.88); }
+    .d-over.reveal { inset: auto 0 0 0; background: rgba(27, 20, 38, 0.92); padding: 10px; gap: 6px; }
+    .d-over img { width: 64px; height: 64px; animation: hop 0.9s steps(4) infinite; }
+    .d-over .o1 { font-size: 9px; color: var(--muted); line-height: 1.6; }
+    .d-over .o2 { font-size: 18px; color: var(--gold); text-shadow: 3px 3px 0 var(--ink); line-height: 1.4; }
+    .d-over .o3 { font-size: 8px; color: var(--cream); line-height: 1.8; }
+    .d-over .o4 { font-size: 26px; color: var(--gold); text-shadow: 3px 3px 0 var(--ink); }
+    .d-picks { display: flex; flex-direction: column; gap: 8px; width: min(100%, 320px); }
+    .d-pick { font: inherit; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; padding: 12px; border: 0; cursor: pointer; background: var(--panel-2); color: var(--cream); font-size: 13px; text-align: left; box-shadow: 0 3px 0 var(--ink); }
+    .d-pick small { font-size: 7px; }
+    .d-pick.easy small { color: #8be36b; } .d-pick.medium small { color: #b99cff; } .d-pick.hard small { color: #ff7b4a; }
+    .d-pick:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+    .d-tools { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; background: var(--panel); box-shadow: 0 3px 0 var(--ink); }
+    .d-colors { display: grid; grid-template-columns: repeat(11, 1fr); gap: 4px; }
+    .d-color { aspect-ratio: 1; border: 0; padding: 0; cursor: pointer; box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25), 0 0 0 2px var(--ink); }
+    .d-color.on { box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25), 0 0 0 2px var(--ink), 0 0 0 4px var(--gold); }
+    .d-row { display: flex; gap: 6px; }
+    .d-row button { flex: 1; font: inherit; font-size: 8px; padding: 9px 4px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); }
+    .d-row button.on { background: var(--gold); color: var(--ink); }
+    .d-row .sz i { display: inline-block; background: currentColor; border-radius: 50%; vertical-align: middle; }
+    .d-feed { flex: 1; min-height: 40px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; }
+    .d-feed .m { font-size: 9px; line-height: 1.6; word-break: break-word; }
+    .d-feed .m b { font-weight: normal; margin-right: 6px; }
+    .d-feed .m.got { color: #8be36b; }
+    .d-feed .m.close { color: var(--gold); }
+    .d-feed .m.me { background: rgba(255, 210, 63, 0.1); }
+    .d-feed .empty { font-size: 8px; color: var(--muted); text-align: center; padding: 8px 0; line-height: 1.8; }
+    .d-guess { display: flex; gap: 8px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--panel); box-shadow: 0 -3px 0 var(--ink); }
+    .d-guess .px-input { flex: 1; min-width: 0; font-size: 16px; padding: 10px; }
+    .d-guess .px-btn { margin: 0; flex: none; padding: 0 14px; font-size: 11px; }
+    .d-guess.done .px-input { box-shadow: inset 0 0 0 var(--b) #8be36b; }
+    .d-guess.shake { animation: oops 0.35s steps(3); }
+
     /* Landscape: phones on their side and PC windows use the whole width. (Kept last so it wins.) */
     @media (orientation: landscape) {
       #app { max-width: none; }
@@ -281,6 +326,16 @@
       .tap-hint { bottom: 20%; }
       .steal { padding: 10px 14px; }
       .steal .s1 { font-size: 18px; }
+    }
+    /* Draw battle on its side: the board on the left as big as the height allows, everything else beside it. */
+    @media (orientation: landscape) {
+      #scrDraw { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+      #scrDraw .topbar { grid-column: 1 / -1; }
+      #scrDraw .d-board { grid-column: 1; grid-row: 2 / span 4; align-self: start; width: min(62vw, calc((var(--app-h, 100vh) - 44px) * 4 / 3)); }
+      #scrDraw .d-word { grid-column: 2; grid-row: 2; }
+      #scrDraw .d-tools { grid-column: 2; grid-row: 3; }
+      #scrDraw .d-feed { grid-column: 2; grid-row: 4; }
+      #scrDraw .d-guess { grid-column: 2; grid-row: 5; }
     }
   </style>
 </head>
@@ -440,6 +495,35 @@
       </div>
     </section>
 
+    <section id="scrDraw" class="screen hidden">
+      <div class="topbar">
+        <div class="r" id="dRound">R1 · 1/4</div>
+        <div class="t" id="dTime">0:00</div>
+        <div class="s"><b id="dScore">0</b> · <span id="dRank">#1</span></div>
+      </div>
+      <div class="d-word"><span class="d-tag hidden" id="dLevel"></span><span id="dHint"></span></div>
+      <div class="d-board" id="dBoard">
+        <canvas id="dCanvas"></canvas>
+        <div class="d-over hidden" id="dOver"></div>
+        <div class="toast" id="dToast"></div>
+      </div>
+      <div class="d-tools hidden" id="dTools">
+        <div class="d-colors" id="dColors"></div>
+        <div class="d-row" id="dSizes"></div>
+        <div class="d-row">
+          <button type="button" id="dEraser">ERASER</button>
+          <button type="button" id="dUndo">UNDO</button>
+          <button type="button" id="dClear">CLEAR</button>
+        </div>
+      </div>
+      <div class="d-feed" id="dFeed"></div>
+      <form class="d-guess hidden" id="dGuess" autocomplete="off">
+        <input id="dIn" class="px-input" maxlength="40" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+          enterkeyhint="send" placeholder="Type your guess..." aria-label="Your guess">
+        <button class="px-btn" type="submit">GUESS</button>
+      </form>
+    </section>
+
     <section id="scrFinal" class="screen final hidden">
       <h1 class="logo sm" id="fTitle">VICTORY!</h1>
       <div class="fsub hidden" id="fSub"></div>
@@ -476,6 +560,7 @@
   <script src="/js/common.js"></script>
   <script src="/js/art.js"></script>
   <script src="/js/arena.js"></script>
+  <script src="/js/sketch.js"></script>
   <script src="/js/play.js"></script>
 </body>
 </html>

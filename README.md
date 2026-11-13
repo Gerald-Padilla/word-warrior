@@ -54,7 +54,8 @@ Above the options in the lobby, the host picks two things (remembered on that co
   words are 25% longer, and one fewer fits on screen. **NORMAL**: as described above. **HARD**: words fall in 20%
   less time, arrive 20% closer together, and one more fits on screen. In a team battle it sets how long attacks
   take to fly, and in a battle royale the pace of every stage. Points per word don't change, but harder games
-  have more words to score.
+  have more words to score. In a draw battle, difficulty sets the drawing time (100, 80 or 60 seconds), and
+  **GAME** sets how many times everyone draws (twice, or once).
 
 The lobby shows the rounds the game will play, and every phone shows the host's pick in its lobby. A one-round
 team battle starts each team with HP to match that round (so a knockout is still on the cards). Solo quests
@@ -158,6 +159,45 @@ Every hero for themselves. Pick **BATTLE ROYALE** in the host lobby (one hero is
   the next stage (or the next speed-up). Battle royale scores aren't recorded in the Hall of Fame (each
   hero had different words).
 
+## Draw battle
+
+A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at least 2 heroes).
+
+- Heroes take turns drawing, in a random order that stays the same each round. Every hero draws once per
+  round: **FULL GAME** is 2 rounds, **ONE ROUND** is 1. The lobby estimates how long the game will take for
+  the number of heroes.
+- **Pick a word.** The drawer's phone offers three words: one easy (100 points), one medium (150) and one hard
+  (200). They have 12 seconds to pick; if time runs out, they get the medium one.
+- **Draw it.** The drawer draws with a finger (or mouse) on their phone, using 11 colors, 3 brush sizes, an
+  eraser, undo and clear. The drawing appears on the big screen and every phone as it's drawn. Drawing time
+  comes from the difficulty setting: 100 seconds on easy, 80 on normal and 60 on hard.
+- **Guess it.** Everyone else types guesses on their phone. The big screen and the phones show the word as
+  blanks with its letter count. A few letters fill in as time runs down: none for words of 3 letters or fewer,
+  up to three for long ones.
+  - **Wrong guesses** appear for everyone in the guess list.
+  - **Right guesses** are never shown. Everyone sees "*Name* GOT IT!" instead, and only the guesser's phone
+    shows the word.
+  - **Close guesses** (one letter off or two letters swapped, or the word with extra letters around it) are
+    shown only to the guesser, as "SO CLOSE!", so they can't give the word away.
+  - Capitals and spaces don't matter: "Ice Cream" and "icecream" both count.
+- **Points.**
+  - A right guess earns between half and all of the word's points, depending on how much time is left.
+  - The first three to guess get a bonus on top: 30%, 20% and 10% of the word's points.
+  - The drawer earns points for every hero who guesses, up to the word's full points if everyone gets it.
+- The turn ends when time runs out or everyone has guessed. The reveal then shows the word, who got it and the
+  drawer's points.
+- **Turn changes.**
+  - A hero who joins mid-game can guess right away and draws at the end of the round.
+  - A drawer who disconnects for 6 seconds loses the turn.
+  - **SKIP** on the big screen moves on: from picking it skips that drawer, from drawing it goes to the reveal,
+    and from the reveal it starts the next turn.
+- Streaks, special words, the boss, class perks and skills are off in this mode (greyed out in the lobby).
+- **Awards:** Master Artist (most drawing points), Eagle Eye (most words guessed), First! (most first guesses)
+  and Quick Eye (fastest correct guess).
+- The words are things you can draw, with a few local and office favorites (jeepney, karaoke, halo halo,
+  deadline, payday). The host's own words (**MY WORDS**) are added to the choices, sorted by length.
+- Draw battle scores aren't recorded in the Hall of Fame.
+
 ## Landscape and PC
 
 The player page works upright, sideways, and in a desktop browser. Sideways and on a PC it uses the full
@@ -232,7 +272,7 @@ Every finished game is recorded on one of three boards:
 - **Solo**: best solo quests.
 - **Daily**: today's daily quest.
 - **Battle**: best individual scores from free-for-all battles, with the place and player count of that battle
-  (team battles and battle royales aren't recorded).
+  (team battles, battle royales and draw battles aren't recorded).
 
 They're kept separate because in a battle the words are shared between everyone, so scores aren't comparable.
 Each board keeps the top 100. Ties go to whoever set the score first. Games with 0 points and test bots aren't recorded.
@@ -291,11 +331,14 @@ npm run bots -- ABCD 6
 
 (`ABCD` is the room code shown on the host screen; `6` is how many bots. Bots never appear in the Hall of Fame.)
 Each bot types one word at a time at its own speed, so in a battle royale the slower bots get knocked out first.
+In a draw battle, bots scribble on their turn and guess words from the list that fit the blanks.
 
 ## Tuning
 
 Battle royale has its own block (`ROYALE_HP`, `ROYALE_STAGES` with when each stage starts and how hard its
-hits are, `ROYALE_RAMP_MS` / `ROYALE_RAMP` for the speed-ups). Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
+hits are, `ROYALE_RAMP_MS` / `ROYALE_RAMP` for the speed-ups). So does draw battle: `DRAW_ROUNDS`,
+`DRAW_TIME`, `DRAW_POINTS`, `DRAW_ORDER_BONUS`, how long picking and the reveal take, and the guess limits.
+Its words are in `draw-words.js`, and the drawing colors and brush sizes in `public/js/sketch.js`. Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
 `ROUNDS` table at the top of `server.js`, and what each difficulty does to them is the `LEVELS` table below it,
 next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings sit there too:
 `TEAM_HP`, how often power-ups appear and how long their effects last. The game options have their own settings: the boss round (`BOSS_ROUND`, `BOSS_HP`, bonuses),
@@ -309,6 +352,8 @@ The music tracks are the `TRACKS` table in `public/js/common.js`.
 - `server.js`: Express + Socket.IO server; battle, team battle and solo rooms, rounds, word spawning, scoring, HP, Hall of Fame
 - `data/highscores.json`: saved Hall of Fame (created after the first finished game)
 - `words.js`: easy / medium / hard word pools
+- `draw-words.js`: draw battle words (easy / medium / hard)
+- `public/js/sketch.js`: draw battle board, shared by the big screen and phones
 - `public/host.html`, `public/js/host.js`: big screen (QR lobby, battlefield, leaderboard, podium)
 - `public/play.html`, `public/js/play.js`: phone (hero creator, lobby, solo, typing, results, Hall of Fame)
 - `public/js/arena.js`: shared pixel battlefield renderer (monsters, attacks, particles)

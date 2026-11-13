@@ -362,6 +362,15 @@
     setPlayers(res.snapshot.players);
     arena.setWords(res.snapshot.words);
     applyState(res.snapshot);
+    // Draw battle under way: the drawing and guesses so far, and anything only you may know.
+    if (res.snapshot.strokes) {
+      pad.set(res.snapshot.strokes);
+      const got = (res.snapshot.draw ? res.snapshot.draw.guessed : []).map((g) => ({ id: `got-${g.id}`, got: true, by: g.id, points: g.points, order: g.order }));
+      dFeed = (res.snapshot.feed || []).concat(got);
+      secret = res.snapshot.secret || null;
+      renderDrawScreen();
+      renderDFeed();
+    }
   }
 
   let switchingTo = null; // the team you asked to switch to with SWITCH TEAM
@@ -701,6 +710,7 @@
     updateTopbar();
     renderHp();
     renderRoyale();
+    renderDrawTop();
   }
 
   function renderHp() {
@@ -740,6 +750,297 @@
     });
   }
 
+  // ---- draw battle ---------------------------------------------------
+  // Your turn: pick one of three words, then draw it with your finger while everyone else guesses.
+  // Otherwise the drawing comes in as it's drawn and you type guesses. Right and close guesses only show
+  // on your own phone; wrong ones go to everyone.
+  const drawOn = () => mode === 'draw' && !solo;
+  let draw = null; // the turn (see drawOf on the server)
+  let secret = null; // just for you: { choices } when it's your turn to pick, { word } while you draw or once you've guessed it
+  let dFeed = []; // { id, by, name, color, text }, { id, got: true, by, points, order }, or your own { id, close: true, text }
+  let dTurn = 0; // the turn the board and the guesses are from
+  const pad = new Sketch($('#dCanvas'));
+  const pen = { c: 0, w: 1, eraser: false };
+  const myTurn = () => drawOn() && Boolean(draw) && draw.drawer === you;
+  const iGotIt = () => Boolean(draw && draw.guessed.some((g) => g.id === you));
+  const canDraw = () => myTurn() && draw.phase === 'draw' && state.state === 'playing';
+  const clockText = (ms) => {
+    const secs = Math.max(0, Math.ceil(ms / 1000));
+    return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  };
+
+  socket.on('draw:line', (l) => pad.add(l));
+  socket.on('draw:undo', () => pad.undo());
+  socket.on('draw:clear', () => pad.clear());
+  socket.on('draw:secret', (s) => {
+    secret = s;
+    renderDrawScreen();
+  });
+  socket.on('draw:hint', ({ hint }) => {
+    if (!draw) return;
+    draw.hint = hint;
+    renderDrawScreen();
+    if (!myTurn() && !iGotIt()) {
+      showDToast('A LETTER IS REVEALED!', 'good');
+      Sfx.play('reveal');
+    }
+  });
+  socket.on('draw:say', (m) => addDFeed(m));
+  socket.on('draw:guessed', (g) => {
+    setScore(g.id, g.score, g.roundScore, g.kills);
+    setScore(g.drawer, g.drawerScore, g.drawerRoundScore);
+    if (draw && !draw.guessed.some((x) => x.id === g.id)) draw.guessed = draw.guessed.concat({ id: g.id, points: g.points, order: g.order });
+    addDFeed({ id: `got-${g.id}`, got: true, by: g.id, points: g.points, order: g.order });
+    if (g.drawer === you && g.share) {
+      showDToast(`${nameOf(g.id)} GOT IT! +${g.share} FOR YOU`, 'good');
+      Sfx.play('join');
+    } else if (g.id !== you) {
+      Sfx.play('emote');
+    }
+    renderDrawScreen();
+  });
+  socket.on('draw:round', ({ round }) => {
+    showDToast(`ROUND ${round + 1}: EVERYONE DRAWS AGAIN!`, 'good', 2400);
+    Sfx.play('round');
+  });
+
+  function addDFeed(m) {
+    dFeed = dFeed.concat(m).slice(-30);
+    renderDFeed();
+  }
+
+  function renderDFeed() {
+    const box = $('#dFeed');
+    box.innerHTML = '';
+    if (!dFeed.length) {
+      box.append(el('div', { class: 'empty', text: myTurn() ? 'Guesses show up here as they come in.' : 'Type a guess below. Right answers stay secret!' }));
+    }
+    for (const m of dFeed) {
+      if (m.got) {
+        const nth = ['FIRST', '2ND', '3RD'][m.order];
+        box.append(el('div', { class: `m got${m.by === you ? ' me' : ''}`, text: `${m.by === you ? 'YOU' : nameOf(m.by)} GOT IT! +${m.points}${nth ? ` · ${nth}` : ''}` }));
+      } else if (m.close) {
+        box.append(el('div', { class: 'm close me', text: `"${m.text}" IS CLOSE!` }));
+      } else {
+        box.append(el('div', { class: `m${m.by === you ? ' me' : ''}` }, [
+          el('b', { text: m.name, style: `color:${(COLORS[m.color] || COLORS[0]).Q}` }), m.text,
+        ]));
+      }
+    }
+    box.scrollTop = box.scrollHeight;
+  }
+
+  let dToastTimer = null;
+  function showDToast(text, kind, ms = 1600) {
+    const t = $('#dToast');
+    t.textContent = text;
+    t.className = `toast show ${kind || ''}`;
+    clearTimeout(dToastTimer);
+    dToastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+
+  // Round and turn, the clock, your score and place.
+  function renderDrawTop() {
+    if (!drawOn()) return;
+    const D = draw;
+    $('#dRound').textContent = D ? `${rounds.length === 1 ? '' : `R${state.round + 1} · `}TURN ${D.turn}/${D.turns}` : 'DRAW BATTLE';
+    const mine = me();
+    $('#dScore').textContent = mine ? mine.score : 0;
+    const idx = rankPlayers(players).findIndex((p) => p.id === you);
+    $('#dRank').textContent = idx >= 0 ? `#${idx + 1}/${players.length}` : '';
+  }
+
+  const LEVEL_NAMES = { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD' };
+  const NTH = ['1ST', '2ND', '3RD'];
+
+  function renderDrawScreen() {
+    if (!drawOn()) return;
+    renderDrawTop();
+    const D = state.state === 'playing' ? draw : null;
+    // The word: yours to draw, the one you guessed, or its blanks.
+    const hint = $('#dHint');
+    hint.className = '';
+    if (!D) {
+      hint.className = 'note';
+      hint.textContent = 'GET READY TO DRAW AND GUESS!';
+    } else if (D.phase === 'choose') {
+      hint.className = 'note';
+      hint.textContent = myTurn() ? 'YOUR TURN! PICK A WORD TO DRAW' : `${nameOf(D.drawer)} IS PICKING A WORD...`;
+    } else if (D.phase === 'draw' && (myTurn() || iGotIt())) {
+      hint.className = 'mine';
+      hint.textContent = `${myTurn() ? 'DRAW: ' : '✓ '}${(secret && secret.word ? secret.word : '').toUpperCase()}`;
+    } else if (D.phase === 'draw') {
+      hint.textContent = D.hint;
+    } else {
+      hint.className = 'mine';
+      hint.textContent = (D.word || '').toUpperCase();
+    }
+    const lvl = $('#dLevel');
+    lvl.className = `d-tag ${D && D.level ? D.level : 'hidden'}`;
+    lvl.textContent = D && D.level ? `${LEVEL_NAMES[D.level]} · ${D.points}` : '';
+
+    // Over the board: the countdown, your three words or who's picking, and the reveal.
+    const over = $('#dOver');
+    over.innerHTML = '';
+    over.className = 'd-over hidden';
+    if (state.state === 'countdown') {
+      over.className = 'd-over';
+      over.append(
+        el('div', { class: 'o2', text: 'DRAW BATTLE' }),
+        el('div', { class: 'o3', text: 'Take turns drawing on your phone. Guess the others\' drawings: the sooner, the more points!' }),
+        el('div', { class: 'o4', text: '' }),
+      );
+    } else if (D && D.phase === 'choose') {
+      over.className = 'd-over';
+      if (myTurn() && secret && secret.choices) {
+        over.append(
+          el('div', { class: 'o2', text: 'YOUR TURN TO DRAW!' }),
+          el('div', { class: 'o3', text: 'Pick a word. Harder ones are worth more.' }),
+          el('div', { class: 'd-picks' }, secret.choices.map((c, i) => el('button', {
+            class: `d-pick ${c.level}`, type: 'button',
+            onclick: () => {
+              socket.emit('draw:pick', { i });
+              secret = null;
+              over.innerHTML = '';
+              over.append(el('div', { class: 'o2', text: 'GET DRAWING!' }));
+            },
+          }, [c.text.toUpperCase(), el('small', { text: `${LEVEL_NAMES[c.level]} · ${c.points}` })]))),
+        );
+      } else {
+        const p = players.find((pl) => pl.id === D.drawer);
+        over.append(
+          p ? heroImg(p) : null,
+          el('div', { class: 'o2', text: `${p ? p.name : 'Someone'} IS PICKING A WORD` }),
+          el('div', { class: 'o3', text: myTurn() ? '' : 'Get ready to guess!' }),
+        );
+      }
+    } else if (D && D.phase === 'reveal') {
+      over.className = 'd-over reveal';
+      const got = D.guessed.length;
+      const mineG = D.guessed.find((g) => g.id === you);
+      let line;
+      if (D.drawer === you) line = D.why === 'left' ? 'Your turn ended.' : got ? `${got} of ${Math.max(got, D.guessers)} got it · +${D.drawerPts} for your drawing` : 'Nobody got it this time.';
+      else if (mineG) line = `You got it ${NTH[mineG.order] || ''}! +${mineG.points}`.replace(' !', '!');
+      else line = D.why === 'left' ? `${nameOf(D.drawer)} left the battle` : `Not this time · ${got} of ${Math.max(got, D.guessers)} got it`;
+      over.append(el('div', { class: 'o1', text: 'THE WORD WAS' }), el('div', { class: 'o2', text: (D.word || '?').toUpperCase() }), el('div', { class: 'o3', text: line }));
+    }
+
+    // The drawer gets the tools; everyone else the guess box (open only while there's a drawing to guess).
+    $('#dTools').classList.toggle('hidden', !canDraw());
+    $('#dBoard').classList.toggle('mine', canDraw());
+    const guessing = Boolean(D && D.phase === 'draw' && !myTurn() && !iGotIt());
+    $('#dGuess').classList.toggle('hidden', myTurn());
+    $('#dGuess').classList.toggle('done', iGotIt());
+    const box = $('#dIn');
+    box.disabled = !guessing;
+    box.placeholder = iGotIt() ? 'You got it! Wait for the others...' : guessing ? 'Type your guess...' : 'Wait for the drawing...';
+    if (!guessing && document.activeElement === box) box.blur();
+    renderTools();
+  }
+
+  // ---- drawing on your turn
+  const dCanvas = $('#dCanvas');
+  let stroke = null; // { s, c, w, last } while your finger is down
+  let inkBuf = null; // the part of the stroke not sent yet
+  let strokeSeq = Math.floor(Math.random() * 1e6) * 10;
+  const boardPoint = (e) => {
+    const r = dCanvas.getBoundingClientRect();
+    const k = r.width / Sketch.W;
+    return [Math.round(Math.min(Sketch.W, Math.max(0, (e.clientX - r.left) / k))), Math.round(Math.min(Sketch.H, Math.max(0, (e.clientY - r.top) / k)))];
+  };
+  function flushInk() {
+    if (inkBuf && inkBuf.p.length) socket.emit('draw:line', inkBuf);
+    if (inkBuf) inkBuf = { ...inkBuf, p: [] };
+  }
+  function inkAt(e) {
+    const [x, y] = boardPoint(e);
+    if (stroke.last && Math.abs(x - stroke.last[0]) + Math.abs(y - stroke.last[1]) < 3) return;
+    stroke.last = [x, y];
+    pad.add({ s: stroke.s, c: stroke.c, w: stroke.w, p: [x, y] });
+    inkBuf.p.push(x, y);
+  }
+  dCanvas.addEventListener('pointerdown', (e) => {
+    if (!canDraw()) return;
+    e.preventDefault();
+    if (dCanvas.setPointerCapture) dCanvas.setPointerCapture(e.pointerId);
+    flushInk();
+    strokeSeq += 1;
+    stroke = { s: strokeSeq, c: pen.eraser ? Sketch.ERASER : pen.c, w: pen.w, last: null };
+    inkBuf = { s: stroke.s, c: stroke.c, w: stroke.w, p: [] };
+    inkAt(e);
+  });
+  dCanvas.addEventListener('pointermove', (e) => {
+    if (!stroke) return;
+    e.preventDefault();
+    const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+    for (const ev of list.length ? list : [e]) inkAt(ev);
+  });
+  const penUp = () => {
+    if (!stroke) return;
+    flushInk();
+    stroke = null;
+  };
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) dCanvas.addEventListener(ev, penUp);
+  setInterval(() => { if (stroke) flushInk(); }, 50);
+
+  // Colors (the paper's own color is the eraser), brush sizes, eraser, undo and clear.
+  Sketch.COLORS.forEach((c, i) => {
+    if (i === Sketch.ERASER) return;
+    $('#dColors').append(el('button', {
+      class: 'd-color', type: 'button', style: `background:${c}`, 'data-c': i, 'aria-label': 'Color',
+      onclick: () => { pen.c = i; pen.eraser = false; renderTools(); },
+    }));
+  });
+  ['S', 'M', 'L'].forEach((label, i) => {
+    const dot = [6, 10, 16][i];
+    $('#dSizes').append(el('button', {
+      class: 'sz', type: 'button', 'data-w': i, onclick: () => { pen.w = i; renderTools(); },
+    }, [el('i', { style: `width:${dot}px;height:${dot}px` }), ` ${label}`]));
+  });
+  $('#dEraser').onclick = () => { pen.eraser = !pen.eraser; renderTools(); };
+  $('#dUndo').onclick = () => {
+    if (!canDraw() || stroke || !pad.strokes.length) return;
+    pad.undo();
+    socket.emit('draw:undo');
+  };
+  $('#dClear').onclick = () => {
+    if (!canDraw() || stroke || !pad.strokes.length) return;
+    pad.clear();
+    socket.emit('draw:clear');
+  };
+  function renderTools() {
+    for (const b of document.querySelectorAll('.d-color')) b.classList.toggle('on', !pen.eraser && Number(b.dataset.c) === pen.c);
+    for (const b of document.querySelectorAll('#dSizes button')) b.classList.toggle('on', Number(b.dataset.w) === pen.w);
+    $('#dEraser').classList.toggle('on', pen.eraser);
+  }
+
+  // ---- guessing
+  $('#dGuess').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const box = $('#dIn');
+    const text = box.value.trim();
+    if (!text || !draw || draw.phase !== 'draw' || myTurn() || iGotIt()) return;
+    box.value = '';
+    socket.emit('draw:guess', { text }, (res) => {
+      if (!res) return;
+      if (res.correct) {
+        secret = { word: res.word };
+        showDToast(`YOU GOT IT! +${res.points}`, 'good', 2200);
+        Sfx.play('award');
+        if (navigator.vibrate) navigator.vibrate([40, 30, 80]);
+        renderDrawScreen();
+      } else if (res.close) {
+        addDFeed({ id: `close-${Date.now()}`, close: true, text });
+        showDToast('SO CLOSE!', 'good');
+        Sfx.play('beep');
+      } else if (!res.ok && res.reason === 'slow') {
+        if (!box.value) box.value = text; // too quick after the last one: give it back to send again
+      }
+    });
+  });
+  // Tapping GUESS keeps the keyboard up.
+  $('#dGuess button').addEventListener('pointerdown', (e) => e.preventDefault());
+
   // ---- phases --------------------------------------------------------
   function applyState(s) {
     const prev = state.state;
@@ -759,6 +1060,30 @@
     ko = Boolean(s.ko);
     effects = s.effects || [{}, {}];
     arena.setEffects(effects);
+    // Draw battle: a new turn starts with a blank board and no guesses (your secret for it comes next).
+    const prevDraw = draw;
+    draw = s.draw || null;
+    if (draw && draw.turn !== dTurn) {
+      dTurn = draw.turn;
+      pad.clear();
+      dFeed = [];
+      secret = null;
+      stroke = null;
+      inkBuf = null;
+      renderDFeed();
+      if (draw.drawer === you) {
+        Sfx.play('round');
+        if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
+        $('#dIn').blur();
+      }
+    }
+    if (draw && prevDraw && prevDraw.turn === draw.turn && prevDraw.phase !== draw.phase) {
+      if (draw.phase === 'draw' && draw.drawer !== you) {
+        Sfx.play('go');
+        setTimeout(() => { if (draw && draw.phase === 'draw' && !$('#dIn').disabled) $('#dIn').focus(); }, 50);
+      }
+      if (draw.phase === 'reveal') Sfx.play(draw.guessed.some((g) => g.id === you) || (draw.drawer === you && draw.guessed.length) ? 'reveal' : 'miss');
+    }
     if (s.players) setPlayers(s.players);
     else {
       arena.setTeamMode(teamBattle(), teamBattle() ? myTeam() : null);
@@ -792,6 +1117,13 @@
       const won = solo || records[you]?.rank === 1
         || (teamBattle() ? winner === myTeam() : rankPlayers(players)[0]?.id === you);
       if (prev && prev !== 'finished' && won) Sfx.play('win');
+    } else if (drawOn()) {
+      // Draw battle: its own screen, with the board in place of the battlefield.
+      $('#typeIn').blur();
+      showScreen('scrDraw');
+      if (st === 'countdown' && prev !== 'countdown') Sfx.play('round');
+      renderDrawScreen();
+      renderDFeed();
     } else {
       showScreen('scrGame');
       if (st === 'countdown' && prev !== 'countdown') {
@@ -1008,6 +1340,19 @@
   }
 
   function tick() {
+    if (drawOn() && (state.state === 'playing' || state.state === 'countdown')) {
+      // Draw battle: the clock for this part of the turn (or the countdown before the first one).
+      const D = state.state === 'playing' ? draw : null;
+      const left = Math.max(0, (D ? D.endsAt : state.phaseEndsAt) - now());
+      $('#dTime').textContent = clockText(left);
+      $('#dTime').classList.toggle('low', Boolean(D && D.phase === 'draw' && left <= 10000));
+      const count = document.querySelector('#dOver .o4');
+      if (count && state.state === 'countdown') {
+        const n = Math.ceil(left / 1000);
+        count.textContent = n > 3 ? 'READY?' : String(Math.max(1, n));
+      }
+      return;
+    }
     if (royaleOn() && (state.state === 'playing' || state.state === 'countdown')) {
       // No round clock: how long the battle has gone on. Red edges when your HP runs low.
       const secs = state.state === 'playing' && royale ? Math.floor(Math.max(0, now() - royale.start) / 1000) : 0;
@@ -1301,7 +1646,8 @@
     $('#lobbyMode').textContent = tb
       ? "TEAM BATTLE: type your side's words to hit the other team!"
       : royaleOn() ? 'BATTLE ROYALE: your own monsters and 100 HP. Words that reach you hurt. Last hero standing wins!'
-        : 'FREE FOR ALL: first to type a word gets the points!';
+        : drawOn() ? 'DRAW BATTLE: take turns drawing on your phone while everyone else guesses. The sooner you guess, the more points!'
+          : 'FREE FOR ALL: first to type a word gets the points!';
     $('#lobbyCount').textContent = players.length;
     // What the host has switched on, and your class's perk when perks are on.
     const opts = $('#lobbyOpts');
@@ -1309,18 +1655,24 @@
     // What the host picked: the game's length and difficulty first, then the switches that are on.
     const one = options.length === 'one' && !royaleOn();
     const level = String(options.level || 'normal').toUpperCase();
-    opts.append(el('span', { class: 'pick', text: royaleOn() ? 'NO ROUNDS: EASY > MEDIUM > HARD' : one ? `ONE ROUND · ${rounds[0]?.title || ''}` : `${rounds.length} ROUNDS` }));
-    opts.append(el('span', { class: `pick d-${level.toLowerCase()}`, text: `${level} DIFFICULTY` }));
+    const drawing = drawOn();
+    opts.append(el('span', {
+      class: 'pick',
+      text: drawing ? (rounds.length === 1 ? 'EVERYONE DRAWS ONCE' : `EVERYONE DRAWS ${rounds.length} TIMES`)
+        : royaleOn() ? 'NO ROUNDS: EASY > MEDIUM > HARD' : one ? `ONE ROUND · ${rounds[0]?.title || ''}` : `${rounds.length} ROUNDS`,
+    }));
+    opts.append(el('span', { class: `pick d-${level.toLowerCase()}`, text: drawing ? `${Math.round((rounds[0]?.time || 80000) / 1000)} SECONDS A DRAWING` : `${level} DIFFICULTY` }));
     const names = { streaks: 'STREAKS', specials: 'SPECIAL WORDS', boss: 'BOSS FINALE', perks: 'CLASS PERKS', skills: 'SKILLS', awards: 'AWARDS' };
     for (const [k, label] of Object.entries(names)) {
+      if (drawing && k !== 'awards') continue; // no typing switches, perks or skills in a draw battle
       if (options[k] && !(tb && (k === 'boss' || k === 'specials')) && !((one || royaleOn()) && k === 'boss')) opts.append(el('span', { text: label }));
     }
     if (options.wordCount) opts.append(el('span', { text: `${options.wordCount} HOST WORDS` }));
     renderChat();
-    const perk = options.perks && mine ? classByKey(mine.cls).perk : '';
+    const perk = options.perks && mine && !drawing ? classByKey(mine.cls).perk : '';
     $('#lobbyPerk').textContent = perk ? `PERK: ${perk}` : '';
     $('#lobbyPerk').classList.toggle('hidden', !perk);
-    const skl = options.skills && mine ? classByKey(mine.cls).skill : '';
+    const skl = options.skills && mine && !drawing ? classByKey(mine.cls).skill : '';
     $('#lobbySkill').textContent = skl ? `SKILL: ${skl} (every 8 words; tap it or press Space)` : '';
     $('#lobbySkill').classList.toggle('hidden', !skl);
     const roster = $('#lobbyRoster');
@@ -1349,12 +1701,12 @@
     $('#fSoloActions').classList.toggle('hidden', !solo);
     $('#fWait').classList.toggle('hidden', solo);
     $('#fScoreLbl').textContent = tb ? 'DAMAGE + BLOCKS' : 'SCORE';
-    $('#fKillsLbl').textContent = teamBattle() ? 'WORDS TYPED' : 'MONSTERS SLAIN';
+    $('#fKillsLbl').textContent = teamBattle() ? 'WORDS TYPED' : drawOn() ? 'DRAWINGS GUESSED' : 'MONSTERS SLAIN';
     $('#fTitle').style.color = '';
     $('#fPlace').style.color = '';
-    // Your typing stats, and any awards you won.
+    // Your typing stats (none in a draw battle), and any awards you won.
     const st = summary?.stats?.[you];
-    $('#fTyping').classList.toggle('hidden', !st || !st.words);
+    $('#fTyping').classList.toggle('hidden', !st || !st.words || drawOn());
     if (st) {
       $('#fWpm').textContent = st.wpm ? `${st.wpm} WPM` : '-';
       $('#fAcc').textContent = `${st.acc}%`;

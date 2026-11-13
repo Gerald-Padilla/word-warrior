@@ -1,6 +1,12 @@
 // Fill a room with bot heroes for testing.
 // Usage: npm run bots -- ROOMCODE [count] [serverUrl]
 const { io } = require('socket.io-client');
+const DRAW_WORDS = require('../draw-words');
+
+// Draw battle: bots can't see the drawing, so they guess words from the list that fit the blanks (and
+// any letters filled in so far). Their own drawings are scribbles.
+const ALL_DRAW_WORDS = [...DRAW_WORDS.easy, ...DRAW_WORDS.medium, ...DRAW_WORDS.hard];
+const fits = (word, hint) => word.length === hint.length && [...hint].every((ch, i) => (ch === '_' ? word[i] !== ' ' : ch === word[i]));
 
 const code = String(process.argv[2] || '').toUpperCase();
 const count = Number(process.argv[3]) || 4;
@@ -54,6 +60,49 @@ for (let i = 0; i < count; i++) {
   socket.on('skill:charge', ({ on, charge, max }) => {
     if (on && charge >= max) setTimeout(() => socket.emit('player:skill', {}, () => {}), 500 + Math.random() * 2500);
   });
+  // Draw battle: pick a word and scribble on your turn; otherwise guess now and then from the words that fit.
+  let drawState = null;
+  let tried = new Set();
+  let scribble = null;
+  let guessAt = 0;
+  socket.on('draw:secret', (sec) => {
+    if (sec && sec.choices) setTimeout(() => socket.emit('draw:pick', { i: Math.floor(Math.random() * 3) }), 1000 + Math.random() * 3000);
+  });
+  socket.on('draw:hint', ({ hint }) => { if (drawState) drawState.hint = hint; });
+  socket.on('draw:guessed', (g) => { if (drawState) drawState.guessed = drawState.guessed.concat(g); });
+  socket.on('room:state', (s) => {
+    const D = s.mode === 'draw' && s.state === 'playing' ? s.draw : null;
+    if (D && (!drawState || drawState.turn !== D.turn)) tried = new Set();
+    drawState = D;
+    clearInterval(scribble);
+    scribble = null;
+    if (D && D.phase === 'draw' && D.drawer === me) {
+      let id = Math.floor(Math.random() * 1e6) * 10;
+      let at = [500, 375];
+      scribble = setInterval(() => {
+        if (Math.random() < 0.3) at = [100 + Math.random() * 800, 80 + Math.random() * 590];
+        id += 1;
+        const p = [];
+        for (let k = 0; k < 6; k++) {
+          at = [Math.min(1000, Math.max(0, at[0] + (Math.random() - 0.5) * 120)), Math.min(750, Math.max(0, at[1] + (Math.random() - 0.5) * 120))];
+          p.push(Math.round(at[0]), Math.round(at[1]));
+        }
+        socket.emit('draw:line', { s: id, c: Math.floor(Math.random() * 12), w: Math.floor(Math.random() * 3), p });
+      }, 400);
+    }
+  });
+  setInterval(() => {
+    const D = drawState;
+    if (!D || D.phase !== 'draw' || D.drawer === me || D.guessed.some((g) => g.id === me) || Date.now() < guessAt) return;
+    guessAt = Date.now() + 3000 + Math.random() * 6000 - cps * 400;
+    const fitting = ALL_DRAW_WORDS.filter((w) => fits(w, D.hint) && !tried.has(w));
+    const text = fitting.length ? fitting[Math.floor(Math.random() * fitting.length)] : NAMES[Math.floor(Math.random() * NAMES.length)].toLowerCase();
+    tried.add(text);
+    socket.emit('draw:guess', { text }, (res) => {
+      if (res && res.correct) console.log(`${name} guessed "${res.word}" (+${res.points})`);
+    });
+  }, 500);
+
   socket.on('room:state', (s) => {
     trackTeam(s.players);
     // Now and then a bot sends an emote between rounds.

@@ -23,6 +23,7 @@
   let summary = null; // finished: { stats, awards }
   let boss = null; // boss round: { hp, max, down }
   let royale = null; // battle royale: { start, nextAt, ramp, total, left, hp, damage }
+  let draw = null; // draw battle: the turn (see drawOf on the server)
   let pushedOptions = false;
   let lastCount = 0;
   let lastBeep = null;
@@ -158,6 +159,130 @@
     scheduleBoard();
   });
 
+  // Draw battle -----------------------------------------------------------
+  // The drawing comes in stroke by stroke from the drawer's phone. Wrong guesses scroll by on the right;
+  // right ones show as "got it" (never the word itself) and tick that hero's row on the left.
+  const sketch = new Sketch($('#dsCanvas'));
+  let drawFeed = []; // guesses: { id, by, name, color, text }, or { id, got: true, by, points, order }
+  let drawTurn = 0; // the turn the board and the guesses are from
+  let freshFeed = null;
+  const gotRows = new Set();
+  socket.on('draw:line', (l) => sketch.add(l));
+  socket.on('draw:undo', () => sketch.undo());
+  socket.on('draw:clear', () => sketch.clear());
+  socket.on('draw:hint', ({ hint }) => {
+    if (!draw) return;
+    draw.hint = hint;
+    renderDraw();
+    Sfx.play('reveal');
+  });
+  socket.on('draw:say', (m) => addFeed(m));
+  socket.on('draw:guessed', (g) => {
+    setScore(g.id, g.score, g.roundScore, g.kills);
+    setScore(g.drawer, g.drawerScore, g.drawerRoundScore);
+    if (draw && !draw.guessed.some((x) => x.id === g.id)) draw.guessed = draw.guessed.concat({ id: g.id, points: g.points, order: g.order });
+    addFeed({ id: `got-${g.id}`, got: true, by: g.id, points: g.points, order: g.order });
+    gotRows.add(g.id);
+    Sfx.play(g.order === 0 ? 'award' : 'join');
+    renderDraw();
+  });
+  socket.on('draw:round', ({ round }) => {
+    arena.callout(`ROUND ${round + 1}`, '#ffd23f', 'Everyone draws again!');
+    Sfx.play('round');
+  });
+
+  function addFeed(m) {
+    drawFeed = drawFeed.concat(m).slice(-40);
+    freshFeed = m.id;
+    renderFeed();
+  }
+
+  function renderFeed() {
+    const box = $('#dsFeed');
+    box.innerHTML = '';
+    if (!drawFeed.length) box.append(el('div', { class: 'ds-empty', text: 'Guesses from the phones show up here.' }));
+    for (const m of drawFeed) {
+      const p = players.find((pl) => pl.id === m.by);
+      const color = (COLORS[(p || m).color] || COLORS[0]).Q;
+      if (m.got) {
+        const nth = ['FIRST', '2ND', '3RD'][m.order];
+        box.append(el('div', { class: `m got${m.id === freshFeed ? ' new' : ''}` }, [
+          `${p ? p.name : 'Someone'} GOT IT! +${m.points}${nth ? ` · ${nth}` : ''}`,
+        ]));
+      } else {
+        box.append(el('div', { class: `m${m.id === freshFeed ? ' new' : ''}` }, [el('b', { text: m.name, style: `color:${color}` }), m.text]));
+      }
+    }
+    box.scrollTop = box.scrollHeight;
+  }
+
+  const LEVEL_NAMES = { easy: 'EASY', medium: 'MEDIUM', hard: 'HARD' };
+  const nameOf = (id) => players.find((p) => p.id === id)?.name || 'Someone';
+
+  // The word's blanks (or the word, once it's over), the picking and reveal cards over the board, and the
+  // scores down the left with who's drawing and who got it.
+  function renderDraw() {
+    if (mode !== 'draw' || !draw) return;
+    const D = draw;
+    const hint = $('#dsHint');
+    const drawer = players.find((p) => p.id === D.drawer);
+    hint.classList.toggle('word', D.phase === 'reveal');
+    hint.classList.toggle('note', D.phase === 'choose');
+    if (D.phase === 'draw') hint.textContent = D.hint;
+    else if (D.phase === 'reveal') hint.textContent = (D.word || '').toUpperCase();
+    else hint.textContent = `${drawer ? drawer.name : 'Someone'} IS PICKING...`;
+    const lvl = $('#dsLevel');
+    lvl.className = `ds-tag ${D.level || ''}${D.level ? '' : ' hidden'}`;
+    lvl.textContent = D.level ? `${LEVEL_NAMES[D.level]} · ${D.points} PTS` : '';
+    const letters = D.phase === 'draw' ? D.hint.replace(/ /g, '').length : 0;
+    $('#dsLen').classList.toggle('hidden', !letters);
+    $('#dsLen').textContent = `${letters} LETTERS${D.hint && D.hint.includes(' ') ? ` · ${D.hint.split(' ').length} WORDS` : ''}`;
+
+    const over = $('#dsOver');
+    over.innerHTML = '';
+    over.className = 'ds-over hidden';
+    if (D.phase === 'choose' && drawer) {
+      over.className = 'ds-over';
+      over.append(
+        el('div', { class: 'o1', text: `${roundLabelDraw()} · TURN ${D.turn} OF ${D.turns}` }),
+        heroImg(drawer, 'px-sprite'),
+        el('div', { class: 'o2', text: `${drawer.name} IS PICKING A WORD` }),
+        el('div', { class: 'o3', text: 'Get ready to guess on your phone!' }),
+      );
+    } else if (D.phase === 'reveal') {
+      over.className = 'ds-over reveal';
+      const got = D.guessed.length;
+      const by = drawer ? drawer.name : 'The drawer';
+      const line = D.why === 'left' ? `${by} left the battle`
+        : got === 0 ? 'Nobody got it!'
+          : `${got === D.guessers && got > 0 ? 'Everyone' : `${got} of ${Math.max(got, D.guessers)}`} got it · ${by} +${D.drawerPts} for the drawing`;
+      over.append(el('div', { class: 'o1', text: 'THE WORD WAS' }), el('div', { class: 'o2', text: (D.word || '?').toUpperCase() }), el('div', { class: 'o3', text: line }));
+    }
+    renderDrawPlayers();
+  }
+  const roundLabelDraw = () => (rounds.length === 1 ? 'ONE ROUND' : `ROUND ${state.round + 1} OF ${rounds.length}`);
+
+  function renderDrawPlayers() {
+    if (mode !== 'draw') return;
+    const box = $('#dsPlayers');
+    box.innerHTML = '';
+    const got = new Map((draw ? draw.guessed : []).map((g) => [g.id, g]));
+    rankPlayers(players).forEach((p, i) => {
+      const drawing = draw && draw.drawer === p.id && draw.phase !== 'reveal';
+      const g = got.get(p.id);
+      const note = drawing ? 'DRAWING' : g ? `GOT IT +${g.points}` : draw && draw.drawer === p.id ? `DREW · +${draw.drawerPts}` : p.connected ? '' : 'AWAY';
+      box.append(el('div', { class: `row r${i + 1}${drawing ? ' drawer' : ''}${g ? ' got' : ''}${gotRows.has(p.id) ? ' bump' : ''}` }, [
+        el('span', { class: 'rk', text: `${i + 1}.` }),
+        heroImg(p),
+        el('span', { class: 'nm' }, [p.name, note ? el('small', { text: note }) : null]),
+        el('span', { class: 'sc', text: p.score }),
+      ]));
+    });
+    gotRows.clear();
+    const side = box.parentElement;
+    while (box.children.length > 4 && side.scrollHeight > side.clientHeight) box.lastChild.remove();
+  }
+
   // Streak milestones, ice and bombs get a callout across the field.
   const STREAK_CALLS = { 3: ['ON FIRE!', '#ff7b1c'], 6: ['UNSTOPPABLE!', '#7fd4ff'], 10: ['LEGENDARY!', '#bb8cff'] };
   function announce(by, k) {
@@ -249,6 +374,13 @@
     setPlayers(snap.players);
     arena.setWords(snap.words);
     applyState(snap);
+    // Draw battle under way: the drawing and the guesses so far.
+    if (snap.strokes) sketch.set(snap.strokes);
+    if (snap.feed) {
+      const got = (snap.draw ? snap.draw.guessed : []).map((g) => ({ id: `got-${g.id}`, got: true, by: g.id, points: g.points, order: g.order }));
+      drawFeed = snap.feed.concat(got);
+      renderFeed();
+    }
     setupJoinUrl();
   }
 
@@ -297,6 +429,7 @@
     if (list.length > lastCount && state.state === 'lobby') Sfx.play('join');
     lastCount = list.length;
     renderRoster();
+    if (mode === 'draw' && state.state === 'lobby') renderRoundChips(); // how long the game runs depends on the crowd
     scheduleBoard();
   }
 
@@ -351,10 +484,14 @@
     } else {
       for (const p of players) roster.append(heroTile(p));
     }
-    const enough = players.length >= (teamsOn ? 2 : 1);
+    const enough = players.length >= (teamsOn || mode === 'draw' ? 2 : 1);
     $('#btnStart').disabled = !enough;
     show('#btnShuffle', teamsOn && players.length > 1);
     if (teamsOn && players.length && !enough) $('#startHint').textContent = 'A team battle needs at least 2 heroes.';
+    else if (mode === 'draw' && players.length && !enough) $('#startHint').textContent = 'A draw battle needs at least 2 heroes: one draws, the rest guess.';
+    else if (mode === 'draw' && enough) {
+      $('#startHint').textContent = `${players.length} heroes ready. Each one draws ${rounds.length === 1 ? 'once' : `${rounds.length} times`}; the rest guess on their phones.`;
+    }
     else if (teamsOn && enough) {
       const red = players.filter((p) => p.team === 0).length;
       $('#startHint').textContent = `${red} red vs ${players.length - red} blue. Click a hero to move them to the other team.`;
@@ -412,6 +549,7 @@
   const hpColor = (frac) => (frac > 0.5 ? '#5bd46a' : frac > 0.25 ? '#ffd23f' : '#ff5a4d');
 
   function renderBoard() {
+    if (mode === 'draw') return renderDrawPlayers();
     const list = $('#boardList');
     const ry = mode === 'royale' && royale;
     $('#board').classList.toggle('royale', Boolean(ry));
@@ -455,7 +593,7 @@
   // podium's drumroll.
   let revealing = false;
   function musicFor(st, r) {
-    if (st === 'countdown' || st === 'playing') return r ? r.key : 'lobby';
+    if (st === 'countdown' || st === 'playing') return r ? r.key : 'lobby'; // a draw battle's rounds play 'draw'
     if (st === 'finished' && revealing) return null;
     return 'lobby';
   }
@@ -473,6 +611,20 @@
     mode = s.mode || 'ffa';
     royale = s.royale || null;
     arena.setRoyale(mode === 'royale', royale ? royale.hp : 100);
+    // Draw battle: a new turn starts with a blank board and no guesses.
+    const prevDraw = draw;
+    draw = s.draw || null;
+    if (draw && draw.turn !== drawTurn) {
+      drawTurn = draw.turn;
+      sketch.clear();
+      drawFeed = [];
+      renderFeed();
+    }
+    if (draw && prevDraw && prevDraw.turn === draw.turn && prevDraw.phase !== draw.phase) {
+      if (draw.phase === 'draw') Sfx.play('go');
+      if (draw.phase === 'reveal') Sfx.play(draw.guessed.length ? 'reveal' : 'miss');
+    }
+    if (draw && draw.phase === 'choose' && (!prevDraw || prevDraw.turn !== draw.turn)) Sfx.play('beep');
     teams = s.teams || null;
     winner = s.winner ?? null;
     ko = Boolean(s.ko);
@@ -488,6 +640,7 @@
     const st = s.state;
     const fighting = st === 'countdown' || st === 'playing';
     const teamsOn = mode === 'teams';
+    const drawOn = mode === 'draw';
 
     for (const b of document.querySelectorAll('.mode-btn')) b.classList.toggle('on', b.dataset.mode === mode);
     arena.setTeamMode(teamsOn);
@@ -495,12 +648,15 @@
     show('#lobby', st === 'lobby');
     show('#hud', fighting || st === 'intermission');
     show('#teamBar', Boolean(teams) && (fighting || st === 'intermission'));
-    show('#board', fighting && !teamsOn);
+    show('#board', fighting && !teamsOn && !drawOn);
+    show('#drawStage', drawOn && st === 'playing' && Boolean(draw));
     show('#banner', st === 'countdown');
     show('#inter', st === 'intermission');
     show('#final', st === 'finished');
-    arena.setReserveRight(fighting && !teamsOn ? 340 : 0);
+    arena.setReserveRight(fighting && !teamsOn && !drawOn ? 340 : 0);
     const hudH = st === 'lobby' || st === 'finished' ? 0 : $('#hud').offsetHeight;
+    $('#drawStage').style.paddingTop = `${hudH + 16}px`;
+    $('#drawStage').style.setProperty('--ds-top', `${hudH + 16}px`);
     $('#teamBar').style.top = `${hudH}px`;
     const barH = teams && hudH ? $('#teamBar').offsetHeight : 0;
     arena.setReserveTop(hudH + barH);
@@ -513,7 +669,16 @@
       arena.setTheme('slime');
       arena.clearWords();
     }
-    if (r && mode === 'royale') {
+    if (r && drawOn) {
+      // Turns, not monsters: the HUD names the round and whose turn it is (tick() keeps the line fresh).
+      arena.setTheme('slime');
+      $('#hudRound').textContent = `DRAW BATTLE · ${roundLabelDraw()}`;
+      $('#bRound').textContent = 'DRAW BATTLE';
+      $('#bDiff').textContent = 'DRAW!';
+      $('#bDiff').className = 'b-diff d-medium';
+      $('#bTitle').textContent = `Take turns drawing on your phone. Everyone else guesses! ${Math.round((r.time || 80000) / 1000)} seconds a drawing.`;
+      renderDraw();
+    } else if (r && mode === 'royale') {
       // No rounds: the stage changes as the battle goes on (the line under it counts down in tick()).
       arena.setTheme(r.monster);
       $('#hudRound').textContent = `BATTLE ROYALE · ${r.name}`;
@@ -539,7 +704,7 @@
       prevScores.clear();
       renderBoard();
     }
-    if (st === 'playing' && prev === 'countdown') {
+    if (st === 'playing' && prev === 'countdown' && !drawOn) {
       Sfx.play('go');
       show('#banner', true);
       $('#bCount').textContent = 'FIGHT!';
@@ -562,6 +727,20 @@
     const box = $('#roundChips');
     box.innerHTML = '';
     const pace = { easy: ' · slower', hard: ' · faster' }[options.level] || '';
+    if (mode === 'draw') {
+      // Every hero draws once a round: about how long the game runs with this many heroes.
+      const secs = Math.round((rounds[0]?.time || 80000) / 1000);
+      const turns = rounds.length * Math.max(2, players.length);
+      const mins = Math.max(1, Math.round((turns * (secs * 0.8 + 16)) / 60));
+      box.append(el('div', { class: 'round-chip medium' }, [
+        rounds.length === 1 ? 'ONE ROUND · EVERYONE DRAWS ONCE' : `${rounds.length} ROUNDS · EVERYONE DRAWS ${rounds.length} TIMES`,
+        el('small', { text: `${secs} seconds a drawing · ${turns} turns${players.length >= 2 ? '' : ' with 2 heroes'} · about ${mins} min` }),
+      ]));
+      box.append(el('div', { class: 'round-chip easy' }, [
+        'PICK A WORD: EASY · MEDIUM · HARD', el('small', { text: '100 · 150 · 200 points: faster guesses score more' }),
+      ]));
+      return;
+    }
     if (mode === 'royale') {
       // One battle, no breaks: when each stage takes over and how hard its hits are.
       rounds.forEach((r, i) => box.append(el('div', { class: `round-chip ${r.key}` }, [
@@ -634,11 +813,27 @@
         : options.length === 'one' ? 'The boss finale ends a full game; one round skips it.' : '';
     bossBtn.title = noBoss || bossBtn.querySelector('small').textContent;
     bossBtn.classList.toggle('na', Boolean(noBoss));
+    // A draw battle is all drawing and guessing: no typing switches, skills or perks.
+    for (const k of ['streaks', 'specials', 'boss', 'perks', 'skills']) {
+      const b = $(`.opt[data-opt="${k}"]`);
+      if (mode !== 'draw') {
+        if (k !== 'boss') {
+          b.classList.remove('na');
+          b.title = b.querySelector('small').textContent;
+        }
+        continue;
+      }
+      b.classList.add('na');
+      b.title = 'Not in a draw battle: everyone just draws and guesses.';
+    }
     // A battle royale is one battle that keeps going, so it has no game length to pick.
     const seg = $('#segLength');
     seg.classList.toggle('na', mode === 'royale');
     seg.title = mode === 'royale' ? 'A battle royale has no rounds: it goes on until one hero is left.'
-      : 'A full game climbs from easy to hard; one round plays just the round that matches the difficulty';
+      : mode === 'draw' ? 'A full game: everyone draws twice. One round: everyone draws once.'
+        : 'A full game climbs from easy to hard; one round plays just the round that matches the difficulty';
+    $('#segLevel').title = mode === 'draw' ? 'How long each drawing lasts: easy 100 seconds, normal 80, hard 60'
+      : 'Easy: words fall slower and come less often. Hard: faster and more at once';
     $('#wordCount').textContent = options.wordCount || 0;
     $('#musicState').textContent = Music.on ? 'ON' : 'OFF';
     $('#btnMusic').textContent = Music.on ? 'MUSIC ON' : 'MUSIC OFF';
@@ -761,7 +956,8 @@
         el('div', { class: 'nm', style: teamStyle(p) }, nameParts(p)),
         rec ? el('div', { class: 'rec blink', text: rec.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${rec.rank}` }) : null,
         el('div', { class: 'sc', text: `${p.score} PTS` }),
-        el('div', { class: 'ko', text: ry ? (p.out ? `${p.kills} SLAIN · OUT` : `${p.kills} SLAIN · ${p.hp} HP LEFT`) : `${p.kills} ${tb ? 'WORDS' : 'MONSTERS SLAIN'}` }),
+        el('div', { class: 'ko', text: ry ? (p.out ? `${p.kills} SLAIN · OUT` : `${p.kills} SLAIN · ${p.hp} HP LEFT`)
+          : mode === 'draw' ? `${p.kills} GUESSED` : `${p.kills} ${tb ? 'WORDS' : 'MONSTERS SLAIN'}` }),
         el('div', { class: 'block', text: idx + 1 }),
       ]);
       pods[idx] = pod;
@@ -837,6 +1033,10 @@
       royaleTick(r);
       return;
     }
+    if (mode === 'draw' && r && (state.state === 'playing' || state.state === 'countdown')) {
+      drawHud();
+      return;
+    }
     // The last ten seconds of a round: red edges, a ticking clock, faster music.
     const tense = state.state === 'playing' && Boolean(r) && left > 0 && left <= 10000 && !(boss && boss.down);
     show('#tension', tense);
@@ -884,6 +1084,31 @@
     const tense = Boolean(playing && royale.total >= 2 && royale.left === 2);
     show('#tension', tense);
     Music.setFast(tense);
+  }
+
+  // Draw battle HUD: the clock for this part of the turn, and who's drawing. The last ten seconds of a
+  // drawing tick, with red edges.
+  function drawHud() {
+    const D = state.state === 'playing' ? draw : null;
+    const left = D ? Math.max(0, D.endsAt - now()) : 0;
+    $('#timeFill').style.width = `${D && D.span ? Math.min(100, (100 * left) / D.span) : 100}%`;
+    $('#timeFill').classList.toggle('low', Boolean(D && D.phase === 'draw' && left < 10000));
+    $('#timeText').textContent = D ? clock(left) : '';
+    $('#hudRound').textContent = `DRAW BATTLE · ${roundLabelDraw()}`;
+    if (!D) {
+      $('#hudTitle').textContent = 'Get your phones ready!';
+    } else {
+      const who = nameOf(D.drawer);
+      const what = D.phase === 'choose' ? `${who} is picking a word`
+        : D.phase === 'draw' ? `${who} is drawing · ${D.guessed.length} of ${Math.max(D.guessed.length, D.guessers)} got it` : 'The word is out!';
+      $('#hudTitle').textContent = `TURN ${D.turn} OF ${D.turns} · ${what}`;
+    }
+    const tense = Boolean(D && D.phase === 'draw' && left > 0 && left <= 10000);
+    show('#tension', tense);
+    Music.setFast(tense);
+    const sec = Math.ceil(left / 1000);
+    if (tense && sec !== lastTick) Sfx.play('tick');
+    lastTick = tense ? sec : null;
   }
 
   // ---- hall of fame --------------------------------------------------
