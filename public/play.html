@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="/css/pixel.css">
   <style>
     body.phone { position: fixed; inset: 0; overflow: hidden; touch-action: manipulation; overscroll-behavior: none; }
-    #app { --b: 3px; position: fixed; left: 0; right: 0; top: 0; height: var(--app-h, 100%); display: flex; flex-direction: column; max-width: 560px; margin: 0 auto; }
+    #app { --b: 3px; position: fixed; left: 0; right: 0; top: 0; height: var(--app-h, 100%); display: flex; flex-direction: column; max-width: 560px; margin: 0 auto; zoom: var(--ui, 1); }
     .screen { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 12px; }
     .logo.sm { font-size: 22px; text-align: center; text-shadow: 3px 3px 0 #c0392b, 6px 6px 0 var(--ink); margin: 6px 0 4px; }
     .px-box { padding: 14px; }
@@ -331,7 +331,7 @@
     @media (orientation: landscape) {
       #scrDraw { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
       #scrDraw .topbar { grid-column: 1 / -1; }
-      #scrDraw .d-board { grid-column: 1; grid-row: 2 / span 4; align-self: start; width: min(62vw, calc((var(--app-h, 100vh) - 44px) * 4 / 3)); }
+      #scrDraw .d-board { grid-column: 1; grid-row: 2 / span 4; align-self: start; width: min(calc(min(var(--app-w, 100vw), 1100px) * 0.66), calc((var(--app-h, 100vh) - 44px) * 4 / 3)); }
       #scrDraw .d-word { grid-column: 2; grid-row: 2; }
       #scrDraw .d-tools { grid-column: 2; grid-row: 3; }
       #scrDraw .d-feed { grid-column: 2; grid-row: 4; }

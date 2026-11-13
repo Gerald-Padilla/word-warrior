@@ -210,7 +210,8 @@
           `${p ? p.name : 'Someone'} GOT IT! +${m.points}${nth ? ` · ${nth}` : ''}`,
         ]));
       } else {
-        box.append(el('div', { class: `m${m.id === freshFeed ? ' new' : ''}` }, [el('b', { text: m.name, style: `color:${color}` }), m.text]));
+        // ✓: they already got it, chatting while the others guess.
+        box.append(el('div', { class: `m${m.id === freshFeed ? ' new' : ''}` }, [el('b', { text: `${m.done ? '✓ ' : ''}${m.name}`, style: `color:${color}` }), m.text]));
       }
     }
     box.scrollTop = box.scrollHeight;
@@ -653,17 +654,8 @@
     show('#banner', st === 'countdown');
     show('#inter', st === 'intermission');
     show('#final', st === 'finished');
-    arena.setReserveRight(fighting && !teamsOn && !drawOn ? 340 : 0);
-    const hudH = st === 'lobby' || st === 'finished' ? 0 : $('#hud').offsetHeight;
-    $('#drawStage').style.paddingTop = `${hudH + 16}px`;
-    $('#drawStage').style.setProperty('--ds-top', `${hudH + 16}px`);
-    $('#teamBar').style.top = `${hudH}px`;
-    const barH = teams && hudH ? $('#teamBar').offsetHeight : 0;
-    arena.setReserveTop(hudH + barH);
+    relayout();
     renderTeamBar();
-    $('#inter').style.paddingTop = `${hudH + barH + 20}px`;
-    $('#board').style.top = `${hudH + 18}px`;
-    $('#board').style.maxHeight = `calc(100vh - ${hudH + 18}px - 24vh)`;
 
     if (st === 'lobby') {
       arena.setTheme('slime');
@@ -718,6 +710,28 @@
     if (st === 'finished' && prev !== 'finished') renderFinal();
     Music.play(musicFor(st, r));
   }
+
+  // Everything placed under the top bar (and the team HP bar) follows its height, which changes with the
+  // screen size; the falling words stay clear of the bars and the leaderboard. Runs again on resize.
+  function relayout() {
+    const st = state.state;
+    const fighting = st === 'countdown' || st === 'playing';
+    const hudH = st === 'lobby' || st === 'finished' ? 0 : $('#hud').offsetHeight;
+    const gap = window.innerHeight <= 560 || window.innerWidth <= 900 ? 8 : 16;
+    $('#drawStage').style.paddingTop = `${hudH + gap}px`;
+    $('#drawStage').style.setProperty('--ds-top', `${hudH + gap}px`);
+    $('#teamBar').style.top = `${hudH}px`;
+    const barH = teams && hudH ? $('#teamBar').offsetHeight : 0;
+    arena.setReserveTop(hudH + barH);
+    arena.setReserveRight(fighting && mode !== 'teams' && mode !== 'draw' ? $('#board').offsetWidth + 40 : 0);
+    $('#inter').style.paddingTop = `${hudH + barH + 20}px`;
+    $('#board').style.top = `${hudH + gap + 2}px`;
+    $('#board').style.maxHeight = `calc(100vh - ${hudH + gap + 2}px - 24vh)`;
+  }
+  window.addEventListener('resize', () => {
+    relayout();
+    scheduleBoard();
+  });
 
   // A one-round game has no round numbers; easy and hard difficulty say so wherever the round is named.
   const roundLabel = (i) => (rounds.length === 1 ? 'ONE ROUND' : `ROUND ${i + 1}`);

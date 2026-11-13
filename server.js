@@ -2062,13 +2062,13 @@ io.on('connection', (socket) => {
   });
 
   // A guess. Replies { ok, correct, word, points } when it's right, { ok, close } when it's one slip away
-  // (or the word with something around it), or { ok: false, reason }.
+  // (or the word with something around it), or { ok: false, reason }. A hero who already got it can keep
+  // chatting (`done` on their messages), but anything that gives the word away is blocked ('answer').
   socket.on('draw:guess', (data, cb) => {
     const { room, player } = ctx();
     const D = room && room.draw;
     if (!player || !D || room.state !== 'playing' || D.phase !== 'draw') return reply(cb, { ok: false, reason: 'not-now' });
     if (player.id === D.drawer) return reply(cb, { ok: false, reason: 'drawer' });
-    if (D.guessed.has(player.id)) return reply(cb, { ok: false, reason: 'done' });
     const text = cleanChat(data?.text).slice(0, 40);
     const g = squash(text);
     if (!g) return reply(cb, { ok: false, reason: 'empty' });
@@ -2076,9 +2076,11 @@ io.on('connection', (socket) => {
     if (now - (player.lastGuess || 0) < DRAW_GUESS_GAP_MS) return reply(cb, { ok: false, reason: 'slow' });
     player.lastGuess = now;
     const w = squash(D.word);
-    if (g === w) return reply(cb, guessedIt(room, player, now));
-    if (g.includes(w) || nearMiss(g, w)) return reply(cb, { ok: true, close: true });
-    const msg = { id: shortId(), by: player.id, name: player.name, color: player.color, text };
+    const done = D.guessed.has(player.id);
+    if (done && (g.includes(w) || nearMiss(g, w))) return reply(cb, { ok: false, reason: 'answer' });
+    if (!done && g === w) return reply(cb, guessedIt(room, player, now));
+    if (!done && (g.includes(w) || nearMiss(g, w))) return reply(cb, { ok: true, close: true });
+    const msg = { id: shortId(), by: player.id, name: player.name, color: player.color, text, done };
     D.feed = D.feed.concat(msg).slice(-DRAW_FEED);
     io.to(channel(room)).emit('draw:say', msg);
     reply(cb, { ok: true });

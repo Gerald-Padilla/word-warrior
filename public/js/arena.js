@@ -127,7 +127,9 @@
 
     // ---- setup ---------------------------------------------------------
     resize() {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      // A scaled-up page (CSS zoom on a PC) shows the canvas bigger than its CSS size: draw at what's shown.
+      const shown = this.canvas.clientWidth ? this.canvas.getBoundingClientRect().width / this.canvas.clientWidth : 1;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5) * (shown > 1.01 ? Math.min(shown, 2.5) : 1);
       this.dpr = dpr;
       const W = Math.max(1, Math.round(this.canvas.clientWidth * dpr));
       const H = Math.max(1, Math.round(this.canvas.clientHeight * dpr));
@@ -141,8 +143,9 @@
         this.fontPx = Math.max(16, Math.round((this.U * 2) / 8) * 8);
         this.groundY = H - 3 * this.U;
       } else if (this.mode === 'host') {
-        this.U = Math.max(2, Math.round(H / 170));
-        this.fontPx = Math.max(16, Math.round(H / 46 / 8) * 8);
+        // Sized off the height, or the width on an upright tablet or phone, so long words still fit.
+        this.U = Math.max(2, Math.round(Math.min(H / 170, W / 100)));
+        this.fontPx = Math.max(16, Math.round(Math.min(H / 46, W / 30) / 8) * 8);
         this.groundY = H - 9 * this.U;
       } else if (this.landscape) {
         // A phone on its side or a PC window: size things off the height so heroes don't fill the screen.
@@ -602,10 +605,11 @@
       const top = lerp(this.reserveTop - stackH, this.groundY - stackH, p);
       const fieldW = Math.max(this.W * 0.4, this.W - this.reserveRight);
       const half = Math.max(mw, plateW) / 2 + U;
-      let cx = half * 2 > fieldW ? fieldW / 2 : clamp(w.x * fieldW, half, fieldW - half);
-      if (this.monster === 'bat') cx += Math.sin(now / 280 + w.id) * U * 2;
-      if (this.monster === 'skull') cx += Math.sin(now / 520 + w.id) * U * 1.5;
-      if (this.monster === 'boss') cx += Math.sin(now / 360 + w.id) * U * 1.5;
+      // Bats, skulls and the boss's minions sway; the sway stays inside the field too.
+      let sway = 0;
+      if (this.monster === 'bat') sway = Math.sin(now / 280 + w.id) * U * 2;
+      if (this.monster === 'skull' || this.monster === 'boss') sway = Math.sin(now / (this.monster === 'skull' ? 520 : 360) + w.id) * U * 1.5;
+      const cx = half * 2 > fieldW ? fieldW / 2 : clamp(w.x * fieldW + sway, half, fieldW - half);
       return { p, cx, top, mw, mh, plateW, plateH, cy: top + mh / 2, py: top + mh + U };
     }
 

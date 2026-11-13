@@ -58,12 +58,39 @@
   const knockedOut = () => royaleOn() && Boolean(me()?.out);
 
   // ---- viewport: keep the typing bar above the on-screen keyboard ----
+  // A PC window or a tablet gets the phone layout scaled up (--ui), so nothing ends up tiny on a big
+  // screen: about 1000 x 620 on its side, 480 x 800 upright. Phones stay at 1. While you're typing, the
+  // keyboard shrinking the window doesn't count, so the scale doesn't jump.
+  let tallest = 0;
+  let wideAt = 0;
+  function uiScale() {
+    const w = window.innerWidth;
+    const typingNow = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '');
+    if (w !== wideAt || !typingNow || window.innerHeight > tallest) tallest = window.innerHeight;
+    wideAt = w;
+    const h = tallest;
+    const z = w > h ? Math.min(w / 1000, h / 620) : Math.min(w / 480, h / 800);
+    return z < 1.05 ? 1 : Math.round(Math.min(2.5, z) * 100) / 100;
+  }
   function fit() {
     const vv = window.visualViewport;
-    document.documentElement.style.setProperty('--app-h', `${vv ? vv.height : window.innerHeight}px`);
-    $('#app').style.transform = vv && vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
+    const z = uiScale();
+    const root = document.documentElement.style;
+    root.setProperty('--ui', z);
+    root.setProperty('--app-h', `${(vv ? vv.height : window.innerHeight) / z}px`);
+    root.setProperty('--app-w', `${window.innerWidth / z}px`);
+    $('#app').style.transform = vv && vv.offsetTop ? `translateY(${vv.offsetTop / z}px)` : '';
     requestAnimationFrame(syncReserve);
+    // The canvases' CSS size may not change with the scale, so redraw them at their new size on screen.
+    if (z !== shownScale) {
+      shownScale = z;
+      requestAnimationFrame(() => {
+        arena.resize();
+        stage.resize();
+      });
+    }
   }
+  let shownScale = 1;
 
   // On a short landscape screen the HP bars (team battle) or standings (battle royale) float over the top
   // of the battlefield; keep the action below them.
@@ -823,7 +850,7 @@
         box.append(el('div', { class: 'm close me', text: `"${m.text}" IS CLOSE!` }));
       } else {
         box.append(el('div', { class: `m${m.by === you ? ' me' : ''}` }, [
-          el('b', { text: m.name, style: `color:${(COLORS[m.color] || COLORS[0]).Q}` }), m.text,
+          el('b', { text: `${m.done ? '✓ ' : ''}${m.name}`, style: `color:${(COLORS[m.color] || COLORS[0]).Q}` }), m.text,
         ]));
       }
     }
@@ -925,15 +952,17 @@
       over.append(el('div', { class: 'o1', text: 'THE WORD WAS' }), el('div', { class: 'o2', text: (D.word || '?').toUpperCase() }), el('div', { class: 'o3', text: line }));
     }
 
-    // The drawer gets the tools; everyone else the guess box (open only while there's a drawing to guess).
+    // The drawer gets the tools; everyone else the guess box (open while there's a drawing to guess). Once
+    // you've got it you can keep chatting, as long as you don't give the word away.
     $('#dTools').classList.toggle('hidden', !canDraw());
     $('#dBoard').classList.toggle('mine', canDraw());
-    const guessing = Boolean(D && D.phase === 'draw' && !myTurn() && !iGotIt());
+    const guessing = Boolean(D && D.phase === 'draw' && !myTurn());
     $('#dGuess').classList.toggle('hidden', myTurn());
     $('#dGuess').classList.toggle('done', iGotIt());
     const box = $('#dIn');
     box.disabled = !guessing;
-    box.placeholder = iGotIt() ? 'You got it! Wait for the others...' : guessing ? 'Type your guess...' : 'Wait for the drawing...';
+    box.placeholder = !guessing ? 'Wait for the drawing...' : iGotIt() ? 'You got it! Chat away, no spoilers...' : 'Type your guess...';
+    $('#dGuess button').textContent = iGotIt() ? 'SEND' : 'GUESS';
     if (!guessing && document.activeElement === box) box.blur();
     renderTools();
   }
@@ -1019,7 +1048,7 @@
     e.preventDefault();
     const box = $('#dIn');
     const text = box.value.trim();
-    if (!text || !draw || draw.phase !== 'draw' || myTurn() || iGotIt()) return;
+    if (!text || !draw || draw.phase !== 'draw' || myTurn()) return;
     box.value = '';
     socket.emit('draw:guess', { text }, (res) => {
       if (!res) return;
@@ -1033,6 +1062,14 @@
         addDFeed({ id: `close-${Date.now()}`, close: true, text });
         showDToast('SO CLOSE!', 'good');
         Sfx.play('beep');
+      } else if (!res.ok && res.reason === 'answer') {
+        // You already have it: a message with the word (or nearly) would give it away.
+        showDToast('NO SPOILERS! THAT GIVES THE WORD AWAY', 'bad', 2000);
+        Sfx.play('miss');
+        const form = $('#dGuess');
+        form.classList.remove('shake');
+        void form.offsetWidth;
+        form.classList.add('shake');
       } else if (!res.ok && res.reason === 'slow') {
         if (!box.value) box.value = text; // too quick after the last one: give it back to send again
       }

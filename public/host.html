@@ -165,7 +165,7 @@
     .ds-list { display: flex; flex-direction: column; gap: 5px; min-height: 0; overflow: hidden; }
     .ds-list .row { grid-template-columns: 24px 30px 1fr auto; font-size: 9px; }
     .ds-list .row img { width: 30px; height: 30px; }
-    .ds-list .row .nm small { display: block; margin-top: 5px; font-size: 7px; color: var(--muted); }
+    .ds-list .row .nm small { display: block; margin-top: 5px; font-size: 7px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
     .ds-list .row.drawer { box-shadow: inset 0 0 0 2px var(--gold); }
     .ds-list .row.drawer .nm small { color: var(--gold); }
     .ds-list .row.got { background: rgba(91, 212, 106, 0.28); }
@@ -273,6 +273,148 @@
       .start-row .px-btn { font-size: 11px; padding: 10px 12px; }
       .start-row .px-btn.big { font-size: 14px; padding: 12px 18px; }
       .start-row .hint { flex-basis: 100%; }
+    }
+
+    /* ---- Tablets and phones ---------------------------------------------------------------------------
+       The big screen also works on a tablet or a phone: the lobby scrolls, the top bar and the panels get
+       smaller, and the draw battle stacks. */
+    @media (max-width: 1100px) {
+      #drawStage { grid-template-columns: 210px minmax(0, 1fr) 230px; gap: 10px; padding: 0 10px 10px; }
+      .ds-list .row { grid-template-columns: 20px 24px 1fr auto; gap: 5px; font-size: 8px; }
+      .ds-list .row img { width: 24px; height: 24px; }
+    }
+    /* Narrow (an upright tablet or phone) or short (a phone on its side) */
+    @media (max-width: 900px), (max-height: 560px) {
+      #lobby { overflow-y: auto; padding: 8px 0 16px; }
+      .lobby-card { max-height: none; gap: 18px; padding: 16px; }
+      .lobby-right { max-height: none; }
+      .lobby-mid { min-height: 0; }
+      .roster { min-height: 96px; max-height: 300px; }
+      .chat-panel { max-height: 300px; }
+      .qr-frame img { width: min(44vw, 34vh, 220px); height: min(44vw, 34vh, 220px); }
+      .lobby-left .logo { font-size: 26px; }
+      .opt small { display: none; }
+
+      #hud { padding: 5px 10px; gap: 6px 12px; }
+      .hud-join { gap: 8px; }
+      .hud-join img { width: 42px; height: 42px; }
+      .hud-join .tiny { font-size: 7px; }
+      .hud-join .code { font-size: 14px; letter-spacing: 2px; margin-top: 3px; }
+      .hud-round { min-width: 0; }
+      #hudRound { font-size: 11px; }
+      #hudTitle { font-size: 7px; line-height: 1.6; margin-top: 3px; }
+      .time-row { margin-top: 5px; gap: 8px; }
+      .timebar { height: 10px; }
+      #timeText { font-size: 10px; min-width: 40px; }
+      .hud-controls .px-btn { font-size: 7px; padding: 5px 6px; }
+
+      #teamBar { gap: 8px; padding: 5px 10px 6px; }
+      .tb-name { font-size: 9px; }
+      .tb-name span { font-size: 8px; margin: 0 4px; }
+      .tb-bar { height: 14px; }
+      .tb-vs { font-size: 12px; }
+      .fx-chip { font-size: 7px; padding: 2px 4px; }
+
+      #board { width: 180px; right: 8px; padding: 8px 6px; }
+      #board h3 { font-size: 9px; margin-bottom: 8px; }
+      #board .row, #board.royale .row { grid-template-columns: 18px 22px 1fr auto; gap: 5px; font-size: 8px; padding: 3px 5px; }
+      #board .row img { width: 22px; height: 22px; }
+
+      #banner { padding: 0 12px; }
+      .inter-card { padding: 16px 12px; }
+      .inter-card h2 { font-size: 16px; }
+      .inter-card .sub { font-size: 9px; margin-bottom: 12px; }
+      .inter-table .row { grid-template-columns: 22px 28px 1fr 66px 66px; font-size: 9px; padding: 4px 6px; gap: 6px; }
+      .inter-table .row img { width: 28px; height: 28px; }
+      .inter-next { font-size: 10px; margin-top: 12px; line-height: 1.7; }
+
+      /* Results: the buttons move to a bar along the bottom */
+      #final { padding: 2vh 8px 76px; }
+      .podium { gap: 8px; margin-top: 30px; }
+      .pod { width: min(30vw, 190px); }
+      .pod img { width: clamp(48px, 12vw, 96px); height: clamp(48px, 12vw, 96px); }
+      .pod .nm { font-size: 9px; }
+      .pod .sc { font-size: 9px; }
+      .pod .ko { font-size: 7px; margin: 4px 0 8px; }
+      .pod .block { font-size: 22px; padding-top: 8px; }
+      .pod.p1 .block { height: 13vh; } .pod.p2 .block { height: 9vh; } .pod.p3 .block { height: 6vh; }
+      .pod .crown { top: -26px; width: 33px; height: 21px; }
+      .final-actions { top: auto; bottom: 0; left: 0; right: 0; flex-direction: row; padding: 8px; gap: 6px; background: rgba(27, 20, 38, 0.94); box-shadow: 0 -4px 0 #0e0a17; }
+      .final-actions .px-btn.big { flex: 1; font-size: 9px; padding: 10px 4px; }
+      .award .an { max-width: 110px; }
+
+      .hof-card { padding: 16px 12px; }
+      .hof-card h2 { font-size: 20px; }
+      .hof-cols { grid-template-columns: 1fr; }
+      .hof-foot { flex-direction: column; align-items: stretch; }
+
+      #dsHint { font-size: 18px; }
+      .ds-word { min-height: 38px; padding: 6px 12px; gap: 10px; }
+      .ds-tag { font-size: 7px; padding: 4px 5px; }
+      .ds-over { gap: 8px; padding: 12px; }
+      .ds-over img { width: 64px; height: 64px; }
+      .ds-over .o1 { font-size: 8px; }
+      .ds-over .o2 { font-size: 16px; }
+      .ds-over .o3 { font-size: 8px; }
+      .ds-side { padding: 8px 6px; gap: 6px; }
+      .ds-side h3 { font-size: 9px; }
+      .ds-feed .m { font-size: 8px; }
+    }
+    /* Upright: one column. Lobby: the QR on top, then everything else. The top bar wraps under the code and
+       buttons. Draw battle: the board across the top, scores and guesses side by side under it. */
+    @media (max-width: 900px) and (orientation: portrait) {
+      .lobby-card { grid-template-columns: 1fr; width: calc(100vw - 16px); }
+      .lobby-left { gap: 6px; }
+      .qr-frame { margin: 10px; }
+      .lobby-mid { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
+      .chat-panel { max-height: 220px; }
+      .roster { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+      .hero-tile img { width: 48px; height: 48px; }
+    }
+    @media (max-width: 700px) and (orientation: portrait) {
+      .mode-pick { grid-template-columns: 1fr 1fr; }
+      .mode-btn { font-size: 10px; padding: 10px 6px; }
+      .setup { grid-template-columns: 1fr; }
+      .rounds { grid-auto-flow: row; }
+      .opts { grid-template-columns: repeat(2, 1fr); }
+      .start-row .px-btn.big { flex-basis: 100%; }
+      #hud { grid-template-columns: auto 1fr; grid-template-areas: "join controls" "round round"; }
+      .hud-join { grid-area: join; }
+      .hud-round { grid-area: round; }
+      .hud-controls { grid-area: controls; flex-wrap: wrap; justify-content: flex-end; }
+      #board { width: 150px; }
+      #board .row img { display: none; }
+      #board .row, #board.royale .row { grid-template-columns: 16px 1fr auto; }
+      .inter-table .row { grid-template-columns: 20px 0 1fr 52px 56px; }
+      .inter-table .row img { display: none; }
+    }
+    @media (max-width: 900px) and (orientation: portrait) {
+      #drawStage { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 8px; padding: 0 8px 8px; }
+      .ds-mid { grid-column: 1 / -1; grid-row: 1; }
+      #drawStage > .ds-side:first-child { grid-column: 1; grid-row: 2; }
+      #drawStage > .ds-side:last-child { grid-column: 2; grid-row: 2; }
+      .ds-board { width: 100%; box-shadow: 0 0 0 4px var(--ink), 0 0 0 7px var(--gold-dark); }
+    }
+    /* A phone on its side: the board on the left, scores over guesses on the right. */
+    @media (max-height: 560px) and (orientation: landscape) {
+      #drawStage { grid-template-columns: minmax(0, 1fr) 230px; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; padding: 0 8px 8px; }
+      .ds-mid { grid-column: 1; grid-row: 1 / span 2; gap: 6px; }
+      #drawStage > .ds-side:first-child { grid-column: 2; grid-row: 1; }
+      #drawStage > .ds-side:last-child { grid-column: 2; grid-row: 2; }
+      .ds-board { width: min(100%, calc((100vh - var(--ds-top, 70px) - 60px) * 4 / 3)); box-shadow: 0 0 0 4px var(--ink), 0 0 0 7px var(--gold-dark); }
+      .lobby-card { grid-template-columns: minmax(0, 220px) minmax(0, 1fr); width: calc(100vw - 16px); gap: 14px; padding: 12px; }
+      .lobby-left { gap: 6px; }
+      .lobby-left .logo { font-size: 20px; }
+      .tag { font-size: 8px; line-height: 1.6; }
+      .qr-frame { margin: 8px; }
+      .qr-frame img { width: min(26vw, 44vh, 190px); height: min(26vw, 44vh, 190px); }
+      .room-code span { font-size: 18px; letter-spacing: 4px; }
+      .mode-pick { grid-template-columns: 1fr 1fr; gap: 6px; }
+      .mode-btn { font-size: 9px; padding: 8px 6px; }
+      .mode-btn small { display: none; }
+      .lobby-right h2 { font-size: 11px; }
+      .setup { grid-template-columns: 1fr; }
+      .opts { grid-template-columns: repeat(3, 1fr); }
     }
   </style>
 </head>

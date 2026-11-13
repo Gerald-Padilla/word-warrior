@@ -177,6 +177,9 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
   - **Wrong guesses** appear for everyone in the guess list.
   - **Right guesses** are never shown. Everyone sees "*Name* GOT IT!" instead, and only the guesser's phone
     shows the word.
+  - **After guessing right**, players can keep typing to chat while the others guess. Their messages show
+    with a ✓. Anything that would give the word away (the word itself, something one letter off, or the
+    word inside a longer message) is blocked, and their phone shows "NO SPOILERS!".
   - **Close guesses** (one letter off or two letters swapped, or the word with extra letters around it) are
     shown only to the guesser, as "SO CLOSE!", so they can't give the word away.
   - Capitals and spaces don't matter: "Ice Cream" and "icecream" both count.
@@ -198,12 +201,28 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
   deadline, payday). The host's own words (**MY WORDS**) are added to the choices, sorted by length.
 - Draw battle scores aren't recorded in the Hall of Fame.
 
-## Landscape and PC
+## PC, tablet and phone
 
-The player page works upright, sideways, and in a desktop browser. Sideways and on a PC it uses the full
-width; the join, lobby and results screens switch to two columns. On a phone held sideways the typing box
-moves into the top row (and team HP bars float over the battlefield) so there's room to play with the
-keyboard open.
+Both pages adjust to the screen they're on.
+
+**Player page:**
+
+- **On a phone:** it works upright and sideways. Held sideways, the typing box moves into the top row (and
+  team HP bars float over the battlefield) so there's room to play with the keyboard open.
+- **On a PC or tablet:** the same screens are scaled up to fill the window, so text and buttons aren't tiny
+  on a big monitor. Sideways and on a PC, the join, lobby and results screens use two columns. In a draw
+  battle the board sits on the left with the tools or guesses beside it, and drawing with a mouse works the
+  same as with a finger.
+- **While typing:** when the on-screen keyboard opens, the page keeps its scale.
+
+**Big screen (host page):** made for a PC, TV or projector, but it also works on a tablet or phone.
+
+- The lobby stacks into one column and scrolls, with START at the bottom.
+- The top bar, leaderboard, team HP bars, results and Hall of Fame shrink to fit, and the results buttons
+  move to a bar along the bottom.
+- On an upright screen, the battlefield sizes its words to the width, so long words still fit.
+- In a draw battle, the board goes across the top with the scores and guesses side by side under it
+  (upright), or on the left with them stacked beside it (sideways).
 
 **Heroes:** twelve classes, each with its own attack. Customize each with 8 colors, 4 skin tones, 8 hair/beard
 colors (for the classes that show hair), 6 trims (the gold accents) and a companion pet (cat, owl, slime, baby
