@@ -8,12 +8,16 @@ module.exports = {
     easy: [
       'mickey mouse|mickey', 'minnie mouse|minnie', 'donald duck|donald', 'goofy', 'pluto', 'olaf', 'simba', 'stitch',
       'dumbo', 'winnie the pooh|pooh|pooh bear', 'tigger', 'eeyore', 'piglet', 'bambi', 'baymax', 'elsa',
+      '101 dalmatians|dalmatians|dalmatian', 'the seven dwarfs',
     ],
     medium: [
       'anna', 'ariel|little mermaid', 'cinderella', 'snow white', 'belle', 'rapunzel', 'moana', 'maui', 'aladdin', 'genie',
       'jasmine', 'mulan', 'peter pan', 'tinker bell', 'captain hook', 'pinocchio', 'cruella|cruella de vil', 'mufasa',
       'timon', 'pumbaa', 'lilo', 'chip and dale', 'daisy duck|daisy', 'scrooge mcduck|scrooge', 'sebastian', 'flounder',
-      'thumper', 'beast', 'hercules', 'tarzan', 'sven', 'scar',
+      'thumper', 'beast', 'hercules', 'tarzan', 'sven', 'scar', 'magic mirror', 'kanga and roo|kanga|roo',
+      'christopher robin', 'prince charming', 'prince eric|eric', 'king triton|triton', 'lady and the tramp|lady|tramp',
+      'baloo', 'mowgli', 'bagheera', 'shere khan', 'king louie', 'robin hood', 'marie', 'chicken little',
+      'hiro|hiro hamada', 'kim possible', 'evil queen', 'queen of hearts', 'zeus', 'bolt',
     ],
     hard: [
       'mushu', 'jafar', 'ursula', 'maleficent', 'hades', 'mad hatter', 'cheshire cat', 'jiminy cricket', 'geppetto',
@@ -21,22 +25,42 @@ module.exports = {
       'mirabel', 'bruno', 'rafiki', 'zazu', 'nala', 'gaston', 'lumiere', 'cogsworth', 'mrs potts', 'abu', 'iago', 'meeko',
       'kristoff', 'flynn rider|flynn', 'pascal', 'maximus', 'raya', 'tiana', 'aurora|sleeping beauty', 'pocahontas',
       'fairy godmother', 'white rabbit', 'tamatoa', 'huey dewey and louie', 'dopey',
+      // Classics
+      'gus gus|gus', 'scuttle', 'kaa', 'prince john', 'sir hiss', 'duchess', 'basil', 'figaro', 'rajah', 'mr smee|smee',
+      'wendy', 'tick tock the crocodile|tick tock', 'tweedledee and tweedledum', 'merlin', 'prince phillip',
+      'flora fauna and merryweather|three good fairies', 'grandmother willow', 'judge frollo|frollo', 'shan yu', 'yzma',
+      'kronk', 'pegasus', 'megara|meg', 'philoctetes|phil', 'pain and panic', 'terk', 'kida',
+      // Mickey and friends
+      'max goof|max', 'pete', 'oswald the lucky rabbit|oswald', 'darkwing duck',
+      // Newer films
+      'nani', 'jumba', 'pleakley', 'ray the firefly|ray', 'louis the alligator|louis', 'dr facilier|facilier|shadow man',
+      'prince naveen|naveen', 'mother gothel|gothel', 'prince hans|hans', 'oaken', 'marshmallow', 'bruni', 'te fiti',
+      'gramma tala', 'luisa', 'isabela', 'abuela|abuela alma', 'namaari', 'tuk tuk', 'king candy', 'fix-it felix|felix',
+      'flash the sloth|flash', 'chief bogo', 'clawhauser', 'asha',
     ],
   },
   pixar: {
     easy: [
       'woody', 'buzz lightyear|buzz', 'nemo', 'dory', 'mike wazowski|mike', 'sully|sulley', 'wall-e',
-      'lightning mcqueen|mcqueen', 'remy', 'mr incredible', 'jessie', 'rex',
+      'lightning mcqueen|mcqueen', 'remy', 'mr incredible', 'jessie', 'rex', 'aliens|little green men',
+      'luxo jr|luxo|pixar lamp', 'the incredibles',
     ],
     medium: [
       'mr potato head|potato head', 'eve', 'carl fredricksen|carl', 'elastigirl', 'edna mode|edna', 'boo', 'mater|tow mater',
       'marlin', 'crush', 'slinky dog|slinky', 'hamm', 'forky', 'bo peep', 'russell', 'dug', 'joy', 'sadness', 'anger', 'merida',
-      'dash', 'lotso',
+      'dash', 'lotso', 'bullseye', 'violet', 'mrs potato head', 'zurg|emperor zurg', 'army men|green army men',
+      'sally carrera|sally', 'luigi', 'ellie|ellie fredricksen', 'riley', 'hank',
     ],
     hard: [
-      'bing bong', 'disgust', 'fear', 'anxiety', 'ennui', 'miguel', 'hector', 'dante', 'luca', 'alberto', 'ember', 'wade',
-      'jack-jack', 'frozone', 'syndrome', 'flik', 'heimlich', 'randall', 'linguini', 'kevin', 'squirt', 'bruce', 'gill',
-      'doc hudson', 'arlo', 'mei lee|mei', 'joe gardner',
+      'bing bong', 'disgust', 'fear', 'anxiety', 'ennui', 'envy', 'embarrassment', 'miguel', 'hector', 'dante', 'luca',
+      'alberto', 'giulia', 'ember', 'wade', 'jack-jack', 'frozone', 'syndrome', 'the underminer', 'flik', 'dot', 'atta',
+      'hopper', 'heimlich', 'randall', 'celia', 'mr waternoose|waternoose', 'yeti|abominable snowman', 'linguini',
+      'colette', 'anton ego|ego', 'chef skinner|skinner', 'gusteau', 'emile', 'kevin', 'charles muntz|muntz', 'squirt',
+      'bruce', 'gill', 'nigel', 'bloat', 'mr ray', 'darla', 'destiny', 'bailey', 'doc hudson', 'chick hicks', 'guido',
+      'ramone', 'fillmore', 'cruz ramirez', 'jackson storm', 'finn mcmissile', 'stinky pete', 'sid phillips', 'bonnie',
+      'wheezy', 'trixie', 'mr pricklepants', 'gabby gabby', 'duke caboom', 'ducky and bunny', 'arlo', 'spot',
+      'mei lee|mei', 'ernesto de la cruz|ernesto', 'mama imelda|imelda', 'mama coco', 'pepita', 'queen elinor|elinor',
+      'm-o', 'ian lightfoot|ian', 'barley lightfoot|barley', 'joe gardner', 'sox',
     ],
   },
   dreamworks: {

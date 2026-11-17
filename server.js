@@ -12,6 +12,8 @@ const WORDS = require('./words');
 const DRAW_WORDS = require('./draw-words');
 const DRAW_CHARACTERS = require('./draw-characters');
 const DRAW_TITLES = require('./draw-titles');
+const DRAW_FOOD = require('./draw-food');
+const DRAW_PEOPLE = require('./draw-people');
 
 const PORT = Number(process.env.PORT) || 3000;
 // Render sets RENDER and RENDER_EXTERNAL_URL; there the only address phones can reach is the public one.
@@ -102,6 +104,8 @@ const ROYALE_BOARD_MS = 250; // how often changed HP and scores go out to every 
 // word's category while it's drawn.
 const DRAW_CATEGORIES = [
   { key: 'things', name: 'EVERYDAY THINGS', short: 'THINGS', noun: 'WORD', words: DRAW_WORDS },
+  { key: 'food', name: 'FOOD', short: 'FOOD', noun: 'FOOD', words: DRAW_FOOD.food },
+  { key: 'pinoyfood', name: 'PINOY FOOD', short: 'PINOY FOOD', noun: 'FOOD', words: DRAW_FOOD.pinoy },
   { key: 'disney', name: 'DISNEY', short: 'DISNEY', noun: 'CHARACTER', words: DRAW_CHARACTERS.disney },
   { key: 'pixar', name: 'PIXAR', short: 'PIXAR', noun: 'CHARACTER', words: DRAW_CHARACTERS.pixar },
   { key: 'dreamworks', name: 'DREAMWORKS', short: 'DREAMWORKS', noun: 'CHARACTER', words: DRAW_CHARACTERS.dreamworks },
@@ -109,6 +113,9 @@ const DRAW_CATEGORIES = [
   { key: 'cartoons', name: 'CARTOONS', short: 'CARTOONS', noun: 'CHARACTER', words: DRAW_CHARACTERS.cartoons },
   { key: 'pinoy', name: 'PINOY TV & MOVIES', short: 'PINOY TV/MOVIES', noun: 'TITLE', words: DRAW_TITLES.pinoy },
   { key: 'movies', name: 'FAMOUS MOVIES', short: 'MOVIES', noun: 'TITLE', words: DRAW_TITLES.movies },
+  { key: 'songs', name: 'OPM & INTERNATIONAL SONGS', short: 'SONGS', noun: 'SONG', words: DRAW_TITLES.songs },
+  { key: 'stars', name: 'ACTORS & ARTISTS', short: 'STARS', noun: 'STAR', words: DRAW_PEOPLE.stars },
+  { key: 'isd', name: 'ISD PEOPLE', short: 'ISD PEOPLE', noun: 'PERSON', words: DRAW_PEOPLE.isd },
 ];
 const DRAW_CAT_KEYS = DRAW_CATEGORIES.map((c) => c.key);
 const DRAW_CHARACTER_CATS = DRAW_CATEGORIES.filter((c) => c.noun === 'CHARACTER').map((c) => c.key);
@@ -1332,6 +1339,8 @@ function endRoyale(room) {
 
 const round5 = (v) => Math.round(v / 5) * 5;
 const squash = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+// A name without a leading "the", "a", "an" or "ang" ("The Matrix", "Ang Probinsyano").
+const dropArticle = (s) => String(s || '').toLowerCase().trim().replace(/^(the|a|an|ang)\s+/, '');
 
 // A guess one slip away from the word: a letter missing, extra or wrong, or two letters swapped.
 function nearMiss(g, w) {
@@ -1356,10 +1365,10 @@ function drawSources(room, level) {
   return (picked.length ? picked : [{ key: 'things', short: 'THINGS', list: DRAW_WORDS[level] }]).concat(mine.length ? [own] : []);
 }
 
-// One word from each difficulty, none used earlier in the game. Each comes from a category picked at
-// random (so a small category gets as many turns as a big one), a different one for each of the three
-// when there are enough. `also`: other names that count as right (a character's first name, say); kept
-// on the server.
+// One word from each difficulty, none used earlier in the game (in any category: food and everyday
+// things share some). Each comes from a category picked at random (so a small category gets as many turns
+// as a big one), a different one for each of the three when there are enough. `also`: other names that
+// count as right (a character's first name, say); kept on the server.
 function drawChoices(room) {
   const D = room.draw;
   const taken = new Set();
@@ -1368,7 +1377,7 @@ function drawChoices(room) {
     const fresh = sources.filter((s) => !taken.has(s.key));
     const src = (fresh.length ? fresh : sources)[Math.floor(Math.random() * (fresh.length || sources.length))];
     taken.add(src.key);
-    const id = (w) => `${src.key}:${w}`;
+    const id = (w) => w.split('|')[0];
     let pool = src.list.filter((w) => !D.used.has(id(w)));
     if (!pool.length) {
       for (const w of src.list) D.used.delete(id(w));
@@ -1472,7 +1481,7 @@ function pickDrawWord(room, i, now) {
   const letters = squash(c.text).length;
   const n = letters <= 3 ? 0 : letters <= 5 ? 1 : letters <= 8 ? 2 : 3;
   const names = [c.text, ...(c.also || [])];
-  const accept = [...new Set(names.concat(names.map((t) => t.replace(/^(the|a|an|ang) /, ''))).map(squash).filter(Boolean))];
+  const accept = [...new Set(names.concat(names.map(dropArticle)).map(squash).filter(Boolean))];
   Object.assign(D, {
     phase: 'draw', word: c.text, level: c.level, cat: c.cat, start: now, span: total, endsAt: now + total,
     accept, parts: c.text.split(/[^a-z]+/).filter((w) => w.length >= 4 && !accept.includes(w)),
@@ -2141,7 +2150,8 @@ io.on('connection', (socket) => {
     const givesAway = D.accept.some((w) => (w.length >= 3 && g.includes(w)) || nearMiss(g, w));
     const done = D.guessed.has(player.id);
     if (done && givesAway) return reply(cb, { ok: false, reason: 'answer' });
-    if (!done && D.accept.includes(g)) return reply(cb, guessedIt(room, player, now));
+    // A leading "the" / "a" / "ang" doesn't matter either way: "the beast" is right for Beast.
+    if (!done && (D.accept.includes(g) || D.accept.includes(squash(dropArticle(text))))) return reply(cb, guessedIt(room, player, now));
     if (!done && (givesAway || D.parts.includes(g))) return reply(cb, { ok: true, close: true });
     const msg = { id: shortId(), by: player.id, name: player.name, color: player.color, text, done };
     D.feed = D.feed.concat(msg).slice(-DRAW_FEED);

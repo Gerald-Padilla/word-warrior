@@ -1,6 +1,6 @@
 // Phone controller: hero creator, lobby, typing battle and results.
 (function () {
-  const { $, el, syncClock, watchBuild, rankPlayers, drawStandings, drawCatsLabel, TEAMS, Sfx, Music, EMOTES } = window.WW;
+  const { $, el, syncClock, watchBuild, rankPlayers, drawStandings, drawCatsLabel, longClass, TEAMS, Sfx, Music, EMOTES } = window.WW;
   const { CLASSES, COLORS, SKINS, HAIRS, TRIMS, PETS, POWERS } = window.Art;
   const { heroDataURL, petDataURL, powerDataURL, crownDataURL, classByKey, classHasHair } = window.Art;
 
@@ -791,7 +791,7 @@
   const myTurn = () => drawOn() && Boolean(draw) && draw.drawer === you;
   const iGotIt = () => Boolean(draw && draw.guessed.some((g) => g.id === you));
   const canDraw = () => myTurn() && draw.phase === 'draw' && state.state === 'playing';
-  // What one entry is (WORD, CHARACTER or TITLE), and whether to name each word's category.
+  // What one entry is (WORD, FOOD, CHARACTER, TITLE, SONG, STAR or PERSON), and whether to name each word's category.
   const thing = () => options.drawNoun || 'WORD';
   const manyCats = () => (options.drawCats || []).length > 1;
   const clockText = (ms) => {
@@ -905,6 +905,7 @@
       hint.className = 'mine';
       hint.textContent = (D.word || '').toUpperCase();
     }
+    if (hint.className !== 'note') hint.classList.add(...longClass(hint.textContent));
     const lvl = $('#dLevel');
     lvl.className = `d-tag ${D && D.level ? D.level : 'hidden'}`;
     lvl.textContent = D && D.level ? `${manyCats() && D.cat ? D.cat : LEVEL_NAMES[D.level]} · ${D.points}` : '';

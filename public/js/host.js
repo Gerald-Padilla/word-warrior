@@ -1,6 +1,6 @@
 // Host / big-screen controller: QR lobby, live battlefield, leaderboard and podium.
 (function () {
-  const { $, el, syncClock, watchBuild, rankPlayers, drawStandings, drawCatsLabel, TEAMS, Sfx, Music, EMOTES } = window.WW;
+  const { $, el, syncClock, watchBuild, rankPlayers, drawStandings, drawCatsLabel, longClass, TEAMS, Sfx, Music, EMOTES } = window.WW;
   const { heroDataURL, powerDataURL, crownDataURL, POWERS, COLORS } = window.Art;
 
   const socket = io();
@@ -232,6 +232,9 @@
     if (D.phase === 'draw') hint.textContent = D.hint;
     else if (D.phase === 'reveal') hint.textContent = (D.word || '').toUpperCase();
     else hint.textContent = `${drawer ? drawer.name : 'Someone'} IS PICKING...`;
+    const size = D.phase === 'choose' ? [] : longClass(hint.textContent);
+    hint.classList.toggle('long', size.includes('long'));
+    hint.classList.toggle('xlong', size.includes('xlong'));
     const lvl = $('#dsLevel');
     lvl.className = `ds-tag ${D.level || ''}${D.level ? '' : ' hidden'}`;
     lvl.textContent = D.level ? `${manyCats() && D.cat ? `${D.cat} · ` : ''}${LEVEL_NAMES[D.level]} · ${D.points} PTS` : '';
@@ -897,12 +900,15 @@
   }
   for (const b of document.querySelectorAll('[data-length]')) b.onclick = () => setOptions({ length: b.dataset.length });
   for (const b of document.querySelectorAll('[data-level]')) b.onclick = () => setOptions({ level: b.dataset.level });
-  // Draw battle categories: any mix, but at least one.
-  for (const b of document.querySelectorAll('[data-cat]')) {
+  // Draw battle categories: any mix, but at least one. Each tap builds on what the buttons show (they
+  // change at once), so quick taps don't undo each other before the server answers.
+  const catButtons = [...document.querySelectorAll('[data-cat]')];
+  for (const b of catButtons) {
     b.onclick = () => {
-      const cur = options.drawCats || ['things'];
-      const next = cur.includes(b.dataset.cat) ? cur.filter((k) => k !== b.dataset.cat) : cur.concat(b.dataset.cat);
-      if (next.length) setOptions({ drawCats: next });
+      const next = catButtons.filter((x) => (x === b ? !x.classList.contains('on') : x.classList.contains('on'))).map((x) => x.dataset.cat);
+      if (!next.length) return;
+      b.classList.toggle('on');
+      setOptions({ drawCats: next });
     };
   }
 

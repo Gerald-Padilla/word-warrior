@@ -209,18 +209,27 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
   | Category | What's in it |
   |---|---|
   | **EVERYDAY THINGS** | About 520 things you can draw, with local and office favorites (jeepney, parol, tabo, halo halo, deadline, payday, team building) |
-  | **DISNEY** | Characters: Mickey Mouse, Elsa, Simba, Stitch, Moana, Maleficent... |
-  | **PIXAR** | Characters: Woody, Buzz Lightyear, Nemo, Mike Wazowski, WALL-E, Joy... |
+  | **FOOD** | About 160 foods from everywhere: pizza, fried chicken, sushi, ramen, croissant, tteokbokki, pad thai, churros... |
+  | **PINOY FOOD** | About 120 Pinoy dishes, merienda, street food and sweets: adobo, sinigang, kwek-kwek, sisig, bulalo, puto bumbong, sapin-sapin... |
+  | **DISNEY** | About 170 characters, classic to new: Mickey Mouse, Elsa, Simba, Stitch, Baloo, Moana, Maleficent, Yzma, Mirabel... |
+  | **PIXAR** | About 120 characters from every Pixar film: Woody, Buzz Lightyear, Nemo, Mike Wazowski, WALL-E, Joy, Anxiety, Zurg... |
   | **DREAMWORKS** | Characters: Shrek, Donkey, Po, Toothless, King Julien, Megamind... |
   | **ANIME** | Characters: Pikachu, Doraemon, Goku, Naruto, Luffy, Voltes V, Tanjiro... |
   | **CARTOONS** | Characters: SpongeBob, Scooby Doo, Bugs Bunny, the Simpsons, Ben 10, Bluey, the minions... |
   | **PINOY TV & MOVIES** | Titles: Eat Bulaga, It's Showtime, Ang Probinsyano, Encantadia, Darna, Heneral Luna, Kita Kita... |
   | **FAMOUS MOVIES** | Titles: Titanic, Jaws, Star Wars, Harry Potter, Home Alone, The Matrix, Forrest Gump... |
+  | **OPM & INTERNATIONAL SONGS** | About 200 song titles: Bahay Kubo, Tadhana, Pantropiko, Ang Huling El Bimbo, Baby Shark, Bohemian Rhapsody, Dynamite... |
+  | **ACTORS & ARTISTS** | About 170 local and international stars: Vice Ganda, Coco Martin, Sarah Geronimo, BINI, Taylor Swift, Mr. Bean, BTS... |
+  | **ISD PEOPLE** | The 49 people of ISD, by first name (two-name people count by their first name too, when nobody else has it) |
 
   - With only character categories the screens say "pick a character"; with only title categories, "pick a
-    title".
+    title". Food says "pick a food", songs "a song", actors & artists "a star" and ISD people "a person".
+    A mix says "a word".
+  - A word never comes up twice in a game, even when two categories share it (pizza is food and an
+    everyday thing).
   - Well-known short names count too: "buzz" for Buzz Lightyear, "pooh" for Winnie the Pooh. A leading
-    "the", "a" or "ang" is optional: "matrix" for The Matrix, "probinsyano" for Ang Probinsyano.
+    "the", "a" or "ang" doesn't matter either way: "matrix" counts for The Matrix, "probinsyano" for Ang
+    Probinsyano, and "the beast" for Beast.
   - Typing part of a longer name ("simpson" for Bart Simpson) shows "SO CLOSE!".
   - The blanks show any dashes, digits and apostrophes ("____-_" for WALL-E, "___ 10" for Ben 10). Guesses
     ignore them, so "walle" counts.
@@ -376,7 +385,7 @@ npm run bots -- ABCD 6
 
 (`ABCD` is the room code shown on the host screen; `6` is how many bots. Bots never appear in the Hall of Fame.)
 Each bot types one word at a time at its own speed, so in a battle royale the slower bots get knocked out first.
-In a draw battle, bots scribble on their turn and guess words, characters and titles from the lists that fit the blanks.
+In a draw battle, bots scribble on their turn and guess words, characters, titles, food and people from the lists that fit the blanks.
 
 ## Tuning
 
@@ -384,8 +393,9 @@ Battle royale has its own block (`ROYALE_HP`, `ROYALE_STAGES` with when each sta
 hits are, `ROYALE_RAMP_MS` / `ROYALE_RAMP` for the speed-ups). So does draw battle: `DRAW_ROUNDS`,
 `DRAW_TIME`, `DRAW_POINTS`, `DRAW_ORDER_BONUS`, how long picking, the reveal and the standings take, and the
 guess limits. The categories are the `DRAW_CATEGORIES` list there; their words are in `draw-words.js`
-(everyday things), `draw-characters.js` and `draw-titles.js` (other accepted names go after a `|`, as in
-`'buzz lightyear|buzz'`), and the drawing colors and brush sizes in `public/js/sketch.js`. Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
+(everyday things), `draw-food.js`, `draw-characters.js`, `draw-titles.js` (movies, shows and songs) and
+`draw-people.js` (stars and ISD people); other accepted names go after a `|`, as in
+`'buzz lightyear|buzz'`. The drawing colors and brush sizes are in `public/js/sketch.js`. Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
 `ROUNDS` table at the top of `server.js`, and what each difficulty does to them is the `LEVELS` table below it,
 next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings sit there too:
 `TEAM_HP`, how often power-ups appear and how long their effects last. The game options have their own settings: the boss round (`BOSS_ROUND`, `BOSS_HP`, bonuses),
@@ -401,7 +411,9 @@ The music tracks are the `TRACKS` table in `public/js/common.js`.
 - `words.js`: easy / medium / hard word pools
 - `draw-words.js`: draw battle everyday things (easy / medium / hard)
 - `draw-characters.js`: draw battle characters: Disney, Pixar, DreamWorks, anime, cartoons (with other accepted names)
-- `draw-titles.js`: draw battle titles: Pinoy TV and movies, famous movies
+- `draw-titles.js`: draw battle titles: Pinoy TV and movies, famous movies, OPM and international songs
+- `draw-food.js`: draw battle food: food from everywhere, Pinoy food
+- `draw-people.js`: draw battle people: actors and artists, ISD people
 - `public/js/sketch.js`: draw battle board, shared by the big screen and phones
 - `public/host.html`, `public/js/host.js`: big screen (QR lobby, battlefield, leaderboard, podium)
 - `public/play.html`, `public/js/play.js`: phone (hero creator, lobby, solo, typing, results, Hall of Fame)

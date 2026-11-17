@@ -1,0 +1,60 @@
+// Draw battle: food, one list per category the host can pick (food from everywhere, and Pinoy food). Same
+// rules as the other lists: lowercase, other accepted names after a "|", punctuation optional when
+// guessing. Some everyday-things words are here too (pizza, lechon); a game never shows one twice.
+module.exports = {
+  food: {
+    easy: [
+      'pizza', 'hamburger|burger', 'hot dog|hotdog', 'ice cream', 'cake', 'donut|doughnut', 'french fries|fries', 'egg',
+      'banana', 'apple', 'watermelon', 'cookie', 'bread', 'cheese', 'carrot', 'corn', 'grapes', 'strawberry',
+      'sandwich', 'popcorn', 'cupcake', 'lollipop', 'chocolate', 'candy', 'pancake', 'noodles', 'spaghetti',
+      'fried chicken', 'cherry', 'orange', 'lemon', 'milk', 'rice', 'soup', 'pie', 'toast', 'sausage', 'steak',
+      'fish', 'pineapple', 'mango', 'tomato', 'coconut',
+    ],
+    medium: [
+      'sushi', 'taco', 'burrito', 'nachos', 'pretzel', 'waffle', 'croissant', 'bagel', 'muffin', 'brownie',
+      'cheesecake', 'birthday cake', 'wedding cake', 'milkshake', 'smoothie', 'hot chocolate', 'coffee', 'tea',
+      'orange juice', 'lemonade', 'salad', 'omelet|omelette', 'fried egg|sunny side up', 'bacon and eggs|bacon and egg',
+      'chicken nuggets|nuggets', 'chicken wings|wings', 'ramen', 'dumplings|dumpling', 'spring roll', 'fried rice',
+      'kebab', 'shawarma', 'corn dog', 'mashed potatoes|mashed potato', 'baked potato', 'onion rings', 'meatballs|meatball',
+      'lasagna', 'macaroni', 'mac and cheese', 'cotton candy', 'gummy bears|gummy bear', 'popsicle', 'cinnamon roll',
+      'peanut butter', 'avocado', 'broccoli', 'mushroom', 'eggplant', 'pickle', 'peanut', 'pear', 'kiwi', 'durian',
+      'dragon fruit', 'blueberry', 'banana split', 'sundae', 'apple pie', 'french toast',
+    ],
+    hard: [
+      'paella', 'tempura', 'takoyaki', 'kimchi', 'bibimbap', 'tteokbokki', 'dim sum', 'peking duck', 'pad thai',
+      'tom yum', 'pho', 'banh mi', 'laksa', 'nasi lemak', 'satay', 'curry', 'biryani', 'naan', 'falafel', 'hummus',
+      'escargot', 'baguette', 'macarons|macaron', 'creme brulee', 'tiramisu', 'gelato', 'churros|churro', 'quesadilla',
+      'guacamole', 'fajitas', 'fish and chips', 'hot pot', 'fondue', 'caesar salad', 'clam chowder', 'lobster',
+      'oysters|oyster', 'caviar', 'sashimi', 'onigiri|rice ball', 'bento', 'mochi', 'bubble tea|milk tea|boba',
+      'spam musubi', 'fortune cookie', 'pumpkin pie', 'gingerbread house', 'meatloaf', 'barbecue ribs|ribs',
+      'eggs benedict', 'chili con carne', 'pot roast', 'ice cream sandwich', 'pancake stack', 'pomegranate',
+    ],
+  },
+  // Pinoy food: ulam, merienda, street food, kakanin and sweets.
+  pinoy: {
+    easy: [
+      'adobo', 'lechon', 'halo halo', 'sinigang', 'lumpia', 'pancit', 'turon', 'taho', 'pandesal|pan de sal',
+      'fishball|fish ball', 'kwek-kwek', 'siopao', 'puto', 'bibingka', 'leche flan', 'tapsilog', 'longganisa|longanisa',
+      'kare-kare', 'sisig', 'banana cue|bananacue', 'isaw', 'ube', 'balut', 'pork barbecue|pork bbq|barbecue|bbq',
+    ],
+    medium: [
+      'siomai', 'tocino', 'champorado', 'chicharon|chicharron', 'tinola', 'bulalo', 'dinuguan', 'kaldereta|caldereta',
+      'menudo', 'mechado', 'afritada', 'lechon kawali', 'crispy pata', 'bistek|bistek tagalog', 'tortang talong',
+      'lumpiang shanghai|shanghai', 'palabok|pancit palabok', 'pancit canton', 'arroz caldo', 'lugaw', 'goto', 'mami',
+      'batchoy', 'ensaymada', 'polvoron', 'pastillas', 'ube halaya', 'cassava cake', 'buko pie', 'maja blanca',
+      'puto bumbong', 'suman', 'biko', 'tuyo', 'daing na bangus|bangus', 'dirty ice cream|sorbetes', 'mais con yelo',
+      "sago't gulaman|sago at gulaman|sago gulaman", 'buko juice', 'chicken inasal|inasal', 'pinakbet|pakbet', 'laing',
+      'bicol express', 'sinangag|garlic rice', 'tapa|beef tapa', 'camote cue', 'kikiam', 'mango float', 'hopia',
+    ],
+    hard: [
+      'kinilaw|kilawin', 'bagnet', 'pinapaitan|papaitan', 'paksiw', 'pochero', 'embutido', 'morcon', 'relleno|bangus relleno',
+      'sotanghon', 'lomi', 'pancit malabon', 'pancit habhab', 'okoy|ukoy', 'tokneneng', 'betamax', 'adidas|chicken feet',
+      'chicharon bulaklak', 'squid balls|squidball|squid ball', 'binatog', 'palitaw', 'sapin-sapin', 'kutsinta', 'espasol',
+      'yema', 'otap', 'piaya', 'barquillos', 'ginataang bilo-bilo|bilo-bilo|ginataan', 'maruya', 'pichi-pichi',
+      'tsokolate|sikwate', 'salabat', 'inihaw na liempo|liempo', 'sinampalukang manok', 'ginisang monggo|monggo',
+      'adobong pusit', 'adobong kangkong', 'ginataang kalabasa', 'bopis', "tokwa't baboy|tokwa at baboy", 'buko pandan',
+      'ensaladang mangga', 'graham float|graham cake', 'mamon', 'silvanas', 'sans rival', 'brazo de mercedes',
+      'pan de coco', 'spanish bread', 'kalamay', 'pinipig',
+    ],
+  },
+};

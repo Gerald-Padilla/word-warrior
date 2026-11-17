@@ -55,7 +55,7 @@
     .seg button[data-level="hard"].on { background: #ff7b4a; }
     /* Draw battle word categories: any mix, at least one */
     .cats { grid-column: 1 / -1; display: grid; grid-template-columns: auto repeat(4, minmax(0, 1fr)); gap: 4px; }
-    .cats > span { grid-row: span 2; align-self: center; font-size: 8px; color: var(--muted); margin-right: 4px; line-height: 1.8; }
+    .cats > span { grid-row: span 4; align-self: center; font-size: 8px; color: var(--muted); margin-right: 4px; line-height: 1.8; }
     .cats button { font: inherit; font-size: 8px; line-height: 1.5; padding: 5px 4px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); }
     .cats button::before { content: '+ '; }
     .cats button.on { background: #7fd4ff; color: var(--ink); }
@@ -179,7 +179,10 @@
     .ds-list .row.got .nm small { color: #8be36b; }
     .ds-mid { display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 0; }
     .ds-word { display: flex; align-items: center; justify-content: center; gap: 16px; min-height: 52px; padding: 8px 18px; background: rgba(27, 20, 38, 0.92); box-shadow: 0 0 0 3px var(--ink); max-width: 100%; }
-    #dsHint { font-size: clamp(20px, 2.4vw, 34px); letter-spacing: 0.35em; color: var(--cream); white-space: pre; }
+    /* Long names and titles get smaller letters, and wrap between words, so they fit the bar. */
+    #dsHint { font-size: clamp(20px, 2.4vw, 34px); letter-spacing: 0.35em; color: var(--cream); white-space: pre-wrap; min-width: 0; }
+    #dsHint.long { font-size: clamp(16px, 1.9vw, 26px); letter-spacing: 0.25em; line-height: 1.5; }
+    #dsHint.xlong { font-size: clamp(14px, 1.5vw, 20px); letter-spacing: 0.18em; line-height: 1.5; }
     #dsHint.word { color: var(--gold); letter-spacing: 0.1em; }
     #dsHint.note { font-size: clamp(12px, 1.2vw, 16px); letter-spacing: 0; color: var(--muted); }
     .ds-tag { font-size: 9px; padding: 5px 7px; background: var(--ink); color: var(--muted); white-space: nowrap; }
@@ -541,6 +544,8 @@
           <div class="cats hidden" id="drawCats" title="What gets drawn: pick one or more categories">
             <span>WORDS</span>
             <button type="button" data-cat="things">EVERYDAY THINGS</button>
+            <button type="button" data-cat="food">FOOD</button>
+            <button type="button" data-cat="pinoyfood">PINOY FOOD</button>
             <button type="button" data-cat="disney">DISNEY</button>
             <button type="button" data-cat="pixar">PIXAR</button>
             <button type="button" data-cat="dreamworks">DREAMWORKS</button>
@@ -548,6 +553,9 @@
             <button type="button" data-cat="cartoons">CARTOONS</button>
             <button type="button" data-cat="pinoy">PINOY TV &amp; MOVIES</button>
             <button type="button" data-cat="movies">FAMOUS MOVIES</button>
+            <button type="button" data-cat="songs">OPM &amp; INTERNATIONAL SONGS</button>
+            <button type="button" data-cat="stars">ACTORS &amp; ARTISTS</button>
+            <button type="button" data-cat="isd">ISD PEOPLE</button>
           </div>
         </div>
         <div class="rounds" id="roundChips"></div>

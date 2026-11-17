@@ -48,4 +48,51 @@ module.exports = {
       'slumdog millionaire',
     ],
   },
+  // Songs: OPM and international, mixed in every difficulty.
+  songs: {
+    easy: [
+      // OPM, folk and kids' songs
+      'bahay kubo', 'leron leron sinta', 'ako ay may lobo', 'paru-parong bukid', 'tatlong bibe', 'anak', 'otso otso',
+      'pusong bato', 'tala', 'pantropiko', 'buko', 'ikaw', 'buwan', 'tadhana', 'with a smile', 'harana', 'jopay',
+      'christmas in our hearts',
+      // International
+      'baby shark', 'happy birthday', 'jingle bells', 'twinkle twinkle little star', 'let it go',
+      'old macdonald|old macdonald had a farm', 'the wheels on the bus|wheels on the bus', 'row row row your boat',
+      'itsy bitsy spider', 'london bridge|london bridge is falling down', 'thriller', 'gangnam style', 'despacito',
+      'macarena', 'ymca', 'yellow submarine', 'we will rock you', 'my heart will go on', 'eye of the tiger', 'umbrella',
+      'firework', 'roar', 'dynamite',
+    ],
+    medium: [
+      // OPM
+      'ang huling el bimbo|huling el bimbo', 'pare ko', 'alapaap', 'torete', 'kilometro', 'hawak kamay', 'beer',
+      'kathang isip', 'leaves', 'mundo', 'gento', 'salamin salamin', 'karera', 'magasin', 'migraine', 'tuloy pa rin',
+      'pinoy ako', 'boom tarat tarat', 'kisapmata', 'sirena', 'upuan', 'dati', 'kahit maputi na ang buhok ko',
+      'bakit ngayon ka lang', 'nandito ako', 'forevermore', 'pangarap lang kita', 'tensionado', 'your love', 'manila',
+      'panalangin', 'chinito', 'mapa', 'binibini', 'sana ngayong pasko', 'ang pasko ay sumapit',
+      // International
+      'bohemian rhapsody', 'shape of you', 'hello', 'happy', 'perfect', 'bad guy', 'flowers', 'shake it off', 'butter',
+      'baby', 'dancing queen', 'billie jean', 'imagine', 'yesterday', 'hey jude', 'let it be', 'hotel california',
+      'take me home country roads|country roads', 'uptown funk', 'counting stars', 'believer', 'see you again',
+      'old town road', 'dance monkey', 'blinding lights', 'bad romance', 'single ladies', 'toxic', 'wannabe',
+      'i want it that way', 'my way', 'we are the champions', 'beat it', 'golden', 'apt', 'die with a smile', 'espresso',
+      'how you like that', 'gee', 'sorry sorry', 'nobody', 'all i want for christmas is you', 'last christmas',
+    ],
+    hard: [
+      // OPM
+      'spoliarium', 'overdrive', 'toyang', 'ligaya', 'pagtingin', 'maybe the night', 'magda', 'ere', 'pano', 'uhaw',
+      'museo', 'pasilyo', 'dilaw', 'bawat piyesa', 'sining', 'marilag', 'kundiman', 'sa ngalan ng pag-ibig',
+      "kung 'di rin lang ikaw|kung di rin lang ikaw", 'bakit pa', 'bituing walang ningning', 'huling sayaw', 'narda',
+      'balisong', 'himala', 'hinahanap-hanap kita', 'kanlungan', 'paraluman', 'pagsamo', 'tagpuan', 'paubaya',
+      'araw-araw', 'hindi tayo pwede', 'kahit ayaw mo na', 'ikaw ang aking mahal', 'awitin mo at isasayaw ko',
+      'bonggahan', 'mr suave', 'ewan', 'awit ng barkada', 'himig ng pasko', 'pasko na sinta ko',
+      // International
+      'stairway to heaven', 'smells like teen spirit', 'wonderwall', 'take on me', 'africa', 'under pressure',
+      'purple rain', 'like a prayer', 'material girl', 'girls just want to have fun', 'every breath you take',
+      "don't stop believin'|dont stop believing", 'careless whisper', 'never gonna give you up', 'piano man',
+      'rocket man', 'fly me to the moon', 'what a wonderful world', 'i will always love you',
+      "livin' on a prayer|living on a prayer", "sweet child o' mine|sweet child of mine", 'la bamba', 'september',
+      'barbie girl', 'mambo no 5|mambo number five', 'drivers license', 'anti-hero', 'as it was', 'watermelon sugar',
+      'levitating', 'cupid', 'ditto', 'pink venom', 'boy with luv', 'soda pop', 'feliz navidad',
+    ],
+  },
 };

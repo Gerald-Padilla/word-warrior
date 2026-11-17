@@ -253,7 +253,10 @@
        guess in. */
     #scrDraw { padding: 0; gap: 0; overflow: hidden; }
     .d-word { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 40px; padding: 6px 10px; background: rgba(27, 20, 38, 0.9); text-align: center; }
-    #dHint { font-size: 16px; letter-spacing: 0.3em; white-space: pre; color: var(--cream); }
+    /* Long names and titles get smaller letters, and wrap between words, so they fit the bar. */
+    #dHint { font-size: 16px; letter-spacing: 0.3em; white-space: pre-wrap; min-width: 0; color: var(--cream); }
+    #dHint.long { font-size: 12px; letter-spacing: 0.2em; line-height: 1.6; }
+    #dHint.xlong { font-size: 10px; letter-spacing: 0.15em; line-height: 1.6; }
     #dHint.mine { color: var(--gold); letter-spacing: 0.08em; }
     #dHint.note { font-size: 10px; letter-spacing: 0; line-height: 1.6; white-space: normal; }
     .d-tag { font-size: 7px; padding: 4px 5px; background: var(--ink); color: var(--muted); white-space: nowrap; }

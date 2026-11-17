@@ -49,6 +49,13 @@
   }
 
   // Draw battle: the host's word categories in a few words ("DISNEY + PIXAR", "5 CATEGORIES").
+  // Draw battle: how big a word, its blanks or the drawer's "DRAW: ..." line can be. Long names and song
+  // titles get smaller letters ('long', 'xlong' in the pages' styles).
+  function longClass(text) {
+    const n = String(text || '').length;
+    return n > 20 ? ['xlong'] : n > 11 ? ['long'] : [];
+  }
+
   function drawCatsLabel(names) {
     const list = names && names.length ? names : ['EVERYDAY THINGS'];
     return list.length === 1 ? list[0] : list.length === 2 ? list.join(' + ') : `${list.length} CATEGORIES`;
@@ -308,5 +315,5 @@
   // Emotes players can send from their phones.
   const EMOTES = ['👍', '😂', '😮', '🔥', '👏', '😭'];
 
-  window.WW = { $, el, syncClock, watchBuild, rankPlayers, drawStandings, drawCatsLabel, TEAMS, Sfx, Music, EMOTES };
+  window.WW = { $, el, syncClock, watchBuild, rankPlayers, drawStandings, drawCatsLabel, longClass, TEAMS, Sfx, Music, EMOTES };
 })();
