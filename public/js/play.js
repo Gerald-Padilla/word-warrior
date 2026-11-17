@@ -1,6 +1,6 @@
 // Phone controller: hero creator, lobby, typing battle and results.
 (function () {
-  const { $, el, syncClock, watchBuild, rankPlayers, drawStandings, TEAMS, Sfx, Music, EMOTES } = window.WW;
+  const { $, el, syncClock, watchBuild, rankPlayers, drawStandings, drawCatsLabel, TEAMS, Sfx, Music, EMOTES } = window.WW;
   const { CLASSES, COLORS, SKINS, HAIRS, TRIMS, PETS, POWERS } = window.Art;
   const { heroDataURL, petDataURL, powerDataURL, crownDataURL, classByKey, classHasHair } = window.Art;
 
@@ -791,8 +791,9 @@
   const myTurn = () => drawOn() && Boolean(draw) && draw.drawer === you;
   const iGotIt = () => Boolean(draw && draw.guessed.some((g) => g.id === you));
   const canDraw = () => myTurn() && draw.phase === 'draw' && state.state === 'playing';
-  const characters = () => options.drawSet === 'characters'; // the character edition: famous characters, not things
-  const thing = () => (characters() ? 'CHARACTER' : 'WORD');
+  // What one entry is (WORD, CHARACTER or TITLE), and whether to name each word's category.
+  const thing = () => options.drawNoun || 'WORD';
+  const manyCats = () => (options.drawCats || []).length > 1;
   const clockText = (ms) => {
     const secs = Math.max(0, Math.ceil(ms / 1000));
     return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
@@ -872,7 +873,7 @@
   function renderDrawTop() {
     if (!drawOn()) return;
     const D = draw;
-    $('#dRound').textContent = D ? `${rounds.length === 1 ? '' : `R${state.round + 1} · `}TURN ${D.turn}/${D.turns}` : characters() ? 'CHARACTERS' : 'DRAW BATTLE';
+    $('#dRound').textContent = D ? `${rounds.length === 1 ? '' : `R${state.round + 1} · `}TURN ${D.turn}/${D.turns}` : 'DRAW BATTLE';
     const mine = me();
     $('#dScore').textContent = mine ? mine.score : 0;
     const idx = rankPlayers(players).findIndex((p) => p.id === you);
@@ -906,7 +907,7 @@
     }
     const lvl = $('#dLevel');
     lvl.className = `d-tag ${D && D.level ? D.level : 'hidden'}`;
-    lvl.textContent = D && D.level ? `${LEVEL_NAMES[D.level]} · ${D.points}` : '';
+    lvl.textContent = D && D.level ? `${manyCats() && D.cat ? D.cat : LEVEL_NAMES[D.level]} · ${D.points}` : '';
 
     // Over the board: the countdown, your three words or who's picking, and the reveal.
     const over = $('#dOver');
@@ -915,9 +916,9 @@
     if (state.state === 'countdown') {
       over.className = 'd-over';
       over.append(
-        el('div', { class: 'o2', text: characters() ? 'CHARACTER EDITION' : 'DRAW BATTLE' }),
-        el('div', { class: 'o3', text: characters() ? 'Draw famous characters from cartoons, anime, Disney, Pixar and DreamWorks. Guess the others\': the sooner, the more points!'
-          : 'Take turns drawing on your phone. Guess the others\' drawings: the sooner, the more points!' }),
+        el('div', { class: 'o1', text: drawCatsLabel(options.drawCatNames) }),
+        el('div', { class: 'o2', text: 'DRAW BATTLE' }),
+        el('div', { class: 'o3', text: 'Take turns drawing on your phone. Guess the others\' drawings: the sooner, the more points!' }),
         el('div', { class: 'o4', text: '' }),
       );
     } else if (D && D.phase === 'choose') {
@@ -934,7 +935,7 @@
               over.innerHTML = '';
               over.append(el('div', { class: 'o2', text: 'GET DRAWING!' }));
             },
-          }, [c.text.toUpperCase(), el('small', { text: `${LEVEL_NAMES[c.level]} · ${c.points}` })]))),
+          }, [c.text.toUpperCase(), el('small', { text: `${manyCats() && c.cat ? `${c.cat} · ` : ''}${LEVEL_NAMES[c.level]} · ${c.points}` })]))),
         );
       } else {
         const p = players.find((pl) => pl.id === D.drawer);
@@ -970,7 +971,7 @@
       if (D.drawer === you) line = D.why === 'left' ? 'Your turn ended.' : got ? `${got} of ${Math.max(got, D.guessers)} got it · +${D.drawerPts} for your drawing` : 'Nobody got it this time.';
       else if (mineG) line = `You got it ${NTH[mineG.order] || ''}! +${mineG.points}`.replace(' !', '!');
       else line = D.why === 'left' ? `${nameOf(D.drawer)} left the battle` : `Not this time · ${got} of ${Math.max(got, D.guessers)} got it`;
-      over.append(el('div', { class: 'o1', text: characters() ? 'IT WAS' : 'THE WORD WAS' }), el('div', { class: 'o2', text: (D.word || '?').toUpperCase() }), el('div', { class: 'o3', text: line }));
+      over.append(el('div', { class: 'o1', text: `THE ${thing()} WAS` }), el('div', { class: 'o2', text: (D.word || '?').toUpperCase() }), el('div', { class: 'o3', text: line }));
     }
 
     // The drawer gets the tools; everyone else the guess box (open while there's a drawing to guess). Once
@@ -1705,7 +1706,6 @@
     $('#lobbyMode').textContent = tb
       ? "TEAM BATTLE: type your side's words to hit the other team!"
       : royaleOn() ? 'BATTLE ROYALE: your own monsters and 100 HP. Words that reach you hurt. Last hero standing wins!'
-        : drawOn() && characters() ? 'DRAW BATTLE, CHARACTER EDITION: draw famous characters from cartoons, anime, Disney, Pixar and DreamWorks while everyone else guesses!'
         : drawOn() ? 'DRAW BATTLE: take turns drawing on your phone while everyone else guesses. The sooner you guess, the more points!'
           : 'FREE FOR ALL: first to type a word gets the points!';
     $('#lobbyCount').textContent = players.length;
@@ -1722,7 +1722,8 @@
         : royaleOn() ? 'NO ROUNDS: EASY > MEDIUM > HARD' : one ? `ONE ROUND · ${rounds[0]?.title || ''}` : `${rounds.length} ROUNDS`,
     }));
     opts.append(el('span', { class: `pick d-${level.toLowerCase()}`, text: drawing ? `${Math.round((rounds[0]?.time || 80000) / 1000)} SECONDS A DRAWING` : `${level} DIFFICULTY` }));
-    if (drawing && characters()) opts.append(el('span', { class: 'pick', text: 'CHARACTER EDITION' }));
+    // Draw battle: the word categories the host picked, one tag each.
+    if (drawing) for (const name of options.drawCatNames || ['EVERYDAY THINGS']) opts.append(el('span', { class: 'pick', text: name }));
     const names = { streaks: 'STREAKS', specials: 'SPECIAL WORDS', boss: 'BOSS FINALE', perks: 'CLASS PERKS', skills: 'SKILLS', awards: 'AWARDS' };
     for (const [k, label] of Object.entries(names)) {
       if (drawing && k !== 'awards') continue; // no typing switches, perks or skills in a draw battle

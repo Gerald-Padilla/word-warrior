@@ -167,7 +167,8 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
   round: **FULL GAME** is 2 rounds, **ONE ROUND** is 1. The lobby estimates how long the game will take for
   the number of heroes.
 - **Pick a word.** The drawer's phone offers three words: one easy (100 points), one medium (150) and one hard
-  (200). They have 12 seconds to pick; if time runs out, they get the medium one.
+  (200), each from one of the host's word categories (a different one for each when the host picked three or
+  more). They have 12 seconds to pick; if time runs out, they get the medium one.
 - **Draw it.** The drawer draws with a finger (or mouse) on their phone, using 11 colors, 3 brush sizes, an
   eraser, undo and clear. The drawing appears on the big screen and every phone as it's drawn. Drawing time
   comes from the difficulty setting: 100 seconds on easy, 80 on normal and 60 on hard.
@@ -197,20 +198,33 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
   - A drawer who disconnects for 6 seconds loses the turn.
   - **SKIP** on the big screen moves on: from picking it skips that drawer, from drawing it goes to the reveal,
     and from the reveal it starts the next turn.
-- Streaks, special words, the boss, class perks and skills are off in this mode (greyed out in the lobby).
+- Streaks, special words, the boss, class perks and skills are off in this mode (hidden in the lobby).
 - **Awards:** Master Artist (most drawing points), Eagle Eye (most words guessed), First! (most first guesses)
   and Quick Eye (fastest correct guess).
-- **WORDS** (in the lobby, under the difficulty) picks what gets drawn:
-  - **EVERYDAY THINGS:** things you can draw, with a few local and office favorites (jeepney, karaoke, halo
-    halo, deadline, payday).
-  - **CHARACTER EDITION:** famous characters from cartoons, anime, Disney, Pixar and DreamWorks (Mickey Mouse,
-    Pikachu, SpongeBob, Doraemon, Buzz Lightyear, Shrek, Goku, Voltes V and about 200 more). Easy ones are
-    the most famous and simplest to draw.
-    - Well-known short names count too: "buzz" for Buzz Lightyear, "pooh" for Winnie the Pooh.
-    - Typing part of a longer name ("simpson" for Bart Simpson) shows "SO CLOSE!".
-    - The blanks show any dashes and digits ("____-_" for WALL-E, "___ 10" for Ben 10). Guesses ignore them,
-      so "walle" counts.
-  - The host's own words (**MY WORDS**) are added to either set, sorted by length.
+- **WORDS** (in the lobby, under the difficulty) picks what gets drawn. Tick any mix of categories (at least
+  one stays on). Each pick comes from a category chosen at random, so a small category comes up as often as a
+  big one. With more than one category, the choices, the big screen and the phones show which category the
+  word is from (DISNEY, MOVIES and so on).
+
+  | Category | What's in it |
+  |---|---|
+  | **EVERYDAY THINGS** | About 520 things you can draw, with local and office favorites (jeepney, parol, tabo, halo halo, deadline, payday, team building) |
+  | **DISNEY** | Characters: Mickey Mouse, Elsa, Simba, Stitch, Moana, Maleficent... |
+  | **PIXAR** | Characters: Woody, Buzz Lightyear, Nemo, Mike Wazowski, WALL-E, Joy... |
+  | **DREAMWORKS** | Characters: Shrek, Donkey, Po, Toothless, King Julien, Megamind... |
+  | **ANIME** | Characters: Pikachu, Doraemon, Goku, Naruto, Luffy, Voltes V, Tanjiro... |
+  | **CARTOONS** | Characters: SpongeBob, Scooby Doo, Bugs Bunny, the Simpsons, Ben 10, Bluey, the minions... |
+  | **PINOY TV & MOVIES** | Titles: Eat Bulaga, It's Showtime, Ang Probinsyano, Encantadia, Darna, Heneral Luna, Kita Kita... |
+  | **FAMOUS MOVIES** | Titles: Titanic, Jaws, Star Wars, Harry Potter, Home Alone, The Matrix, Forrest Gump... |
+
+  - With only character categories the screens say "pick a character"; with only title categories, "pick a
+    title".
+  - Well-known short names count too: "buzz" for Buzz Lightyear, "pooh" for Winnie the Pooh. A leading
+    "the", "a" or "ang" is optional: "matrix" for The Matrix, "probinsyano" for Ang Probinsyano.
+  - Typing part of a longer name ("simpson" for Bart Simpson) shows "SO CLOSE!".
+  - The blanks show any dashes, digits and apostrophes ("____-_" for WALL-E, "___ 10" for Ben 10). Guesses
+    ignore them, so "walle" counts.
+  - The host's own words (**MY WORDS**) are added as one more category, sorted by length.
 - Draw battle scores aren't recorded in the Hall of Fame.
 
 ## PC, tablet and phone
@@ -362,15 +376,16 @@ npm run bots -- ABCD 6
 
 (`ABCD` is the room code shown on the host screen; `6` is how many bots. Bots never appear in the Hall of Fame.)
 Each bot types one word at a time at its own speed, so in a battle royale the slower bots get knocked out first.
-In a draw battle, bots scribble on their turn and guess words (or characters) from the lists that fit the blanks.
+In a draw battle, bots scribble on their turn and guess words, characters and titles from the lists that fit the blanks.
 
 ## Tuning
 
 Battle royale has its own block (`ROYALE_HP`, `ROYALE_STAGES` with when each stage starts and how hard its
 hits are, `ROYALE_RAMP_MS` / `ROYALE_RAMP` for the speed-ups). So does draw battle: `DRAW_ROUNDS`,
 `DRAW_TIME`, `DRAW_POINTS`, `DRAW_ORDER_BONUS`, how long picking, the reveal and the standings take, and the
-guess limits. Its words are in `draw-words.js` and its characters in `draw-characters.js` (other accepted names
-go after a `|`, as in `'buzz lightyear|buzz'`), and the drawing colors and brush sizes in `public/js/sketch.js`. Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
+guess limits. The categories are the `DRAW_CATEGORIES` list there; their words are in `draw-words.js`
+(everyday things), `draw-characters.js` and `draw-titles.js` (other accepted names go after a `|`, as in
+`'buzz lightyear|buzz'`), and the drawing colors and brush sizes in `public/js/sketch.js`. Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
 `ROUNDS` table at the top of `server.js`, and what each difficulty does to them is the `LEVELS` table below it,
 next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings sit there too:
 `TEAM_HP`, how often power-ups appear and how long their effects last. The game options have their own settings: the boss round (`BOSS_ROUND`, `BOSS_HP`, bonuses),
@@ -384,8 +399,9 @@ The music tracks are the `TRACKS` table in `public/js/common.js`.
 - `server.js`: Express + Socket.IO server; battle, team battle and solo rooms, rounds, word spawning, scoring, HP, Hall of Fame
 - `data/highscores.json`: saved Hall of Fame (created after the first finished game)
 - `words.js`: easy / medium / hard word pools
-- `draw-words.js`: draw battle words (easy / medium / hard)
-- `draw-characters.js`: draw battle character edition (easy / medium / hard, with other accepted names)
+- `draw-words.js`: draw battle everyday things (easy / medium / hard)
+- `draw-characters.js`: draw battle characters: Disney, Pixar, DreamWorks, anime, cartoons (with other accepted names)
+- `draw-titles.js`: draw battle titles: Pinoy TV and movies, famous movies
 - `public/js/sketch.js`: draw battle board, shared by the big screen and phones
 - `public/host.html`, `public/js/host.js`: big screen (QR lobby, battlefield, leaderboard, podium)
 - `public/play.html`, `public/js/play.js`: phone (hero creator, lobby, solo, typing, results, Hall of Fame)

@@ -53,8 +53,13 @@
     .seg button.on { background: var(--gold); color: var(--ink); }
     .seg button[data-level="easy"].on { background: #8be36b; }
     .seg button[data-level="hard"].on { background: #ff7b4a; }
-    .seg button[data-set="characters"].on { background: #7fd4ff; }
-    #segSet { grid-column: 1 / -1; }
+    /* Draw battle word categories: any mix, at least one */
+    .cats { grid-column: 1 / -1; display: grid; grid-template-columns: auto repeat(4, minmax(0, 1fr)); gap: 4px; }
+    .cats > span { grid-row: span 2; align-self: center; font-size: 8px; color: var(--muted); margin-right: 4px; line-height: 1.8; }
+    .cats button { font: inherit; font-size: 8px; line-height: 1.5; padding: 5px 4px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); }
+    .cats button::before { content: '+ '; }
+    .cats button.on { background: #7fd4ff; color: var(--ink); }
+    .cats button.on::before { content: '✓ '; }
     .seg.na { opacity: 0.4; }
     .opt.na { opacity: 0.45; }
     /* Game options: on/off switches the host flips before a game */
@@ -392,6 +397,8 @@
       .mode-pick { grid-template-columns: 1fr 1fr; }
       .mode-btn { font-size: 10px; padding: 10px 6px; }
       .setup { grid-template-columns: 1fr; }
+      .cats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .cats > span { grid-row: auto; grid-column: 1 / -1; }
       .rounds { grid-auto-flow: row; }
       .opts { grid-template-columns: repeat(2, 1fr); }
       .start-row .px-btn.big { flex-basis: 100%; }
@@ -531,10 +538,16 @@
             <button type="button" data-level="normal">NORMAL</button>
             <button type="button" data-level="hard">HARD</button>
           </div>
-          <div class="seg hidden" id="segSet" title="Everyday things, or famous characters from cartoons, anime, Disney, Pixar and DreamWorks">
+          <div class="cats hidden" id="drawCats" title="What gets drawn: pick one or more categories">
             <span>WORDS</span>
-            <button type="button" data-set="classic">EVERYDAY THINGS</button>
-            <button type="button" data-set="characters">CHARACTER EDITION</button>
+            <button type="button" data-cat="things">EVERYDAY THINGS</button>
+            <button type="button" data-cat="disney">DISNEY</button>
+            <button type="button" data-cat="pixar">PIXAR</button>
+            <button type="button" data-cat="dreamworks">DREAMWORKS</button>
+            <button type="button" data-cat="anime">ANIME</button>
+            <button type="button" data-cat="cartoons">CARTOONS</button>
+            <button type="button" data-cat="pinoy">PINOY TV &amp; MOVIES</button>
+            <button type="button" data-cat="movies">FAMOUS MOVIES</button>
           </div>
         </div>
         <div class="rounds" id="roundChips"></div>

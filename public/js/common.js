@@ -48,6 +48,12 @@
     return [...players].sort((a, b) => placeKey(a) - placeKey(b) || b.score - a.score || b.kills - a.kills || a.name.localeCompare(b.name));
   }
 
+  // Draw battle: the host's word categories in a few words ("DISNEY + PIXAR", "5 CATEGORIES").
+  function drawCatsLabel(names) {
+    const list = names && names.length ? names : ['EVERYDAY THINGS'];
+    return list.length === 1 ? list[0] : list.length === 2 ? list.join(' + ') : `${list.length} CATEGORIES`;
+  }
+
   // Draw battle: the standings after a turn, with what each hero scored in it (guessing, or the drawer's
   // share) and how many places they climbed (or dropped). Places count ties as equal, and while everyone
   // was still level (the first turn) nobody had a place to move from.
@@ -302,5 +308,5 @@
   // Emotes players can send from their phones.
   const EMOTES = ['👍', '😂', '😮', '🔥', '👏', '😭'];
 
-  window.WW = { $, el, syncClock, watchBuild, rankPlayers, drawStandings, TEAMS, Sfx, Music, EMOTES };
+  window.WW = { $, el, syncClock, watchBuild, rankPlayers, drawStandings, drawCatsLabel, TEAMS, Sfx, Music, EMOTES };
 })();

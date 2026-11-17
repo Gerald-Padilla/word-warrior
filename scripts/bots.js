@@ -3,10 +3,13 @@
 const { io } = require('socket.io-client');
 const DRAW_WORDS = require('../draw-words');
 const DRAW_CHARACTERS = require('../draw-characters');
+const DRAW_TITLES = require('../draw-titles');
 
-// Draw battle: bots can't see the drawing, so they guess words (or characters, by the name before any
-// "|") from the lists that fit the blanks and any letters filled in so far. Their own drawings are scribbles.
-const ALL_DRAW_WORDS = [DRAW_WORDS, DRAW_CHARACTERS].flatMap((set) => [...set.easy, ...set.medium, ...set.hard]).map((w) => w.split('|')[0]);
+// Draw battle: bots can't see the drawing, so they guess words (characters and titles too, by the name
+// before any "|") from every category's lists that fit the blanks and any letters filled in so far.
+// Their own drawings are scribbles.
+const ALL_DRAW_WORDS = [DRAW_WORDS, ...Object.values(DRAW_CHARACTERS), ...Object.values(DRAW_TITLES)]
+  .flatMap((set) => [...set.easy, ...set.medium, ...set.hard]).map((w) => w.split('|')[0]);
 const fits = (word, hint) => word.length === hint.length && [...hint].every((ch, i) => (ch === '_' ? /[a-z]/.test(word[i]) : ch === word[i]));
 
 const code = String(process.argv[2] || '').toUpperCase();
