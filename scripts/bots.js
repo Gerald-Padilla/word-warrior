@@ -6,11 +6,13 @@ const DRAW_CHARACTERS = require('../draw-characters');
 const DRAW_TITLES = require('../draw-titles');
 const DRAW_FOOD = require('../draw-food');
 const DRAW_PEOPLE = require('../draw-people');
+const DRAW_VERBS = require('../draw-verbs');
+const DRAW_ANIMALS = require('../draw-animals');
 
-// Draw battle: bots can't see the drawing, so they guess words (characters, titles, food and people too,
+// Draw battle: bots can't see the drawing, so they guess words (verbs, animals, characters, titles, food and people too,
 // by the name before any "|") from every category's lists that fit the blanks and any letters filled in
 // so far. Their own drawings are scribbles.
-const ALL_DRAW_WORDS = [DRAW_WORDS, ...[DRAW_CHARACTERS, DRAW_TITLES, DRAW_FOOD, DRAW_PEOPLE].flatMap(Object.values)]
+const ALL_DRAW_WORDS = [DRAW_WORDS, DRAW_VERBS, DRAW_ANIMALS, ...[DRAW_CHARACTERS, DRAW_TITLES, DRAW_FOOD, DRAW_PEOPLE].flatMap(Object.values)]
   .flatMap((set) => [...set.easy, ...set.medium, ...set.hard]).map((w) => w.split('|')[0]);
 const fits = (word, hint) => word.length === hint.length && [...hint].every((ch, i) => (ch === '_' ? /[a-z]/.test(word[i]) : ch === word[i]));
 

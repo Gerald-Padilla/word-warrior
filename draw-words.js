@@ -17,6 +17,7 @@ module.exports = {
     'star', 'stool', 'straw', 'sun', 'swing', 'sword', 'table', 'taco', 'tent', 'tie', 'toast', 'tomato', 'tooth',
     'towel', 'train', 'tree', 'truck', 'tulip', 'umbrella', 'van', 'vase', 'watch', 'wave', 'whale', 'wheel',
     'window', 'wing', 'worm', 'yoyo', 'zipper',
+    'bottle',
   ],
   medium: [
     'airplane', 'alarm clock', 'ambulance', 'anchor', 'angel', 'apron', 'avocado', 'backpack', 'bahay kubo',
@@ -41,6 +42,9 @@ module.exports = {
     'treasure chest', 'tricycle', 'trophy', 'trumpet', 'tsinelas', 'turtle', 'typewriter', 'unicorn', 'vampire',
     'violin', 'volcano', 'wallet', 'walrus', 'wand', 'waterfall', 'watermelon', 'whiteboard', 'wig', 'windmill',
     'witch', 'wizard', 'zebra',
+    'kalesa', 'trumpo', 'sipa', 'marbles|jolen', 'id card', 'swivel chair', 'cubicle', 'pantry', 'water dispenser',
+    'monitor', 'router', 'password', 'server', 'flash drive|usb', 'projector', 'extension cord', 'hard hat',
+    'pedicab', 'rice cooker', 'electric fan', 'walis tingting', 'banig', 'bayong', 'karaoke machine|videoke',
   ],
   hard: [
     '13th month pay', 'allergy', 'applause', 'aquarium', 'astronaut', 'avalanche', 'balikbayan box', 'barbecue',
@@ -61,5 +65,8 @@ module.exports = {
     'tightrope', 'time machine', 'time zone', 'traffic jam', 'trampoline', 'treasure map', 'tsunami', 'tug of war',
     'typhoon', 'vacation', 'vacuum', 'video call', 'virus', 'volleyball', 'wedding', 'werewolf', 'wheelbarrow',
     'wifi', 'wishing well', 'work from home', 'yoga', 'zipline', 'zombie',
+    'patintero', 'tumbang preso', 'luksong baka', 'piko', 'chinese garter', 'agawan base', 'bundy clock', 'firewall',
+    'data center', 'help desk|helpdesk', 'blue screen', 'loading screen', 'error message', 'software update',
+    'night shift',
   ],
 };

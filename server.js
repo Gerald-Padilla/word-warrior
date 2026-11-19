@@ -14,6 +14,9 @@ const DRAW_CHARACTERS = require('./draw-characters');
 const DRAW_TITLES = require('./draw-titles');
 const DRAW_FOOD = require('./draw-food');
 const DRAW_PEOPLE = require('./draw-people');
+const DRAW_VERBS = require('./draw-verbs');
+const DRAW_ANIMALS = require('./draw-animals');
+const { langOf } = require('./draw-languages');
 
 const PORT = Number(process.env.PORT) || 3000;
 // Render sets RENDER and RENDER_EXTERNAL_URL; there the only address phones can reach is the public one.
@@ -104,6 +107,8 @@ const ROYALE_BOARD_MS = 250; // how often changed HP and scores go out to every 
 // word's category while it's drawn.
 const DRAW_CATEGORIES = [
   { key: 'things', name: 'EVERYDAY THINGS', short: 'THINGS', noun: 'WORD', words: DRAW_WORDS },
+  { key: 'verbs', name: 'VERBS', short: 'VERBS', noun: 'VERB', words: DRAW_VERBS },
+  { key: 'animals', name: 'ANIMALS', short: 'ANIMALS', noun: 'ANIMAL', words: DRAW_ANIMALS },
   { key: 'food', name: 'FOOD', short: 'FOOD', noun: 'FOOD', words: DRAW_FOOD.food },
   { key: 'pinoyfood', name: 'PINOY FOOD', short: 'PINOY FOOD', noun: 'FOOD', words: DRAW_FOOD.pinoy },
   { key: 'disney', name: 'DISNEY', short: 'DISNEY', noun: 'CHARACTER', words: DRAW_CHARACTERS.disney },
@@ -1368,7 +1373,8 @@ function drawSources(room, level) {
 // One word from each difficulty, none used earlier in the game (in any category: food and everyday
 // things share some). Each comes from a category picked at random (so a small category gets as many turns
 // as a big one), a different one for each of the three when there are enough. `also`: other names that
-// count as right (a character's first name, say); kept on the server.
+// count as right (a character's first name, say); kept on the server. `lang`: ENGLISH, TAGALOG, TAGLISH or
+// null for names (see draw-languages.js).
 function drawChoices(room) {
   const D = room.draw;
   const taken = new Set();
@@ -1386,7 +1392,7 @@ function drawChoices(room) {
     const entry = pool[Math.floor(Math.random() * pool.length)];
     D.used.add(id(entry));
     const [text, ...also] = entry.split('|');
-    return { text, level, points: DRAW_POINTS[level], also, cat: src.short };
+    return { text, level, points: DRAW_POINTS[level], also, cat: src.short, lang: langOf(src.key, text) };
   });
 }
 
@@ -1404,7 +1410,7 @@ function drawOf(room) {
   return {
     phase: D.phase, drawer: D.drawer, turn: D.turn, turns: drawTurns(room), endsAt: D.endsAt, span: D.span,
     level: D.phase === 'choose' ? null : D.level, points: D.phase === 'choose' ? 0 : DRAW_POINTS[D.level] || 0,
-    cat: D.phase === 'choose' ? null : D.cat,
+    cat: D.phase === 'choose' ? null : D.cat, lang: D.phase === 'choose' ? null : D.lang,
     hint: D.phase === 'draw' ? D.hint.join('') : null, word: D.phase === 'reveal' ? D.word : null,
     guessed: [...D.guessed].map(([id, g]) => ({ id, points: g.points, order: g.order })),
     guessers: D.guessers, drawerPts: D.drawerPts, why: D.why, standings: D.phase === 'reveal' && D.standings,
@@ -1483,7 +1489,7 @@ function pickDrawWord(room, i, now) {
   const names = [c.text, ...(c.also || [])];
   const accept = [...new Set(names.concat(names.map(dropArticle)).map(squash).filter(Boolean))];
   Object.assign(D, {
-    phase: 'draw', word: c.text, level: c.level, cat: c.cat, start: now, span: total, endsAt: now + total,
+    phase: 'draw', word: c.text, level: c.level, cat: c.cat, lang: c.lang, start: now, span: total, endsAt: now + total,
     accept, parts: c.text.split(/[^a-z]+/).filter((w) => w.length >= 4 && !accept.includes(w)),
     hint: [...c.text].map((ch) => (/[a-z]/.test(ch) ? '_' : ch)),
     reveals: Array.from({ length: n }, (_, k) => now + Math.round(total * (n === 1 ? 0.6 : 0.4 + (0.4 * k) / (n - 1)))),

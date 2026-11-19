@@ -238,6 +238,9 @@
     const lvl = $('#dsLevel');
     lvl.className = `ds-tag ${D.level || ''}${D.level ? '' : ' hidden'}`;
     lvl.textContent = D.level ? `${manyCats() && D.cat ? `${D.cat} · ` : ''}${LEVEL_NAMES[D.level]} · ${D.points} PTS` : '';
+    const lang = $('#dsLang');
+    lang.className = `ds-tag${D.lang ? ` lang-${D.lang.toLowerCase()}` : ' hidden'}`;
+    lang.textContent = D.lang || '';
     const letters = D.phase === 'draw' ? D.hint.replace(/[^a-z_]/gi, '').length : 0;
     $('#dsLen').classList.toggle('hidden', !letters);
     $('#dsLen').textContent = `${letters} LETTERS${D.hint && D.hint.includes(' ') ? ` · ${D.hint.split(' ').length} WORDS` : ''}`;
@@ -250,7 +253,7 @@
       over.append(
         el('div', { class: 'o1', text: `${roundLabelDraw()} · TURN ${D.turn} OF ${D.turns}` }),
         heroImg(drawer, 'px-sprite'),
-        el('div', { class: 'o2', text: `${drawer.name} IS PICKING A ${noun()}` }),
+        el('div', { class: 'o2', text: `${drawer.name} IS PICKING ${aNoun()}` }),
         el('div', { class: 'o3', text: 'Get ready to guess on your phone!' }),
       );
     } else if (D.phase === 'reveal' && D.standings) {
@@ -283,6 +286,7 @@
   const roundLabelDraw = () => (rounds.length === 1 ? 'ONE ROUND' : `ROUND ${state.round + 1} OF ${rounds.length}`);
   // What one entry is (WORD, CHARACTER or TITLE), and whether the word bar names its category.
   const noun = () => options.drawNoun || 'WORD';
+  const aNoun = () => `${/^[AEIOU]/.test(noun()) ? 'AN' : 'A'} ${noun()}`; // "AN ANIMAL", "A WORD"
   const manyCats = () => (options.drawCats || []).length > 1;
 
   function renderDrawPlayers() {
@@ -775,7 +779,7 @@
         el('small', { text: `${secs} seconds a drawing · ${turns} turns${players.length >= 2 ? '' : ' with 2 heroes'} · about ${mins} min` }),
       ]));
       box.append(el('div', { class: 'round-chip easy' }, [
-        `PICK A ${noun()}: EASY · MEDIUM · HARD`, el('small', { text: `${drawCatsLabel(options.drawCatNames)} · 100 · 150 · 200 points` }),
+        `PICK ${aNoun()}: EASY · MEDIUM · HARD`, el('small', { text: `${drawCatsLabel(options.drawCatNames)} · 100 · 150 · 200 points` }),
       ]));
       return;
     }

@@ -791,8 +791,9 @@
   const myTurn = () => drawOn() && Boolean(draw) && draw.drawer === you;
   const iGotIt = () => Boolean(draw && draw.guessed.some((g) => g.id === you));
   const canDraw = () => myTurn() && draw.phase === 'draw' && state.state === 'playing';
-  // What one entry is (WORD, FOOD, CHARACTER, TITLE, SONG, STAR or PERSON), and whether to name each word's category.
+  // What one entry is (WORD, VERB, ANIMAL, FOOD, CHARACTER, TITLE, SONG, STAR or PERSON), and whether to name each word's category.
   const thing = () => options.drawNoun || 'WORD';
+  const aThing = () => `${/^[AEIOU]/.test(thing()) ? 'AN' : 'A'} ${thing()}`; // "AN ANIMAL", "A WORD"
   const manyCats = () => (options.drawCats || []).length > 1;
   const clockText = (ms) => {
     const secs = Math.max(0, Math.ceil(ms / 1000));
@@ -895,7 +896,7 @@
       hint.textContent = 'GET READY TO DRAW AND GUESS!';
     } else if (D.phase === 'choose') {
       hint.className = 'note';
-      hint.textContent = myTurn() ? `YOUR TURN! PICK A ${thing()} TO DRAW` : `${nameOf(D.drawer)} IS PICKING A ${thing()}...`;
+      hint.textContent = myTurn() ? `YOUR TURN! PICK ${aThing()} TO DRAW` : `${nameOf(D.drawer)} IS PICKING ${aThing()}...`;
     } else if (D.phase === 'draw' && (myTurn() || iGotIt())) {
       hint.className = 'mine';
       hint.textContent = `${myTurn() ? 'DRAW: ' : '✓ '}${(secret && secret.word ? secret.word : '').toUpperCase()}`;
@@ -909,6 +910,10 @@
     const lvl = $('#dLevel');
     lvl.className = `d-tag ${D && D.level ? D.level : 'hidden'}`;
     lvl.textContent = D && D.level ? `${manyCats() && D.cat ? D.cat : LEVEL_NAMES[D.level]} · ${D.points}` : '';
+    // The word's language (ENGLISH, TAGALOG or TAGLISH), so guessers know what to type in. Names have none.
+    const lang = $('#dLang');
+    lang.className = `d-tag${D && D.lang ? ` lang-${D.lang.toLowerCase()}` : ' hidden'}`;
+    lang.textContent = D && D.lang ? D.lang : '';
 
     // Over the board: the countdown, your three words or who's picking, and the reveal.
     const over = $('#dOver');
@@ -927,7 +932,7 @@
       if (myTurn() && secret && secret.choices) {
         over.append(
           el('div', { class: 'o2', text: 'YOUR TURN TO DRAW!' }),
-          el('div', { class: 'o3', text: `Pick a ${thing().toLowerCase()}. Harder ones are worth more.` }),
+          el('div', { class: 'o3', text: `Pick ${aThing().toLowerCase()}. Harder ones are worth more.` }),
           el('div', { class: 'd-picks' }, secret.choices.map((c, i) => el('button', {
             class: `d-pick ${c.level}`, type: 'button',
             onclick: () => {
@@ -942,7 +947,7 @@
         const p = players.find((pl) => pl.id === D.drawer);
         over.append(
           p ? heroImg(p) : null,
-          el('div', { class: 'o2', text: `${p ? p.name : 'Someone'} IS PICKING A ${thing()}` }),
+          el('div', { class: 'o2', text: `${p ? p.name : 'Someone'} IS PICKING ${aThing()}` }),
           el('div', { class: 'o3', text: myTurn() ? '' : 'Get ready to guess!' }),
         );
       }

@@ -208,23 +208,29 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
 
   | Category | What's in it |
   |---|---|
-  | **EVERYDAY THINGS** | About 520 things you can draw, with local and office favorites (jeepney, parol, tabo, halo halo, deadline, payday, team building) |
-  | **FOOD** | About 160 foods from everywhere: pizza, fried chicken, sushi, ramen, croissant, tteokbokki, pad thai, churros... |
-  | **PINOY FOOD** | About 120 Pinoy dishes, merienda, street food and sweets: adobo, sinigang, kwek-kwek, sisig, bulalo, puto bumbong, sapin-sapin... |
-  | **DISNEY** | About 170 characters, classic to new: Mickey Mouse, Elsa, Simba, Stitch, Baloo, Moana, Maleficent, Yzma, Mirabel... |
-  | **PIXAR** | About 120 characters from every Pixar film: Woody, Buzz Lightyear, Nemo, Mike Wazowski, WALL-E, Joy, Anxiety, Zurg... |
-  | **DREAMWORKS** | Characters: Shrek, Donkey, Po, Toothless, King Julien, Megamind... |
-  | **ANIME** | Characters: Pikachu, Doraemon, Goku, Naruto, Luffy, Voltes V, Tanjiro... |
-  | **CARTOONS** | Characters: SpongeBob, Scooby Doo, Bugs Bunny, the Simpsons, Ben 10, Bluey, the minions... |
-  | **PINOY TV & MOVIES** | Titles: Eat Bulaga, It's Showtime, Ang Probinsyano, Encantadia, Darna, Heneral Luna, Kita Kita... |
-  | **FAMOUS MOVIES** | Titles: Titanic, Jaws, Star Wars, Harry Potter, Home Alone, The Matrix, Forrest Gump... |
-  | **OPM & INTERNATIONAL SONGS** | About 200 song titles: Bahay Kubo, Tadhana, Pantropiko, Ang Huling El Bimbo, Baby Shark, Bohemian Rhapsody, Dynamite... |
-  | **ACTORS & ARTISTS** | About 170 local and international stars: Vice Ganda, Coco Martin, Sarah Geronimo, BINI, Taylor Swift, Mr. Bean, BTS... |
+  | **EVERYDAY THINGS** | About 570 things you can draw, with local, office and IT favorites (jeepney, parol, tabo, patintero, deadline, payday, firewall, blue screen) |
+  | **VERBS** | About 175 actions to act out: run, dance, sneeze, juggle, moonwalk, procrastinate, and office ones like debug and deploy. "Running" counts for run. |
+  | **ANIMALS** | About 180 animals, from pets and farm animals to Philippine wildlife: dog, carabao, tarsier, tamaraw, butanding, aspin... Filipino names count too: "aso" for dog, "tuko" for gecko. |
+  | **FOOD** | About 265 foods from everywhere: pizza, fried chicken, sushi, samgyupsal, tteokbokki, pad thai, carbonara, churros... |
+  | **PINOY FOOD** | About 180 Pinoy dishes, merienda, street food, fruits and sweets: adobo, sinigang, kwek-kwek, sisig, tocilog, lanzones, puto bumbong... |
+  | **DISNEY** | About 225 characters, classic to new: Mickey Mouse, Elsa, Simba, Stitch, Baloo, Moana, Maleficent, Jack Skellington, Mirabel... |
+  | **PIXAR** | About 150 characters from every Pixar film: Woody, Buzz Lightyear, Nemo, Mike Wazowski, WALL-E, Joy, Anxiety, Elio... |
+  | **DREAMWORKS** | About 115 characters: Shrek, Donkey, Po, Toothless, King Julien, the penguins, Moto Moto, Megamind... |
+  | **ANIME** | About 200 characters: Pikachu, Doraemon, Goku, Naruto, Luffy, Voltes V, Daimos, Tanjiro, Ghost Fighter's Eugene... |
+  | **CARTOONS** | About 220 characters: SpongeBob, Scooby Doo, Bugs Bunny, the Simpsons, Ben 10, Bluey, Sonic, Mario, the K-pop Demon Hunters... |
+  | **PINOY TV & MOVIES** | About 160 titles: Eat Bulaga, It's Showtime, Ang Probinsyano, Encantadia, Darna, Dyesebel, Heneral Luna, Kita Kita... |
+  | **FAMOUS MOVIES** | About 195 titles: Titanic, Jaws, Star Wars, Harry Potter, Home Alone, The Matrix, Kung Fu Hustle, Forrest Gump... |
+  | **OPM & INTERNATIONAL SONGS** | About 370 song titles: Bahay Kubo, Tadhana, Pantropiko, Multo, Ang Huling El Bimbo, Baby Shark, Bohemian Rhapsody, Dynamite... |
+  | **ACTORS & ARTISTS** | About 365 local and international stars and groups: Vice Ganda, Coco Martin, Sarah Geronimo, KathNiel, BINI, Taylor Swift, Mr. Bean, BTS... |
   | **ISD PEOPLE** | The 49 people of ISD, by first name (two-name people count by their first name too, when nobody else has it) |
 
   - With only character categories the screens say "pick a character"; with only title categories, "pick a
-    title". Food says "pick a food", songs "a song", actors & artists "a star" and ISD people "a person".
-    A mix says "a word".
+    title". Verbs say "pick a verb", animals "an animal", food "a food", songs "a song", actors & artists "a star" and ISD people
+    "a person". A mix says "a word".
+  - **Language tag.** While a word is drawn, the big screen and the phones say what language it's in:
+    **ENGLISH**, **TAGALOG** or **TAGLISH** (a mix, like "buko pie"), so guessers know what to type.
+    Words from other languages used as is (sushi, despacito) count as English. Names (characters, stars,
+    ISD people) and the host's own words have no tag. Animals take the Filipino name too ("aso" for dog).
   - A word never comes up twice in a game, even when two categories share it (pizza is food and an
     everyday thing).
   - Well-known short names count too: "buzz" for Buzz Lightyear, "pooh" for Winnie the Pooh. A leading
@@ -385,7 +391,7 @@ npm run bots -- ABCD 6
 
 (`ABCD` is the room code shown on the host screen; `6` is how many bots. Bots never appear in the Hall of Fame.)
 Each bot types one word at a time at its own speed, so in a battle royale the slower bots get knocked out first.
-In a draw battle, bots scribble on their turn and guess words, characters, titles, food and people from the lists that fit the blanks.
+In a draw battle, bots scribble on their turn and guess words, verbs, animals, characters, titles, food and people from the lists that fit the blanks.
 
 ## Tuning
 
@@ -393,8 +399,9 @@ Battle royale has its own block (`ROYALE_HP`, `ROYALE_STAGES` with when each sta
 hits are, `ROYALE_RAMP_MS` / `ROYALE_RAMP` for the speed-ups). So does draw battle: `DRAW_ROUNDS`,
 `DRAW_TIME`, `DRAW_POINTS`, `DRAW_ORDER_BONUS`, how long picking, the reveal and the standings take, and the
 guess limits. The categories are the `DRAW_CATEGORIES` list there; their words are in `draw-words.js`
-(everyday things), `draw-food.js`, `draw-characters.js`, `draw-titles.js` (movies, shows and songs) and
-`draw-people.js` (stars and ISD people); other accepted names go after a `|`, as in
+(everyday things), `draw-verbs.js`, `draw-animals.js`, `draw-food.js`, `draw-characters.js`, `draw-titles.js` (movies, shows and songs) and
+`draw-people.js` (stars and ISD people), with their languages in `draw-languages.js`; other accepted
+names go after a `|`, as in
 `'buzz lightyear|buzz'`. The drawing colors and brush sizes are in `public/js/sketch.js`. Round length, fall speed, spawn rate, points multipliers and team battle attack speed (`flight`) are in the
 `ROUNDS` table at the top of `server.js`, and what each difficulty does to them is the `LEVELS` table below it,
 next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team battle settings sit there too:
@@ -412,6 +419,9 @@ The music tracks are the `TRACKS` table in `public/js/common.js`.
 - `draw-words.js`: draw battle everyday things (easy / medium / hard)
 - `draw-characters.js`: draw battle characters: Disney, Pixar, DreamWorks, anime, cartoons (with other accepted names)
 - `draw-titles.js`: draw battle titles: Pinoy TV and movies, famous movies, OPM and international songs
+- `draw-verbs.js`: draw battle verbs (with their "-ing" forms)
+- `draw-animals.js`: draw battle animals (with Filipino names)
+- `draw-languages.js`: draw battle word languages: each category's usual one and the exceptions
 - `draw-food.js`: draw battle food: food from everywhere, Pinoy food
 - `draw-people.js`: draw battle people: actors and artists, ISD people
 - `public/js/sketch.js`: draw battle board, shared by the big screen and phones

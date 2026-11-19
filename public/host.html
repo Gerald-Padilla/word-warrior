@@ -187,6 +187,8 @@
     #dsHint.note { font-size: clamp(12px, 1.2vw, 16px); letter-spacing: 0; color: var(--muted); }
     .ds-tag { font-size: 9px; padding: 5px 7px; background: var(--ink); color: var(--muted); white-space: nowrap; }
     .ds-tag.easy { color: #8be36b; } .ds-tag.medium { color: #b99cff; } .ds-tag.hard { color: #ff7b4a; }
+    /* The word's language: what to guess in. */
+    .ds-tag.lang-english { color: #7fd4ff; } .ds-tag.lang-tagalog { color: #ffd34d; } .ds-tag.lang-taglish { color: #ff9ad5; }
     .ds-board { position: relative; aspect-ratio: 4 / 3; width: min(100%, calc((100vh - var(--ds-top, 120px) - 100px) * 4 / 3)); box-shadow: 0 0 0 6px var(--ink), 0 0 0 10px var(--gold-dark); background: #fff; }
     .ds-board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
     .ds-over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 20px; background: rgba(27, 20, 38, 0.86); }
@@ -491,7 +493,7 @@
       <div class="ds-list" id="dsPlayers"></div>
     </aside>
     <div class="ds-mid">
-      <div class="ds-word"><span class="ds-tag hidden" id="dsLevel"></span><span id="dsHint"></span><span class="ds-tag hidden" id="dsLen"></span></div>
+      <div class="ds-word"><span class="ds-tag hidden" id="dsLevel"></span><span id="dsHint"></span><span class="ds-tag hidden" id="dsLang"></span><span class="ds-tag hidden" id="dsLen"></span></div>
       <div class="ds-board">
         <canvas id="dsCanvas"></canvas>
         <div class="ds-over hidden" id="dsOver"></div>
@@ -544,6 +546,8 @@
           <div class="cats hidden" id="drawCats" title="What gets drawn: pick one or more categories">
             <span>WORDS</span>
             <button type="button" data-cat="things">EVERYDAY THINGS</button>
+            <button type="button" data-cat="verbs">VERBS</button>
+            <button type="button" data-cat="animals">ANIMALS</button>
             <button type="button" data-cat="food">FOOD</button>
             <button type="button" data-cat="pinoyfood">PINOY FOOD</button>
             <button type="button" data-cat="disney">DISNEY</button>

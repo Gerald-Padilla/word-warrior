@@ -261,6 +261,8 @@
     #dHint.note { font-size: 10px; letter-spacing: 0; line-height: 1.6; white-space: normal; }
     .d-tag { font-size: 7px; padding: 4px 5px; background: var(--ink); color: var(--muted); white-space: nowrap; }
     .d-tag.easy { color: #8be36b; } .d-tag.medium { color: #b99cff; } .d-tag.hard { color: #ff7b4a; }
+    /* The word's language: what to guess in. */
+    .d-tag.lang-english { color: #7fd4ff; } .d-tag.lang-tagalog { color: #ffd34d; } .d-tag.lang-taglish { color: #ff9ad5; }
     .d-board { position: relative; width: 100%; aspect-ratio: 4 / 3; flex: none; background: #fff; box-shadow: 0 3px 0 var(--ink); }
     .d-board canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
     .d-board.mine canvas { cursor: crosshair; }
@@ -516,7 +518,7 @@
         <div class="t" id="dTime">0:00</div>
         <div class="s"><b id="dScore">0</b> · <span id="dRank">#1</span></div>
       </div>
-      <div class="d-word"><span class="d-tag hidden" id="dLevel"></span><span id="dHint"></span></div>
+      <div class="d-word"><span class="d-tag hidden" id="dLevel"></span><span id="dHint"></span><span class="d-tag hidden" id="dLang"></span></div>
       <div class="d-board" id="dBoard">
         <canvas id="dCanvas"></canvas>
         <div class="d-over hidden" id="dOver"></div>
