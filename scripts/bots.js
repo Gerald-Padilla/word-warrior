@@ -51,7 +51,7 @@ for (let i = 0; i < count; i++) {
   };
 
   socket.on('connect', () => {
-    const hero = { code, name, cls: CLASSES[i % CLASSES.length], color: i % 8, skin: i % 4, bot: true }; // bots stay out of the hall of fame
+    const hero = { code, name, cls: CLASSES[i % CLASSES.length], color: i % 8, skin: i % 4, pet: 1 + (i % 5), bot: true }; // bots stay out of the hall of fame
     socket.emit('player:join', hero, (res) => {
       console.log(res.ok ? `${name} joined (${cps.toFixed(1)} cps)` : `${name} failed: ${res.error}`);
       if (res.ok) {

@@ -207,7 +207,8 @@
     $('#clsBlurb').textContent = cls.blurb;
     const kit = BR.KITS[look.cls] || BR.KITS.knight;
     if (you && brawlOn()) {
-      $('#clsAttack').textContent = `ATTACK: ${cls.attack} · ${kit.hp} HP`;
+      const pet = BR.PETS[look.pet];
+      $('#clsAttack').textContent = `ATTACK: ${cls.attack} · ${kit.hp} HP${pet ? ` · PET: ${pet.attack}` : ''}`;
       $('#clsPerk').textContent = `DUEL PERK: ${kit.perk.name}: ${kit.perk.text}`;
       $('#clsSkill').textContent = `DUEL SKILL: ${kit.skill.name}: ${kit.skill.text}`;
     } else {
@@ -1805,12 +1806,33 @@
     $('#lobbySkill').textContent = !skl ? '' : duel ? `SKILL: ${skl} (charges as you fight; tap SKILL or press E)`
       : `SKILL: ${skl} (every 8 words; tap it or press Space)`;
     $('#lobbySkill').classList.toggle('hidden', !skl);
+    renderHowTo(mine, kit);
     const roster = $('#lobbyRoster');
     roster.innerHTML = '';
     for (const p of players) {
       const cls = `mini${p.id === you ? ' me' : ''}${tb ? ` team${p.team}` : ''}`;
       roster.append(el('div', { class: cls }, [heroImg(p), el('span', { text: p.name })]));
     }
+  }
+
+  // Duel: how to play, for this device (thumbs, or a keyboard and mouse), with your skill and your pet.
+  function renderHowTo(mine, kit) {
+    $('#lobbyHow').classList.toggle('hidden', !brawlOn() || !mine);
+    if (!brawlOn() || !mine) return;
+    const pet = BR.PETS[mine.pet];
+    const rows = [
+      ['MOVE', pcControls ? 'WASD or the arrow keys.' : 'Drag your left thumb anywhere on the left half of the screen.'],
+      ['ATTACK', pcControls ? 'Hold the mouse button to attack toward the pointer, or Space to hit the nearest foe.'
+        : 'Hold your right thumb on the right half to hit the nearest foe. Drag it to aim.'],
+      options.skills ? ['SKILL', `${pcControls ? 'Press E' : 'Tap SKILL'} when it glows to use ${kit.skill.name}. It charges as you fight.`] : null,
+      ['PET', pet ? `Your ${pet.name.toLowerCase()} attacks on its own: ${pet.attack}, ${pet.text}.`
+        : 'No companion yet: pick one in CHANGE HERO and it fights beside you.'],
+      ['POWER-UPS', 'Walk over them to take them. Shoot kegs to blow them up, and stand back!'],
+      ['POINTS', `KO a hero +${BR.KO_POINTS}. Monsters +${BR.MONSTERS.slime.pts} to +${BR.MONSTERS.golem.pts}. Knocked out? You're back in ${BR.RESPAWN_MS / 1000} seconds.`],
+    ].filter(Boolean);
+    const list = $('#lobbyHowList');
+    list.innerHTML = '';
+    for (const [title, text] of rows) list.append(el('div', { class: 'how-row' }, [el('b', { text: title }), el('span', { text })]));
   }
 
   // The results. A battle shows what the big screen shows (podium, the rest of the field, the awards),
@@ -1963,7 +1985,8 @@
 
   // ---- duel --------------------------------------------------------------
   socket.on('brawl:snap', (snap) => bView.onSnap(snap));
-  const MOB_NAMES = { slime: 'a slime', bat: 'a bat', skull: 'a skull', boss: 'the Dragon King', ghost: 'a ghost' };
+  const MOB_NAMES = { slime: 'a slime', bat: 'a bat', skull: 'a skull', boss: 'the Dragon King', ghost: 'a ghost', goblin: 'a goblin',
+    golem: 'a golem', spider: 'a spider', spirit: 'a fire spirit', kingslime: 'the King Slime' };
   bView.onNews = (n) => {
     if (n.type === 'ko' && n.id === you) {
       lastKo = n;

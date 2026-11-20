@@ -248,10 +248,20 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
 A real-time arena fight with no typing: phones become controllers and heroes fight each other with HP. Pick
 **DUEL** in the host lobby (one hero is enough to try it, but it's best with a crowd).
 
-- **The arena.** A walled courtyard, one of three layouts (Courtyard, Ruins, Crossroads), mirrored so both sides
-  play the same. Stone walls and crates block movement and shots, so they make good cover. Powder kegs blow up
-  when shot: they hurt everyone nearby, the shooter too, and roll back 25 seconds later. Monsters come in
-  through the four gates.
+- **The arena.** One of seven layouts, picked at random, each mirrored so both sides play the same:
+
+  | Layout | What's in it |
+  |---|---|
+  | **Courtyard**, **Ruins**, **Crossroads** | Flagstones, stone walls and crates |
+  | **Graveyard** | Rows of gravestones, a crypt in the middle and dead trees |
+  | **Moat** | A keep ringed by water: you get in only by the bridges on the sides, but you can shoot across |
+  | **Forest** | Grass, trees to hide behind and ponds to shoot across |
+  | **Colosseum** | A sand pit ringed with pillars, crates stacked at the ends |
+
+  Walls, crates, gravestones and trees block movement and shots, so they make good cover. Water stops anyone
+  on foot, but shots (and flying monsters) go straight over it. Powder kegs blow up when shot: they hurt
+  everyone nearby, the shooter too, and roll back 25 seconds later. Monsters come in through the four gates
+  and find their way around walls and water to whoever they're after.
 - **Controls.**
   - **Phone:** put your left thumb anywhere on the left half and drag to move. Hold your right thumb anywhere
     on the right half to attack whatever is nearest; drag it to aim. Tap **SKILL** when it glows.
@@ -263,21 +273,30 @@ A real-time arena fight with no typing: phones become controllers and heroes fig
 - **Points.**
   - Knocking out a hero: +100, or +150 if they were on a run of 3 KOs or more (**SHUTDOWN!**).
   - If a monster or a keg finishes off a hero you hurt in the last 8 seconds, the KO is still yours.
-  - Monsters: slime +10, bat +15, skull +25.
+  - Monsters: from +10 for a slime to +60 for a golem (table below).
   - The Dragon King: points for every hit, and +300 for the final blow.
-- **Monsters.**
-  - Slimes hop toward the nearest hero, and bats fly fast and over walls.
-  - After the first 40 seconds, skulls join in. They keep their distance and spit fireballs.
-  - More heroes means more monsters, and more come as the fight goes on.
-  - Monsters attack everyone, so they're also a chance to catch a rival off guard.
-  - With **BOSS FINALE** on, the Dragon King storms in for the last minute of a full game. He flies over the
-    walls, breathes fans of fire and calls in minions.
+- **Monsters.** They attack everyone, so they're also a chance to catch a rival off guard. More heroes means
+  more monsters, and more come as the fight goes on. Tougher ones join later:
+
+  | Monster | Comes | What it does | Points |
+  |---|---|---|---|
+  | **Slime** | From the start | Hops toward the nearest hero | 10 |
+  | **Bat** | From the start | Fast, and flies over walls and water | 15 |
+  | **Goblin** | From the start, three at a time | Quick, weaving runners | 12 |
+  | **Skull** | After 40 seconds | Keeps its distance and spits fireballs | 25 |
+  | **Spider** | After 40 seconds | Keeps its distance and spits webs that slow you for a moment | 20 |
+  | **Fire Spirit** | After 40 seconds | Flies at you and blows up, hurting everything nearby (monsters too). Shoot it first: then the blast is yours, and it hurts the heroes around it | 20 |
+  | **King Slime** | After 75 seconds | Big and tough; bursts into three slimes when slain | 40 |
+  | **Golem** | After 75 seconds | Slow stone giant with lots of HP. Its punches knock you back, and nothing can push it | 60 |
+
+  With **BOSS FINALE** on, the Dragon King storms in for the last minute of a full game. He flies over the
+  walls, breathes fans of fire and calls in minions.
 - **Power-ups.** A new one appears every 7 to 11 seconds, and monsters sometimes drop one. Walk over one to
   take it:
 
   | Power-up | What it does |
   |---|---|
-  | **Health Potion** | +40 HP |
+  | **Health Potion** | +60 HP |
   | **Haste** | 40% faster for 8 seconds |
   | **Shield** | No damage for 5 seconds |
   | **Fury** | Double damage for 8 seconds |
@@ -285,6 +304,21 @@ A real-time arena fight with no typing: phones become controllers and heroes fig
   | **Slow Time** | Every other hero and every monster slows down for 5 seconds |
   | **Bomb** | A blast around you: 45 damage to everything nearby |
 
+- **Pets.** Your companion fights beside you, attacking the nearest foe in its reach on its own. Its hits
+  (and any KO) are yours, but they don't get your bonuses (Fury, perks). A pet adds roughly 5 to 10% to a
+  hero's score in simulated fights. No companion means no pet attack: pick one with **CHANGE HERO**.
+
+  | Pet | Attack |
+  |---|---|
+  | **Cat** | **Claw Swipe:** pounces on foes close to you, the hardest hitter |
+  | **Owl** | **Feather Dart:** throws feathers at foes far off |
+  | **Slime** | **Goo Ball:** spits goo that slows foes down |
+  | **Baby Dragon** | **Ember:** spits little fireballs |
+  | **Fox** | **Fox Fire:** sends out fox fire that homes in on foes |
+
+- **How to play, in the lobby.** With DUEL picked, the big screen's lobby has a row of tips (moving,
+  attacking, skills, pets, power-ups, points). Each phone's lobby has a **HOW TO PLAY** box for that device
+  (thumbs on a phone, keys and mouse on a PC), with that hero's skill and pet. The countdown says it again.
 - **Perks and skills.** Every class has its own duel perk and skill (*Classes in a duel*, below). The skill
   charges as you deal damage, a little on its own over time, and by 20% for every KO.
 - **Big screen.** The whole arena, with names and HP bars over the heroes, plus:
@@ -316,21 +350,21 @@ A real-time arena fight with no typing: phones become controllers and heroes fig
 
 | Class | HP | Attack | Duel perk | Duel skill |
 |-------|----|--------|-----------|------------|
-| Knight | 120 | Sword Beam: passes through one foe | **Iron Guard:** takes 20% less damage | **Shield Wall:** blocks all damage for 3 seconds |
-| Barbarian | 150 | Spinning Axe: short and heavy, cuts through everything | **Bloodlust:** up to +50% damage as HP runs low | **Whirlwind:** spins for 2.5 seconds, hitting everything around |
-| Wizard | 95 | Fireball: explodes | **Arcane Mind:** skill charges 40% faster | **Meteor:** a meteor crashes down where you aim |
-| Elf Archer | 95 | Piercing Arrow: long and fast | **Eagle Eye:** +25% damage on far targets | **Arrow Fan:** 11 arrows in a wide fan |
-| Rogue | 105 | Dagger Volley: three daggers | **Sly:** moves 12% faster | **Shadow Step:** dashes ahead and vanishes for 3 seconds; the next hit does double |
-| Cleric | 115 | Holy Light: heals you a little each hit | **Blessed:** power-ups last 50% longer, potions heal 50% more | **Sanctuary:** heals 50 HP and blasts nearby foes away |
-| Ninja | 95 | Shuriken: rapid | **Evasion:** 20% chance to dodge a hit | **Shuriken Storm:** two rings of shurikens in every direction |
-| Necromancer | 105 | Soul Bolt: homes in | **Soul Harvest:** heals 5 HP per monster slain, 20 per KO | **Raise Dead:** 3 ghosts hunt your foes for 8 seconds |
-| Druid | 115 | Thorn Vine: slows | **Life Bloom:** heals 5 HP a second after 3 seconds unhurt | **Overgrowth:** vines around you slow and hurt foes for 5 seconds |
-| Pirate | 125 | Cannonball: explodes and knocks back | **Plunder:** +50% points from monsters, and more power-up drops | **Cannon Barrage:** 6 cannonballs pound the area where you aim |
-| Bard | 105 | Power Chord: wide, passes through everything | **Echo:** every 4th attack plays twice | **Battle Hymn:** stuns foes around you; you move and attack faster for 5 seconds |
-| Valkyrie | 120 | Storm Spear: long and heavy, passes through two foes | **Valor:** +25% damage while above half HP | **Thunderclap:** lightning strikes every foe around you and stuns them |
+| Knight | 180 | Sword Beam: passes through one foe | **Iron Guard:** takes 20% less damage | **Shield Wall:** blocks all damage for 3 seconds |
+| Barbarian | 225 | Spinning Axe: short and heavy, cuts through everything | **Bloodlust:** up to +50% damage as HP runs low | **Whirlwind:** spins for 2.5 seconds, hitting everything around |
+| Wizard | 145 | Fireball: explodes | **Arcane Mind:** skill charges 40% faster | **Meteor:** a meteor crashes down where you aim |
+| Elf Archer | 145 | Piercing Arrow: long and fast | **Eagle Eye:** +25% damage on far targets | **Arrow Fan:** 11 arrows in a wide fan |
+| Rogue | 160 | Dagger Volley: three daggers | **Sly:** moves 12% faster | **Shadow Step:** dashes ahead and vanishes for 3 seconds; the next hit does double |
+| Cleric | 175 | Holy Light: heals you a little each hit | **Blessed:** power-ups last 50% longer, potions heal 50% more | **Sanctuary:** heals 75 HP and blasts nearby foes away |
+| Ninja | 145 | Shuriken: rapid | **Evasion:** 20% chance to dodge a hit | **Shuriken Storm:** two rings of shurikens in every direction |
+| Necromancer | 160 | Soul Bolt: homes in | **Soul Harvest:** heals 8 HP per monster slain, 30 per KO | **Raise Dead:** 3 ghosts hunt your foes for 8 seconds |
+| Druid | 175 | Thorn Vine: slows | **Life Bloom:** heals 7 HP a second after 3 seconds unhurt | **Overgrowth:** vines around you slow and hurt foes for 5 seconds |
+| Pirate | 190 | Cannonball: explodes and knocks back | **Plunder:** +50% points from monsters, and more power-up drops | **Cannon Barrage:** 6 cannonballs pound the area where you aim |
+| Bard | 160 | Power Chord: wide, passes through everything | **Echo:** every 4th attack plays twice | **Battle Hymn:** stuns foes around you; you move and attack faster for 5 seconds |
+| Valkyrie | 180 | Storm Spear: long and heavy, passes through two foes | **Valor:** +25% damage while above half HP | **Thunderclap:** lightning strikes every foe around you and stuns them |
 
 The kits were evened out over simulated four-minute duels with all twelve classes and bot-style play (chase
-the nearest foe, keep to your range): every class scored between 86% and 111% of the average. People play
+the nearest foe, keep to your range): every class scored between 92% and 110% of the average. People play
 differently from bots, so treat the numbers as a starting point. They're all in `public/js/brawl-rules.js`.
 
 ## PC, tablet and phone
@@ -358,7 +392,7 @@ Both pages adjust to the screen they're on.
 
 **Heroes:** twelve classes, each with its own attack. Customize each with 8 colors, 4 skin tones, 8 hair/beard
 colors (for the classes that show hair), 6 trims (the gold accents) and a companion pet (cat, owl, slime, baby
-dragon or fox) that follows your hero into battle. The creator shows your hero on a mini battlefield doing
+dragon or fox) that follows your hero into battle, and fights beside them in a duel. The creator shows your hero on a mini battlefield doing
 their attack (tap it to attack again), with their perk and skill, and has **RANDOM LOOK** and a random-name button.
 
 ## Classes
@@ -503,8 +537,8 @@ perks (`PERKS`), skills (`SKILLS`, `SKILL_WORDS`). The auto-typer limits are the
 settings. Word lists are in `words.js`; if you change them a lot, the perk bonuses may need re-measuring.
 The music tracks are the `TRACKS` table in `public/js/common.js`. Everything about a duel is in
 `public/js/brawl-rules.js`: the class kits (HP, speed, attack, perk and skill), the perks' and skills' numbers
-(`PERK`, `SKILL`), the monsters, power-ups and kegs, the arena layouts, the fight's length, respawn time and
-points.
+(`PERK`, `SKILL`), the monsters and when they come (`MONSTERS`, `MOB_WAVES`), power-ups and kegs, the arena layouts
+(`LAYOUTS`), the fight's length, respawn time and points.
 
 ## Files
 

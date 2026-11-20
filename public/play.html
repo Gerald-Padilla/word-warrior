@@ -69,6 +69,10 @@
     .opt-line { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
     .opt-line span { font-size: 7px; padding: 4px 6px; background: var(--ink); color: #8be36b; }
     .opt-line span.pick { color: var(--gold); }
+    /* Duel: how to play, in the lobby. */
+    .howto h3 { margin: 0 0 10px; }
+    .how-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; font-size: 8px; line-height: 1.7; margin-top: 7px; }
+    .how-row b { color: var(--gold); font-weight: normal; }
     .opt-line span.pick.d-easy { color: #8be36b; } .opt-line span.pick.d-hard { color: #ff7b4a; }
     .you .pk { font-size: 7px; color: #8be36b; line-height: 1.7; max-width: 300px; }
     .you .pk.sk { color: #7fd4ff; }
@@ -348,7 +352,7 @@
       #scrJoin, #scrLobby { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 18px; align-content: start; }
       #scrJoin > *, #scrLobby > * { grid-column: 1; }
       #scrJoin > #heroBox { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
-      #scrLobby > .px-box:not(.chat) { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
+      #scrLobby > .px-box:not(.chat):not(.howto) { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
       #scrFinal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 20px; align-content: center; justify-items: center; }
       #scrFinal > * { grid-column: 1; }
       #scrFinal > :first-child { margin-top: 0; }
@@ -470,6 +474,7 @@
       <p class="wait blink">Waiting for the host to start...</p>
       <p class="mode-line" id="lobbyMode"></p>
       <div class="opt-line" id="lobbyOpts"></div>
+      <div class="px-box howto hidden" id="lobbyHow"><h3>HOW TO PLAY</h3><div id="lobbyHowList"></div></div>
       <div class="emotes hidden" id="emoteLobby"></div>
       <div class="px-box chat hidden" id="chatBox">
         <h3>TAVERN CHAT</h3>

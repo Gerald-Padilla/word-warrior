@@ -48,6 +48,11 @@
     .rounds { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 10px; }
     .round-chip { padding: 8px; font-size: 10px; text-align: center; background: var(--ink); line-height: 1.8; }
     .round-chip small { display: block; font-size: 8px; color: var(--muted); }
+    /* Duel: how to play, under the round line. */
+    .howto { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+    .howto > div { padding: 6px 7px; background: var(--ink); font-size: 9px; color: var(--gold); line-height: 1.6; }
+    .howto small { display: block; font-size: 8px; color: var(--cream); line-height: 1.6; margin-top: 2px; }
+    @media (max-width: 1300px) { .howto { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
     .round-chip.easy { color: #8be36b; } .round-chip.medium { color: #b99cff; } .round-chip.hard { color: #ff7b4a; } .round-chip.boss { color: #ff4d4d; }
     /* Game length and difficulty: pick one of each */
     .setup { display: grid; grid-template-columns: 2fr 3fr; gap: 10px; }
@@ -410,6 +415,7 @@
       .cats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .cats > span { grid-row: auto; grid-column: 1 / -1; }
       .rounds { grid-auto-flow: row; }
+      .howto { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .opts { grid-template-columns: repeat(2, 1fr); }
       .start-row .px-btn.big { flex-basis: 100%; }
       #hud { grid-template-columns: auto 1fr; grid-template-areas: "join controls" "round round"; }
@@ -571,6 +577,7 @@
           </div>
         </div>
         <div class="rounds" id="roundChips"></div>
+        <div class="howto hidden" id="howTo"></div>
         <div class="opts" id="opts">
           <button class="opt" type="button" data-opt="streaks">STREAKS<small>Words in a row without a typo: up to x3</small></button>
           <button class="opt" type="button" data-opt="specials">SPECIAL WORDS<small>Gold x3, ice slows all, bombs blast all</small></button>

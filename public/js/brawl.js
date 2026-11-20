@@ -40,6 +40,56 @@
   const GRAVE = ['..KKKK..', '.KwWWwK.', 'KwWKKWwK', 'KWKKKKWK', 'KwWKKWwK', 'KwWKKWwK', 'KwWWWWwK', 'KKKKKKKK'];
   let graveSprite = null;
 
+  // The duel's own monsters (fire spirits and the King Slime borrow the other modes' art).
+  const DUEL_ART = {
+    goblin: {
+      pal: { A: '#7cc242', a: '#4a7a2a', Y: '#ffd23f' },
+      frameMs: 140,
+      frames: [
+        ['K..........K', 'AK..KKKK..KA', 'KAKKAAAAKKAK', '.KAAYAAYAAK.', '..KAAaaAAK..', '...KWKKWK...', '..KBBBBBBK..',
+          '.KAKBBBBKAKM', '.KAKbbbbKAKM', '..KKBBBBKK.K', '...KAK.KAK..', '...KK...KK..'],
+        ['K..........K', 'AK..KKKK..KA', 'KAKKAAAAKKAK', '.KAAYAAYAAK.', '..KAAaaAAK..', '...KWKKWK...', '..KBBBBBBK..',
+          '.KAKBBBBKAKM', '.KAKbbbbKAKM', '..KKBBBBKK.K', '..KAK...KAK.', '..KK.....KK.'],
+      ],
+    },
+    golem: {
+      pal: { S: '#8a7f6a', s: '#5e5546', R: '#5ee0ff' },
+      frameMs: 400,
+      frames: [
+        ['....KKKKKKKK....', '...KSSSSSSssK...', '...KSRSSSSRsK...', '...KSSSssSSsK...', '.KKKKSSSSSSKKKK.', 'KSSSKSSsSSSKSSsK',
+          'KSSsKSSSSsSKSssK', 'KSSsKSsSSSSKSssK', 'KssKKSSSSSSKKssK', '.KK.KSSSsSSK.KK.', '....KssKKssK....', '...KSSsK.KSSsK..',
+          '...KKKKK.KKKKK..'],
+        ['....KKKKKKKK....', '...KSSSSSSssK...', '...KSWSSSSWsK...', '...KSSSssSSsK...', '.KKKKSSSSSSKKKK.', 'KSSSKSSsSSSKSSsK',
+          'KSSsKSSSSsSKSssK', 'KSSsKSsSSSSKSssK', 'KssKKSSSSSSKKssK', '.KK.KSSSsSSK.KK.', '....KssKKssK....', '..KSSsK..KSSsK..',
+          '..KKKKK..KKKKK..'],
+      ],
+    },
+    spider: {
+      pal: { P: '#7a5aa8', p: '#e8374a', R: '#ffd23f' },
+      frameMs: 120,
+      frames: [
+        ['K....KKKK....K', '.K..KPPPPK..K.', '..KKPPRRPPKK..', 'KK.KPPPPPPK.KK', '..KKPPpPPPKK..', '.K.KPPPPPPK.K.', 'K...KPPPPK...K',
+          '.....KKKK.....'],
+        ['.K...KKKK...K.', 'K...KPPPPK...K', '.KKKPPRRPPKKK.', '...KPPPPPPK...', 'KKKKPPpPPPKKKK', '...KPPPPPPK...', '.K..KPPPPK..K.',
+          'K....KKKK....K'],
+      ],
+    },
+  };
+  const duelArt = new Map();
+  function duelSprite(type, frame) {
+    const art = DUEL_ART[type];
+    const key = `${type}:${frame % art.frames.length}`;
+    if (!duelArt.has(key)) duelArt.set(key, paint(art.frames[frame % art.frames.length], { ...window.Art.BASE, ...art.pal }));
+    return duelArt.get(key);
+  }
+  let crownSprite = null;
+  const PET_KINDS = new Set(R.PETS.filter(Boolean).map((p) => p.kind));
+  const SCALE = { golem: 1.1, kingslime: 2, ghost: 0.85, spider: 1.25 };
+  // A bare, gnarled tree for the graveyard.
+  const DEAD_TREE = ['....K.....K.....', '...KbK...KbK....', '....KbK.KbK..K..', '.K...KbKbK..KbK.', 'KbK...KbbK.KbK..',
+    '.KbK..KbbKKbK...', '..KbKKbbbbbK....', '...KbbbbbK......', '.....KbbK.......', '.....KbbK.......', '.....KbbK.......',
+    '....KbbbbK......', '...KbbKKbbK.....', '...KKK..KKK.....'];
+
   // How each kind of hit looks when it lands.
   const BLAST = {
     boom: ['#ff7b1c', '#ffd23f', '#e8371c'], splash: ['#ff7b1c', '#ffd23f'], keg: ['#ff7b1c', '#ffd23f', '#e8371c', '#8691a6'],
@@ -47,8 +97,18 @@
     holy: ['#fff6b0', '#ffd23f', '#ffffff'], hymn: ['#bb8cff', '#ff9ad0', '#7aa7ff'],
   };
   const MOB_FX = { slime: ['#6fd34f', '#3c8f2a', '#b6f59a'], bat: ['#7a55b0', '#45306b', '#ff3b3b'], skull: ['#ff7b1c', '#ffd23f', '#efe6d0'],
-    boss: ['#c0262e', '#ff9a3c', '#ffd23f'], ghost: ['#7dff6b', '#c8ffbf'] };
-  const MOB_NAME = { slime: 'A SLIME', bat: 'A BAT', skull: 'A SKULL', boss: 'THE DRAGON KING', ghost: 'A GHOST', keg: 'A KEG' };
+    boss: ['#c0262e', '#ff9a3c', '#ffd23f'], ghost: ['#7dff6b', '#c8ffbf'], goblin: ['#7cc242', '#4a7a2a', '#ffd23f'],
+    golem: ['#8a7f6a', '#5e5546', '#5ee0ff'], spider: ['#4a3560', '#c0262e', '#e9e6f5'], spirit: ['#ff7b1c', '#ffd23f', '#e8371c'],
+    kingslime: ['#6fd34f', '#3c8f2a', '#ffd23f'] };
+  const MOB_NAME = { slime: 'A SLIME', bat: 'A BAT', skull: 'A SKULL', boss: 'THE DRAGON KING', ghost: 'A GHOST', keg: 'A KEG',
+    goblin: 'A GOBLIN', golem: 'A GOLEM', spider: 'A SPIDER', spirit: 'A FIRE SPIRIT', kingslime: 'THE KING SLIME' };
+  // What each layout's ground is made of: flagstones, grass, graveyard soil or sand.
+  const FLOORS = {
+    stone: { tiles: ['#4f4870', '#4a4368', '#534c76', '#47405f'], mortar: '#3a3452', crack: 0.18, moss: '#3f6b45' },
+    grass: { tiles: ['#3f7a3a', '#437f3d', '#3b7337', '#468240'], blades: '#2f6230', flowers: ['#ffd23f', '#ffffff', '#ff9ad0'] },
+    grave: { tiles: ['#34402f', '#38452f', '#303b2b', '#3a4634'], blades: '#26301f', dirt: '#4a3a2a', bones: '#d8d0b8' },
+    sand: { tiles: ['#c9a66b', '#c49f62', '#cfad72', '#bf9a5c'], pebbles: '#a88752' },
+  };
 
   class BrawlView {
     // phone: follow selfId's hero, with a minimap and your own controls predicted.
@@ -93,6 +153,7 @@
       this.feed = [];
       this.graves = new Map(); // playerId -> { x, y, until }
       this.pets = new Map();
+      this.petHops = new Map(); // playerId -> when their pet last attacked
       this.hurtAt = new Map(); // monster or hero id -> when it was last hit (flash)
       this.self = null; // phone: { x, y } where your hero is drawn
       this.lead = null; // phone: how far ahead of the server your hero is drawn
@@ -143,17 +204,42 @@
         seed = (seed * 16807) % 2147483647;
         return seed / 2147483647;
       };
-      const flag = ['#4f4870', '#4a4368', '#534c76', '#47405f'];
+      const FL = FLOORS[this.map.floor] || FLOORS.stone;
+      const dot = (x, y, w, h, color) => {
+        g.fillStyle = color;
+        g.fillRect(x, y, w, h);
+      };
       for (let ty = 0; ty < R.ROWS; ty++) {
         for (let tx = 0; tx < R.COLS; tx++) {
-          g.fillStyle = flag[Math.floor(rnd() * flag.length)];
+          g.fillStyle = FL.tiles[Math.floor(rnd() * FL.tiles.length)];
           g.fillRect(tx * T, ty * T, T, T);
-          g.fillStyle = '#3a3452';
+          if (!FL.mortar) {
+            // Grass, soil or sand: no flagstones, just the bits lying about.
+            const n = 6 + Math.floor(rnd() * 6);
+            for (let i = 0; i < n; i++) {
+              const x = tx * T + Math.floor(rnd() * T);
+              const y = ty * T + Math.floor(rnd() * T);
+              if (FL.blades) dot(x, y, 1, 2, FL.blades);
+              if (FL.pebbles) dot(x, y, rnd() < 0.3 ? 2 : 1, 1, FL.pebbles);
+            }
+            if (FL.flowers && rnd() < 0.12) dot(tx * T + Math.floor(rnd() * (T - 2)), ty * T + Math.floor(rnd() * (T - 2)), 2, 2, FL.flowers[Math.floor(rnd() * FL.flowers.length)]);
+            if (FL.dirt && rnd() < 0.1) dot(tx * T + Math.floor(rnd() * 8), ty * T + Math.floor(rnd() * 8), 8 + Math.floor(rnd() * 6), 4 + Math.floor(rnd() * 4), FL.dirt);
+            if (FL.bones && rnd() < 0.05) {
+              const x = tx * T + 4 + Math.floor(rnd() * 10);
+              const y = ty * T + 4 + Math.floor(rnd() * 10);
+              dot(x, y, 4, 1, FL.bones);
+              dot(x - 1, y - 1, 1, 1, FL.bones);
+              dot(x + 4, y + 1, 1, 1, FL.bones);
+            }
+            if (this.map.floor === 'sand' && rnd() < 0.15) dot(tx * T + Math.floor(rnd() * 12), ty * T + Math.floor(rnd() * 16), 7, 1, '#d8b97d'); // ripples
+            continue;
+          }
+          g.fillStyle = FL.mortar;
           g.fillRect(tx * T, ty * T, T, 1);
           g.fillRect(tx * T, ty * T, 1, T);
           g.fillStyle = 'rgba(255,255,255,0.05)';
           g.fillRect(tx * T + 1, ty * T + 1, T - 2, 1);
-          if (rnd() < 0.18) {
+          if (rnd() < FL.crack) {
             // a crack
             g.fillStyle = '#3a3452';
             let x = tx * T + 4 + rnd() * 10;
@@ -202,6 +288,59 @@
         const y = b.y / U;
         const w = b.w / U;
         const h = b.h / U;
+        if (b.kind === 'water') {
+          // A pool: deep blue, lighter ripples, a bright edge along the top.
+          g.fillStyle = '#1d3f73';
+          g.fillRect(x, y, w, h);
+          g.fillStyle = '#2a5fa8';
+          g.fillRect(x + 1, y + 2, w - 2, h - 3);
+          g.fillStyle = '#3f7fd0';
+          for (let i = 0; i < (w * h) / 40; i++) g.fillRect(x + 2 + Math.floor(rnd() * (w - 6)), y + 3 + Math.floor(rnd() * (h - 5)), 3, 1);
+          g.fillStyle = '#7fb8ff';
+          g.fillRect(x + 1, y + 1, w - 2, 1);
+          continue;
+        }
+        if (b.kind === 'tree' || b.kind === 'grave') {
+          const cx = x + w / 2;
+          g.fillStyle = 'rgba(0,0,0,0.3)';
+          g.fillRect(x + 3, y + h - 5, w - 4, 4);
+          if (b.kind === 'grave') {
+            // A headstone on a mound of earth.
+            g.fillStyle = '#4a3a2a';
+            g.fillRect(x + 2, y + h - 6, w - 4, 5);
+            g.fillStyle = '#1b1426';
+            g.fillRect(cx - 6, y + 3, 12, h - 7);
+            g.fillStyle = '#8a8aa0';
+            g.fillRect(cx - 5, y + 5, 10, h - 10);
+            g.fillRect(cx - 3, y + 4, 6, 1);
+            g.fillStyle = '#5a5a70';
+            g.fillRect(cx - 5, y + h - 8, 10, 3);
+            g.fillStyle = '#3a3a50';
+            g.fillRect(cx - 1, y + 7, 2, 7);
+            g.fillRect(cx - 3, y + 9, 6, 2);
+            continue;
+          }
+          // A tree: trunk and a round crown, or a bare one in a graveyard.
+          if (this.map.floor === 'grave') {
+            const spr = paint(DEAD_TREE, { K: '#1b1426', b: '#8a7a68' });
+            g.drawImage(spr, Math.round(cx - spr.width / 2), y + h - spr.height - 2);
+            continue;
+          }
+          g.fillStyle = '#1b1426';
+          g.fillRect(cx - 3, y + h / 2 - 1, 6, h / 2 - 1);
+          g.fillStyle = '#6e4a24';
+          g.fillRect(cx - 2, y + h / 2, 4, h / 2 - 3);
+          const r = w / 2 + 2;
+          const cy = y + h / 2 - 4;
+          for (const [col, rr, oy] of [['#1b1426', r + 1, 0], ['#2f7d4a', r, 0], ['#4fa865', r - 3, -2], ['#6fe08b', 2, -r + 4]]) {
+            g.fillStyle = col;
+            for (let yy = -rr; yy <= rr; yy++) {
+              const half = Math.floor(Math.sqrt(rr * rr - yy * yy));
+              g.fillRect(cx - half + (col === '#6fe08b' ? -3 : 0), cy + oy + yy, half * 2, 1);
+            }
+          }
+          continue;
+        }
         g.fillStyle = 'rgba(0,0,0,0.35)';
         g.fillRect(x + 3, y + 4, w, h); // shadow
         if (b.kind === 'wall') {
@@ -292,6 +431,7 @@
     addShots(rows) {
       for (const r of rows) {
         this.shots.set(r[0], { id: r[0], kind: r[1], x0: r[2], y0: r[3], vx: r[4], vy: r[5], range: r[6], owner: r[7], t0: r[8], homing: r[9], travel: 0 });
+        if (PET_KINDS.has(r[1])) this.queue.push({ petHop: r[7], t: r[8] }); // the pet hops as it attacks
       }
     }
 
@@ -349,6 +489,7 @@
       const later = [];
       for (const q of this.queue) {
         if (q.t > t + 5) later.push(q);
+        else if (q.petHop) this.petHops.set(q.petHop, performance.now());
         else if (q.fx) this.showFx(q.fx);
         else this.showNews(q.news);
       }
@@ -803,8 +944,14 @@
       if (m.type === 'boss') {
         const roar = pt - this.roarAt < 500 ? 1 : 0;
         this.sprite(bossSprite(roar), X, Y + def.r * s * 0.9, u * 1.4, false, hurt ? 0.6 : 1);
+      } else if (DUEL_ART[m.type]) {
+        const art = DUEL_ART[m.type];
+        const frame = Math.floor(pt / art.frameMs + m.id) % art.frames.length;
+        const step = m.type === 'golem' ? Math.abs(Math.sin(pt / 300 + m.id)) * -3 * s : 0;
+        this.sprite(duelSprite(m.type, frame), X, Y + def.r * s + step, u * (SCALE[m.type] || 1), flip, hurt ? 0.55 : 1);
       } else {
-        const artType = m.type === 'ghost' ? 'skull' : m.type;
+        // Fire spirits are the boss round's minions; the King Slime is a slime, twice the size, with a crown.
+        const artType = m.type === 'ghost' ? 'skull' : m.type === 'spirit' ? 'boss' : m.type === 'kingslime' ? 'slime' : m.type;
         const art = MON_ART[artType];
         const frame = Math.floor(pt / art.frameMs + m.id) % art.frames.length;
         const fly = def.fly ? Math.sin(pt / 180 + m.id) * 4 * s : 0;
@@ -816,7 +963,13 @@
           ctx.fill();
           ctx.globalAlpha = 1;
         }
-        this.sprite(monsterSprite(artType, frame), X, Y + def.r * s + fly, u * (m.type === 'ghost' ? 0.85 : 1), flip, m.type === 'ghost' ? 0.75 : hurt ? 0.55 : 1);
+        const spr = monsterSprite(artType, frame);
+        const scale = u * (SCALE[m.type] || 1);
+        this.sprite(spr, X, Y + def.r * s + fly, scale, flip, m.type === 'ghost' ? 0.75 : hurt ? 0.55 : 1);
+        if (m.type === 'kingslime') {
+          if (!crownSprite) crownSprite = paint(['.G.G.G.', 'GGGGGGG', 'GRGGGRG', 'ggggggg'], { G: '#f5c542', g: '#b8860b', R: '#e8374a' });
+          this.sprite(crownSprite, X, Y + def.r * s - spr.height * scale * 0.55, u * 1.2);
+        }
       }
       if (m.stun) this.drawStars(X, Y - def.r * s - 8 * s, pt);
       if (m.hp < 100 && m.type !== 'boss') {
@@ -856,7 +1009,9 @@
       pet.y = lerp(pet.y, want.y, 0.08);
       this.pets.set(h.id, pet);
       const pspr = petSprite(look.pet);
-      if (pspr && alpha > 0.3) this.sprite(pspr, this.X(pet.x), this.Y(pet.y) + 10 * s + Math.abs(Math.sin(pt / 160)) * -3 * s, u * 0.9, pet.x > h.x, alpha);
+      const pounce = Math.max(0, 1 - (pt - (this.petHops.get(h.id) || 0)) / 220);
+      const petY = this.Y(pet.y) + 10 * s - Math.abs(Math.sin(pt / 160)) * 3 * s - Math.sin(pounce * Math.PI) * 9 * s;
+      if (pspr && alpha > 0.3) this.sprite(pspr, this.X(pet.x), petY, u * 0.9, pet.x > h.x, alpha);
       // Shadow and the hero.
       ctx.globalAlpha = 0.3 * alpha;
       ctx.fillStyle = '#000';
@@ -968,6 +1123,20 @@
         const X = this.X(x);
         const Y = this.Y(y);
         const a = Math.atan2(S.vy, S.vx);
+        if (PET_KINDS.has(S.kind)) {
+          this.drawPetShot(S.kind, X, Y, x, y, a, pt);
+          continue;
+        }
+        if (S.kind === 'web') {
+          // A sticky web: white strands round a grey knot.
+          const u = 2.2 * this.s;
+          for (let i = -2; i <= 2; i++) {
+            this.block(X + i * u, Y + i * u, u, '#e9e6f5');
+            this.block(X + i * u, Y - i * u, u, '#e9e6f5');
+          }
+          this.block(X, Y, u * 1.4, '#a99cc7');
+          continue;
+        }
         if (S.kind === 'mfire' || S.kind === 'bfire') {
           const u = (S.kind === 'bfire' ? 3.4 : 2.6) * this.s;
           const flick = Math.floor(pt / 60) % 2;
@@ -983,6 +1152,59 @@
         const color = COLORS[look ? look.color : 0] || COLORS[0];
         fake.U = 2.6 * this.s;
         window.Arena.prototype.drawBolt.call(fake, S.kind, X, Y, Math.cos(a), Math.sin(a), a, color, pt);
+      }
+    }
+
+    // A pet's attack in flight: a claw swipe, a feather, a goo ball, an ember or a wisp of fox fire.
+    drawPetShot(kind, X, Y, x, y, a, pt) {
+      const u = 2.4 * this.s;
+      const dx = Math.cos(a);
+      const dy = Math.sin(a);
+      const px = -dy;
+      const py = dx;
+      const trail = (color) => {
+        if (Math.random() < 0.5) this.particles.push({ x: x - dx * 8, y: y - dy * 8, vx: 0, vy: -0.02, g: 0, life: 220, t0: pt, size: 3, color });
+      };
+      switch (kind) {
+        case 'claw':
+          for (let i = -1; i <= 1; i++) {
+            for (let k = 0; k < 4; k++) this.block(X + px * i * u * 1.6 - dx * k * u, Y + py * i * u * 1.6 - dy * k * u, u * (k ? 0.8 : 1.1), k ? '#d5dbe6' : '#ffffff');
+          }
+          break;
+        case 'feather':
+          this.block(X, Y, u, '#ffffff');
+          for (let k = 1; k <= 4; k++) {
+            this.block(X - dx * k * u, Y - dy * k * u, u * 0.8, '#a0703c');
+            if (k > 1) {
+              this.block(X - dx * k * u + px * u, Y - dy * k * u + py * u, u * 0.8, '#efe6d0');
+              this.block(X - dx * k * u - px * u, Y - dy * k * u - py * u, u * 0.8, '#efe6d0');
+            }
+          }
+          break;
+        case 'goo':
+          this.block(X, Y, u * 2.8, '#3c8f2a');
+          this.block(X, Y, u * 2, '#6fd34f');
+          this.block(X - u * 0.5, Y - u * 0.5, u * 0.8, '#e9ffd9');
+          trail('#6fd34f');
+          break;
+        case 'ember': {
+          const flick = Math.floor(pt / 60) % 2;
+          this.block(X, Y, u * (2.2 + flick * 0.3), '#e8371c');
+          this.block(X, Y, u * 1.4, '#ff7b1c');
+          this.block(X, Y, u * 0.8, '#ffd23f');
+          trail(Math.random() < 0.5 ? '#ff7b1c' : '#ffd23f');
+          break;
+        }
+        case 'foxfire': {
+          const flick = Math.floor(pt / 70) % 2;
+          this.block(X, Y - flick * u * 0.3, u * 2.4, '#2a8fd0');
+          this.block(X, Y - u * 0.4, u * 1.6, '#5ee0ff');
+          this.block(X, Y - u * 0.6, u * 0.8, '#e0fbff');
+          trail('#5ee0ff');
+          break;
+        }
+        default:
+          this.block(X, Y, u * 2, '#ffffff');
       }
     }
 
@@ -1153,17 +1375,19 @@
       ctx.fillStyle = '#3a3452';
       ctx.fillRect(x, y, w, h);
       const k = w / ARENA.W;
-      ctx.fillStyle = '#6e6488';
-      for (const b of this.map.blocks) ctx.fillRect(x + b.x * k, y + b.y * k, b.w * k, b.h * k);
+      for (const b of this.map.blocks) {
+        ctx.fillStyle = b.kind === 'water' ? '#2a5fa8' : b.kind === 'tree' ? '#2f7d4a' : '#6e6488';
+        ctx.fillRect(x + b.x * k, y + b.y * k, b.w * k, b.h * k);
+      }
       // What the screen shows.
       ctx.strokeStyle = 'rgba(255,255,255,0.5)';
       ctx.lineWidth = d;
       ctx.strokeRect(x + this.camX * k, y + this.camY * k, Math.min(w, (this.W / this.s) * k), Math.min(h, (this.H / this.s) * k));
       if (frame) {
         for (const m of frame.mons) {
-          if (m.type !== 'boss' && m.type !== 'skull') continue;
-          ctx.fillStyle = m.type === 'boss' ? '#ff5a1f' : '#efe6d0';
-          const r = m.type === 'boss' ? 4 * d : 1.5 * d;
+          if (!['boss', 'skull', 'golem', 'kingslime'].includes(m.type)) continue;
+          ctx.fillStyle = m.type === 'boss' ? '#ff5a1f' : m.type === 'skull' ? '#efe6d0' : m.type === 'golem' ? '#8a7f6a' : '#6fd34f';
+          const r = m.type === 'boss' ? 4 * d : m.type === 'skull' ? 1.5 * d : 2.5 * d;
           ctx.fillRect(x + m.x * k - r, y + m.y * k - r, r * 2, r * 2);
         }
         for (const it of this.items) {

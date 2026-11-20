@@ -845,7 +845,24 @@
   const roundLabel = (i) => (rounds.length === 1 ? 'ONE ROUND' : `ROUND ${i + 1}`);
   const paceNote = (before, after = '') => (options.level && options.level !== 'normal' ? `${before}${options.level.toUpperCase()}${after}` : '');
 
+  // Duel: how to play, on the big screen for everyone in the room to read before the fight.
+  function renderHowTo() {
+    const box = $('#howTo');
+    show('#howTo', mode === 'brawl');
+    if (mode !== 'brawl' || box.childElementCount) return;
+    const tips = [
+      ['MOVE', 'Left thumb: drag on the left half (PC: WASD)'],
+      ['ATTACK', 'Right thumb: hold to attack, drag to aim (PC: mouse)'],
+      ['SKILL', 'Tap SKILL when it glows (PC: E)'],
+      ['PETS', 'Companions attack on their own'],
+      ['POWER-UPS', 'Walk over them. Shoot kegs to blow them up'],
+      ['POINTS', `KO +${BR.KO_POINTS} · monsters +${BR.MONSTERS.slime.pts} to +${BR.MONSTERS.golem.pts} · back in ${BR.RESPAWN_MS / 1000}s`],
+    ];
+    for (const [title, text] of tips) box.append(el('div', {}, [title, el('small', { text })]));
+  }
+
   function renderRoundChips() {
+    renderHowTo();
     const box = $('#roundChips');
     box.innerHTML = '';
     const pace = { easy: ' · slower', hard: ' · faster' }[options.level] || '';

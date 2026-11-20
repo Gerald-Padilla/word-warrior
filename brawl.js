@@ -27,7 +27,10 @@ function createBrawl({ now, duration, level = 'normal', perks = true, skills = t
     perks,
     skills,
     rng,
-    blocks: map.blocks,
+    blocks: map.blocks, // everything that stops heroes and monsters on foot
+    walls: map.walls, // what stops shots (not water)
+    open: openTiles(map.blocks), // tiles you can walk on, for monsters finding their way
+    flows: new Map(), // heroId -> { at, dist }: how far every tile is from that hero, on foot
     kegs: map.kegs.map((k, i) => ({ id: i, x: k.x, y: k.y, r: KEG.r, hp: KEG.hp, backAt: 0 })),
     heroes: new Map(),
     monsters: new Map(),
@@ -48,6 +51,75 @@ function createBrawl({ now, duration, level = 'normal', perks = true, skills = t
 }
 
 const rand = (B, lo, hi) => lo + B.rng() * (hi - lo);
+
+// ---- finding the way ---------------------------------------------------------
+// Blocks sit on the tile grid, so a tile is either open or not.
+function openTiles(blocks) {
+  const T = ARENA.TILE;
+  const open = new Uint8Array(R.COLS * R.ROWS);
+  for (let y = 0; y < R.ROWS; y++) {
+    for (let x = 0; x < R.COLS; x++) {
+      const cx = x * T + T / 2;
+      const cy = y * T + T / 2;
+      open[y * R.COLS + x] = blocks.some((b) => cx > b.x && cx < b.x + b.w && cy > b.y && cy < b.y + b.h) ? 0 : 1;
+    }
+  }
+  return open;
+}
+const tileOf = (v, n) => Math.max(0, Math.min(n - 1, Math.floor(v / ARENA.TILE)));
+
+// Steps from every tile to the hero's, around walls and water; rebuilt every half second per hero.
+function flowTo(B, H, t) {
+  let f = B.flows.get(H.id);
+  if (f && t < f.at + 500) return f;
+  const dist = new Int16Array(R.COLS * R.ROWS).fill(-1);
+  const start = tileOf(H.y, R.ROWS) * R.COLS + tileOf(H.x, R.COLS);
+  const queue = [start];
+  dist[start] = 0;
+  for (let q = 0; q < queue.length; q++) {
+    const i = queue[q];
+    const x = i % R.COLS;
+    const y = (i - x) / R.COLS;
+    for (const [nx, ny] of [[x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]) {
+      if (nx < 0 || ny < 0 || nx >= R.COLS || ny >= R.ROWS) continue;
+      const j = ny * R.COLS + nx;
+      if (dist[j] >= 0 || !B.open[j]) continue;
+      dist[j] = dist[i] + 1;
+      queue.push(j);
+    }
+  }
+  f = { at: t, dist };
+  B.flows.set(H.id, f);
+  return f;
+}
+
+// Which way a monster on foot should head for a hero it can't walk straight to: toward the neighbouring
+// tile closest to them (diagonally only when it can't clip a corner). null: no way found, go straight.
+function wayTo(B, M, H, t) {
+  const { dist } = flowTo(B, H, t);
+  const x = tileOf(M.x, R.COLS);
+  const y = tileOf(M.y, R.ROWS);
+  const here = dist[y * R.COLS + x];
+  let best = null;
+  let bestD = here >= 0 ? here : 1e9;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const nx = x + dx;
+      const ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= R.COLS || ny >= R.ROWS) continue;
+      if (dx && dy && (!B.open[y * R.COLS + nx] || !B.open[ny * R.COLS + x])) continue;
+      const d = dist[ny * R.COLS + nx];
+      if (d >= 0 && d + (dx && dy ? 0.4 : 0) < bestD) {
+        bestD = d + (dx && dy ? 0.4 : 0);
+        best = [nx, ny];
+      }
+    }
+  }
+  if (!best) return null;
+  const T = ARENA.TILE;
+  return Math.atan2((best[1] + 0.5) * T - M.y, (best[0] + 0.5) * T - M.x);
+}
 const liveKegs = (B) => B.kegs.filter((k) => !k.backAt);
 const heroesIn = (B) => [...B.heroes.values()].filter((H) => H.alive && !H.away);
 
@@ -76,7 +148,7 @@ function addHero(B, p, now) {
     id: p.id, cls: KITS[p.cls] ? p.cls : 'knight', kit, x: spot.x, y: spot.y, face: spot.x < ARENA.W / 2 ? 0 : Math.PI,
     hp: kit.hp, max: kit.hp, alive: true, respawnAt: 0, safeUntil: now + R.SPAWN_SAFE_MS, cdAt: 0, charge: 0,
     input: { mx: 0, my: 0, ax: 0, ay: 0, fire: false }, until: {}, stunUntil: 0, slowUntil: 0, slowF: 1,
-    lastHurtAt: 0, hit: null, streak: 0, bestStreak: 0, attacks: 0, echoAt: 0, echoAng: 0, whirlNext: 0, stormAt: 0, stormAng: 0,
+    pet: R.PETS[p.pet] ? p.pet : 0, petAt: now + 1000, lastHurtAt: 0, hit: null, streak: 0, bestStreak: 0, attacks: 0, echoAt: 0, echoAng: 0, whirlNext: 0, stormAt: 0, stormAng: 0,
     away: false, score: 0, kos: 0, deaths: 0, slain: 0, dealt: 0, bossDmg: 0, bossFrac: 0, bossKill: false,
   };
   B.heroes.set(H.id, H);
@@ -164,6 +236,23 @@ function heroStep(B, H, t, dt) {
     H.whirlNext = t + SKILL.whirlEvery;
     blast(B, H.x, H.y, SKILL.whirlR, SKILL.whirlDmg, { hero: H }, t, { knock: 40, fx: false });
   }
+  petStep(B, H, t);
+}
+
+// The hero's pet, a step behind them, attacks the nearest foe in its reach whenever it's ready.
+function petStep(B, H, t) {
+  const pet = R.PETS[H.pet];
+  if (!pet || t < H.petAt) return;
+  let at = { x: R.clamp(H.x - Math.cos(H.face) * 30, 10, ARENA.W - 10), y: R.clamp(H.y + 8, 10, ARENA.H - 10) };
+  if (R.inBlock(at.x, at.y, 2, B.walls)) at = { x: H.x, y: H.y };
+  const o = autoTarget(B, H, pet.range, at);
+  if (!o) {
+    H.petAt = t + 150; // nothing in reach: look again soon
+    return;
+  }
+  H.petAt = t + pet.cd;
+  const ang = Math.atan2(o.y - at.y, o.x - at.x);
+  shoot(B, H, pet, ang, t, { x: at.x + Math.cos(ang) * 8, y: at.y + Math.sin(ang) * 8, pet: true });
 }
 
 function gainCharge(B, H, n) {
@@ -171,13 +260,14 @@ function gainCharge(B, H, n) {
   H.charge = Math.min(R.CHARGE_MAX, H.charge + n * (B.perks && H.cls === 'wizard' ? PERK.arcane : 1));
 }
 
-// The nearest foe within reach that a shot could get to (no wall in the way), or null.
-function autoTarget(B, H, reach) {
+// The nearest foe within reach of `from` (the hero, or their pet) that a shot could get to (no wall in the
+// way), or null.
+function autoTarget(B, H, reach, from = H) {
   let best = null;
   let bestD = reach;
   const consider = (o) => {
-    const d = Math.hypot(o.x - H.x, o.y - H.y);
-    if (d < bestD && !R.lineBlocked(H.x, H.y, o.x, o.y, B.blocks)) {
+    const d = Math.hypot(o.x - from.x, o.y - from.y);
+    if (d < bestD && !R.lineBlocked(from.x, from.y, o.x, o.y, B.walls)) {
       best = o;
       bestD = d;
     }
@@ -236,11 +326,11 @@ function shoot(B, H, a, ang, t, extra = {}) {
 }
 
 // A monster's fireball: hurts heroes only.
-function mobShot(B, M, ang, t, { dmg, speed, range, kind }) {
+function mobShot(B, M, ang, t, { dmg, speed, range, kind, slow = 0, slowF = 0 }) {
   const S = {
-    id: B.nextId++, kind, owner: null, mob: M.id, x: M.x + Math.cos(ang) * M.r, y: M.y + Math.sin(ang) * M.r,
+    id: B.nextId++, kind, owner: null, mob: M.id, mobType: M.type, x: M.x + Math.cos(ang) * M.r, y: M.y + Math.sin(ang) * M.r,
     vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed, speed, left: range, range, r: 12,
-    dmg: Math.round(dmg * B.level.dmg), pierce: 0, splash: 0, splashR: 0, knock: 0, slow: 0, homing: 0, heal: 0, hits: new Set(), t0: t,
+    dmg: Math.round(dmg * B.level.dmg), pierce: 0, splash: 0, splashR: 0, knock: 0, slow, slowF, homing: 0, heal: 0, hits: new Set(), t0: t,
   };
   B.shots.set(S.id, S);
   B.newShots.push([S.id, S.kind, Math.round(S.x), Math.round(S.y), Math.round(S.vx), Math.round(S.vy), S.range, '', t, 0]);
@@ -266,12 +356,12 @@ function hitMod(B, H, target, t) {
 function hurt(B, target, amount, src, t, why = 'hit') {
   let H = src.hero || null;
   if (!H && src.mob && src.mob.owner) H = B.heroes.get(src.mob.owner) || null;
-  if (target.kit) return hurtHero(B, target, amount, H, src.mob, t, why);
-  if (target.type) return hurtMonster(B, target, amount, H, t);
+  if (target.kit) return hurtHero(B, target, amount, H, src.mob, t, why, src.pet);
+  if (target.type) return hurtMonster(B, target, amount, H, t, src.pet);
   return hurtKeg(B, target, amount, H, t);
 }
 
-function hurtHero(B, T, amount, H, mob, t, why) {
+function hurtHero(B, T, amount, H, mob, t, why, pet = false) {
   if (!T.alive || T.away || H === T) return 0;
   if (mob && mob.owner === T.id) return 0;
   const at = { x: Math.round(T.x), y: Math.round(T.y - 30), t };
@@ -283,7 +373,7 @@ function hurtHero(B, T, amount, H, mob, t, why) {
     B.fx.push({ k: 'dodge', ...at, id: T.id });
     return 0;
   }
-  let d = amount * (H ? hitMod(B, H, T, t) : 1);
+  let d = amount * (H && !pet ? hitMod(B, H, T, t) : 1);
   if (B.perks && T.cls === 'knight') d *= PERK.guard;
   d = Math.max(1, Math.round(d));
   T.hp -= d;
@@ -298,10 +388,10 @@ function hurtHero(B, T, amount, H, mob, t, why) {
   return d;
 }
 
-function hurtMonster(B, M, amount, H, t) {
+function hurtMonster(B, M, amount, H, t, pet = false) {
   if (!B.monsters.has(M.id)) return 0;
   if (H && M.owner === H.id) return 0;
-  const d = Math.max(1, Math.round(amount * (H ? hitMod(B, H, M, t) : 1)));
+  const d = Math.max(1, Math.round(amount * (H && !pet ? hitMod(B, H, M, t) : 1)));
   M.hp -= d;
   M.hurtAt = t;
   if (H) {
@@ -348,7 +438,7 @@ function blast(B, x, y, r, dmg, src, t, { knock = 0, stun = 0, hurtsOwner = fals
     if (owner && M.owner === owner.id) continue;
     if (Math.hypot(M.x - x, M.y - y) > r + M.r) continue;
     if (dmg > 0) hurt(B, M, dmg, src, t);
-    if (knock && M.type !== 'boss' && B.monsters.has(M.id)) push(B, M, x, y, knock);
+    if (knock && !MONSTERS[M.type].heavy && B.monsters.has(M.id)) push(B, M, x, y, knock);
     if (stun && M.type !== 'boss') M.stunUntil = Math.max(M.stunUntil || 0, t + stun);
   }
   for (const K of B.kegs) {
@@ -427,14 +517,25 @@ function spawnMonsters(B, t) {
   }
   if (t < B.nextMobAt) return;
   B.nextMobAt = t + 950 * B.level.spawn * rand(B, 0.7, 1.3);
-  const count = [...B.monsters.values()].filter((M) => M.type !== 'boss' && !M.owner).length;
+  let count = 0;
+  for (const M of B.monsters.values()) if (M.type !== 'boss' && !M.owner) count += MONSTERS[M.type].weight || 1;
   const cap = Math.min(40, Math.round((3 + 1.6 * heroes) * B.level.mob) + Math.min(8, Math.floor(elapsed / 30000)));
   if (count >= cap) return;
-  const roll = B.rng();
-  const type = elapsed < 40000 ? (roll < 0.6 ? 'slime' : 'bat') : roll < 0.45 ? 'slime' : roll < 0.75 ? 'bat' : 'skull';
+  // Who comes depends on how long the fight has gone on.
+  const { mix } = R.MOB_WAVES.filter((w) => w.at <= elapsed).pop();
+  const total = Object.values(mix).reduce((a, b) => a + b, 0);
+  let roll = B.rng() * total;
+  let type = 'slime';
+  for (const [k, w] of Object.entries(mix)) {
+    roll -= w;
+    if (roll < 0) { type = k; break; }
+  }
   const g = R.GATES[Math.floor(B.rng() * R.GATES.length)];
-  const along = rand(B, -70, 70);
-  addMonster(B, type, g.x + (g.y === ARENA.H / 2 ? 0 : along), g.y + (g.y === ARENA.H / 2 ? along : 0), t);
+  const side = g.y === ARENA.H / 2;
+  for (let i = 0; i < (MONSTERS[type].pack || 1); i++) {
+    const along = rand(B, -70, 70);
+    addMonster(B, type, g.x + (side ? (g.x < ARENA.W / 2 ? i * 30 : -i * 30) : along), g.y + (side ? along : (g.y < ARENA.H / 2 ? i * 30 : -i * 30)), t);
+  }
 }
 
 // Who a monster goes for: the nearest hero it can see (a Rogue in the shadows is hidden). A Necromancer's
@@ -478,21 +579,34 @@ function monsterStep(B, M, t, dt) {
   if (T) {
     const d = Math.hypot(T.x - M.x, T.y - M.y) || 1;
     let ang = Math.atan2(T.y - M.y, T.x - M.x);
-    if (M.type === 'skull') {
-      // Keep its distance and spit fireballs at whoever it can see.
+    // A fire spirit that reaches a hero blows up.
+    if (def.boom && T.kit && d < M.r + HERO_R + 6) {
+      burst(B, M, null, t);
+      return;
+    }
+    // On foot, with a wall or water in the way: find the way round.
+    const sees = def.fly || !R.lineBlocked(M.x, M.y, T.x, T.y, B.blocks);
+    if (!sees && T.kit) {
+      const way = wayTo(B, M, T, t);
+      if (way !== null) ang = way;
+    }
+    if (def.keep && sees) {
+      // Skulls and spiders keep their distance and shoot at whoever they can see.
       if (d < def.keep - 40) ang += Math.PI;
       else if (d < def.keep + 40) ang += Math.PI / 2 * (Math.sin(t / 900 + M.seed) > 0 ? 1 : -1);
-      if (t >= M.shotAt && d < def.shotRange && T.kit && !R.lineBlocked(M.x, M.y, T.x, T.y, B.blocks)) {
-        M.shotAt = t + def.shotMs * rand(B, 0.85, 1.15);
-        mobShot(B, M, Math.atan2(T.y - M.y, T.x - M.x), t, { dmg: def.shotDmg, speed: def.shotSpeed, range: def.shotRange, kind: 'mfire' });
-      }
+    }
+    if (def.shotMs && t >= M.shotAt && d < def.shotRange && T.kit && !R.lineBlocked(M.x, M.y, T.x, T.y, B.walls)) {
+      M.shotAt = t + def.shotMs * rand(B, 0.85, 1.15);
+      mobShot(B, M, Math.atan2(T.y - M.y, T.x - M.x), t, { dmg: def.shotDmg, speed: def.shotSpeed, range: def.shotRange,
+        kind: M.type === 'spider' ? 'web' : 'mfire', slow: def.web || 0, slowF: def.webSlow || 0 });
     }
     if (M.type === 'bat') ang += Math.sin(t / 220 + M.seed) * 0.9;
-    if (M.type === 'slime') speed *= 0.55 + 0.75 * Math.abs(Math.sin(t / 260 + M.seed)); // hop, hop
+    if (M.type === 'goblin' && sees) ang += Math.sin(t / 300 + M.seed) * 0.5; // weaving
+    if (M.type === 'slime' || M.type === 'kingslime') speed *= 0.55 + 0.75 * Math.abs(Math.sin(t / 260 + M.seed)); // hop, hop
     if (M.type === 'boss') bossMoves(B, M, T, t);
     if (t < M.detourUntil) ang += M.detour;
     const reach = M.r + (T.kit ? HERO_R : T.r) - 4;
-    if (d > reach || M.type === 'skull') {
+    if (d > reach || def.keep) {
       dx = Math.cos(ang) * speed * dt;
       dy = Math.sin(ang) * speed * dt;
     }
@@ -523,12 +637,13 @@ function monsterStep(B, M, t, dt) {
     M.lastY = M.y;
   }
   // Touching a hero (or, for a ghost, a foe) hurts it.
-  if (t >= M.hitAt) {
+  if (t >= M.hitAt && !def.boom) {
     const dmg = M.owner ? def.dmg : Math.round(def.dmg * B.level.dmg);
     for (const H of B.heroes.values()) {
       if (!H.alive || H.away || H.id === M.owner) continue;
       if (Math.hypot(H.x - M.x, H.y - M.y) > M.r + HERO_R + 4) continue;
       hurt(B, H, dmg, { mob: M }, t, 'touch');
+      if (def.knock && H.alive) push(B, H, M.x, M.y, def.knock);
       M.hitAt = t + def.hitMs;
       break;
     }
@@ -594,7 +709,16 @@ function slay(B, M, H, t) {
       pts = def.pts;
     }
     for (let i = 0; i < 5; i++) addItem(B, t, M.x + rand(B, -110, 110), M.y + rand(B, -60, 90));
-  } else if (H && !M.owner) {
+  }
+  if (def.split) {
+    for (let i = 0; i < def.split; i++) {
+      const a = (i / def.split) * Math.PI * 2 + B.rng();
+      const p = R.moveCircle(M.x, M.y, MONSTERS.slime.r, Math.cos(a) * 34, Math.sin(a) * 34, B.blocks, liveKegs(B));
+      addMonster(B, 'slime', p.x, p.y, t, { hitAt: t + 600 });
+    }
+  }
+  if (def.boom) burst(B, M, H, t);
+  if (M.type !== 'boss' && H && !M.owner) {
     H.slain += 1;
     pts = Math.round(def.pts * (B.perks && H.cls === 'pirate' ? PERK.plunderPts : 1));
     H.score += pts;
@@ -603,6 +727,13 @@ function slay(B, M, H, t) {
     if (B.rng() < drop) addItem(B, t, M.x, M.y);
   }
   B.fx.push({ k: 'mdie', m: TYPE_INDEX[M.type], x: Math.round(M.x), y: Math.round(M.y), t, by: H ? H.id : '', pts });
+}
+
+// A fire spirit going off: everything nearby gets hurt. Slain by a hero, the blast counts as theirs.
+function burst(B, M, H, t) {
+  B.monsters.delete(M.id);
+  const def = MONSTERS[M.type];
+  blast(B, M.x, M.y, def.boom.r, Math.round(def.boom.dmg * B.level.dmg), H ? { hero: H } : { mob: M }, t, { knock: 80, kind: 'boom' });
 }
 
 // ---- shots -------------------------------------------------------------------
@@ -614,7 +745,7 @@ function shotStep(B, S, t, dt) {
     S.x += (S.vx * dt) / steps;
     S.y += (S.vy * dt) / steps;
     S.left -= (S.speed * dt) / steps;
-    if (S.x < 0 || S.y < 0 || S.x > ARENA.W || S.y > ARENA.H || R.inBlock(S.x, S.y, 0, B.blocks)) return endShot(B, S, t, true);
+    if (S.x < 0 || S.y < 0 || S.x > ARENA.W || S.y > ARENA.H || R.inBlock(S.x, S.y, 0, B.walls)) return endShot(B, S, t, true);
     for (const K of B.kegs) {
       if (K.backAt || Math.hypot(K.x - S.x, K.y - S.y) > K.r + S.r) continue;
       hurtKeg(B, K, S.dmg, owner, t);
@@ -642,15 +773,15 @@ function shotStep(B, S, t, dt) {
 function strike(B, S, target, owner, t) {
   S.hits.add(target.id);
   const mob = S.mob ? B.monsters.get(S.mob) : null;
-  hurt(B, target, S.dmg, { hero: owner, mob: mob || (S.mob ? { type: 'skull' } : null) }, t, 'shot');
+  hurt(B, target, S.dmg, { hero: owner, mob: mob || (S.mob ? { type: S.mobType } : null), pet: S.pet }, t, 'shot');
   if (S.heal && owner) heal(owner, S.heal);
   if (S.slow) {
     if (target.kit) {
       target.slowUntil = t + S.slow;
-      target.slowF = 0.65;
+      target.slowF = S.slowF || 0.65;
     } else target.slowUntil = t + S.slow;
   }
-  if (S.knock && (target.kit ? target.alive : B.monsters.has(target.id) && target.type !== 'boss')) push(B, target, S.x - S.vx * 0.05, S.y - S.vy * 0.05, S.knock);
+  if (S.knock && (target.kit ? target.alive : B.monsters.has(target.id) && !MONSTERS[target.type].heavy)) push(B, target, S.x - S.vx * 0.05, S.y - S.vy * 0.05, S.knock);
   if (S.pierce > 0) {
     S.pierce -= 1;
     return false;
