@@ -55,7 +55,8 @@ Above the options in the lobby, the host picks two things (remembered on that co
   less time, arrive 20% closer together, and one more fits on screen. In a team battle it sets how long attacks
   take to fly, and in a battle royale the pace of every stage. Points per word don't change, but harder games
   have more words to score. In a draw battle, difficulty sets the drawing time (100, 80 or 60 seconds), and
-  **GAME** sets how many times everyone draws (twice, or once).
+  **GAME** sets how many times everyone draws (twice, or once). In a duel, **GAME** sets the fight's length
+  (4 minutes or 2) and difficulty sets the monsters.
 
 The lobby shows the rounds the game will play, and every phone shows the host's pick in its lobby. A one-round
 team battle starts each team with HP to match that round (so a knockout is still on the cards). Solo quests
@@ -242,6 +243,96 @@ A drawing and guessing game. Pick **DRAW BATTLE** in the host lobby (it needs at
   - The host's own words (**MY WORDS**) are added as one more category, sorted by length.
 - Draw battle scores aren't recorded in the Hall of Fame.
 
+## Duel
+
+A real-time arena fight with no typing: phones become controllers and heroes fight each other with HP. Pick
+**DUEL** in the host lobby (one hero is enough to try it, but it's best with a crowd).
+
+- **The arena.** A walled courtyard, one of three layouts (Courtyard, Ruins, Crossroads), mirrored so both sides
+  play the same. Stone walls and crates block movement and shots, so they make good cover. Powder kegs blow up
+  when shot: they hurt everyone nearby, the shooter too, and roll back 25 seconds later. Monsters come in
+  through the four gates.
+- **Controls.**
+  - **Phone:** put your left thumb anywhere on the left half and drag to move. Hold your right thumb anywhere
+    on the right half to attack whatever is nearest; drag it to aim. Tap **SKILL** when it glows.
+  - **PC:** WASD or the arrow keys move and Space attacks the nearest foe. Hold the mouse button to attack
+    toward the pointer. E (or Q or Shift) uses the skill.
+- **Fighting.** Every hero has HP (it depends on the class) and fires their class's attack as a real shot,
+  with its own speed, range and damage. At 0 HP you're knocked out and a gravestone marks the spot. Three
+  seconds later you're back somewhere safe, with two seconds of protection that ends when you attack.
+- **Points.**
+  - Knocking out a hero: +100, or +150 if they were on a run of 3 KOs or more (**SHUTDOWN!**).
+  - If a monster or a keg finishes off a hero you hurt in the last 8 seconds, the KO is still yours.
+  - Monsters: slime +10, bat +15, skull +25.
+  - The Dragon King: points for every hit, and +300 for the final blow.
+- **Monsters.**
+  - Slimes hop toward the nearest hero, and bats fly fast and over walls.
+  - After the first 40 seconds, skulls join in. They keep their distance and spit fireballs.
+  - More heroes means more monsters, and more come as the fight goes on.
+  - Monsters attack everyone, so they're also a chance to catch a rival off guard.
+  - With **BOSS FINALE** on, the Dragon King storms in for the last minute of a full game. He flies over the
+    walls, breathes fans of fire and calls in minions.
+- **Power-ups.** A new one appears every 7 to 11 seconds, and monsters sometimes drop one. Walk over one to
+  take it:
+
+  | Power-up | What it does |
+  |---|---|
+  | **Health Potion** | +40 HP |
+  | **Haste** | 40% faster for 8 seconds |
+  | **Shield** | No damage for 5 seconds |
+  | **Fury** | Double damage for 8 seconds |
+  | **Multi-Shot** | Every attack fires three ways for 8 seconds |
+  | **Slow Time** | Every other hero and every monster slows down for 5 seconds |
+  | **Bomb** | A blast around you: 45 damage to everything nearby |
+
+- **Perks and skills.** Every class has its own duel perk and skill (*Classes in a duel*, below). The skill
+  charges as you deal damage, a little on its own over time, and by 20% for every KO.
+- **Big screen.** The whole arena, with names and HP bars over the heroes, plus:
+  - the standings: score, KOs, and each hero's HP (or when a knocked-out hero is back)
+  - who knocked out whom
+  - callouts: **RAMPAGE!** (3 KOs in a row), **UNSTOPPABLE!** (5), **SHUTDOWN!**
+  - a banner for every skill
+- **Phone.** Your part of the arena, following your hero, with a minimap and:
+  - your HP, KOs, score and place
+  - your power-ups, with seconds left
+  - who knocked you out, and when you're back
+- **Length and difficulty.** A full game is a 4-minute fight; one round is 2 minutes, without the Dragon King.
+  Difficulty sets the monsters:
+  - **Easy:** 30% fewer, hitting 25% softer.
+  - **Hard:** 35% more, hitting 30% harder and arriving faster.
+- **Joining and leaving.** A hero who joins mid-fight jumps straight in. A phone that drops out takes its
+  hero off the field until it reconnects. **SKIP** ends the fight.
+- Streaks, special words and **MY WORDS** are off in a duel (hidden in the lobby).
+- **Awards:**
+  - **KO King:** most KOs
+  - **Monster Hunter:** most monsters slain
+  - **Heavy Hitter:** most damage
+  - **Rampage:** most KOs in a row, at least 3
+  - **Untouchable:** knocked out the fewest times
+  - **Dragon Slayer:** final blow on the Dragon King
+- Duel scores aren't recorded in the Hall of Fame.
+
+### Classes in a duel
+
+| Class | HP | Attack | Duel perk | Duel skill |
+|-------|----|--------|-----------|------------|
+| Knight | 120 | Sword Beam: passes through one foe | **Iron Guard:** takes 20% less damage | **Shield Wall:** blocks all damage for 3 seconds |
+| Barbarian | 150 | Spinning Axe: short and heavy, cuts through everything | **Bloodlust:** up to +50% damage as HP runs low | **Whirlwind:** spins for 2.5 seconds, hitting everything around |
+| Wizard | 95 | Fireball: explodes | **Arcane Mind:** skill charges 40% faster | **Meteor:** a meteor crashes down where you aim |
+| Elf Archer | 95 | Piercing Arrow: long and fast | **Eagle Eye:** +25% damage on far targets | **Arrow Fan:** 11 arrows in a wide fan |
+| Rogue | 105 | Dagger Volley: three daggers | **Sly:** moves 12% faster | **Shadow Step:** dashes ahead and vanishes for 3 seconds; the next hit does double |
+| Cleric | 115 | Holy Light: heals you a little each hit | **Blessed:** power-ups last 50% longer, potions heal 50% more | **Sanctuary:** heals 50 HP and blasts nearby foes away |
+| Ninja | 95 | Shuriken: rapid | **Evasion:** 20% chance to dodge a hit | **Shuriken Storm:** two rings of shurikens in every direction |
+| Necromancer | 105 | Soul Bolt: homes in | **Soul Harvest:** heals 5 HP per monster slain, 20 per KO | **Raise Dead:** 3 ghosts hunt your foes for 8 seconds |
+| Druid | 115 | Thorn Vine: slows | **Life Bloom:** heals 5 HP a second after 3 seconds unhurt | **Overgrowth:** vines around you slow and hurt foes for 5 seconds |
+| Pirate | 125 | Cannonball: explodes and knocks back | **Plunder:** +50% points from monsters, and more power-up drops | **Cannon Barrage:** 6 cannonballs pound the area where you aim |
+| Bard | 105 | Power Chord: wide, passes through everything | **Echo:** every 4th attack plays twice | **Battle Hymn:** stuns foes around you; you move and attack faster for 5 seconds |
+| Valkyrie | 120 | Storm Spear: long and heavy, passes through two foes | **Valor:** +25% damage while above half HP | **Thunderclap:** lightning strikes every foe around you and stuns them |
+
+The kits were evened out over simulated four-minute duels with all twelve classes and bot-style play (chase
+the nearest foe, keep to your range): every class scored between 86% and 111% of the average. People play
+differently from bots, so treat the numbers as a starting point. They're all in `public/js/brawl-rules.js`.
+
 ## PC, tablet and phone
 
 Both pages adjust to the screen they're on.
@@ -332,7 +423,7 @@ Every finished game is recorded on one of three boards:
 - **Solo**: best solo quests.
 - **Daily**: today's daily quest.
 - **Battle**: best individual scores from free-for-all battles, with the place and player count of that battle
-  (team battles, battle royales and draw battles aren't recorded).
+  (team battles, battle royales, draw battles and duels aren't recorded).
 
 They're kept separate because in a battle the words are shared between everyone, so scores aren't comparable.
 Each board keeps the top 100. Ties go to whoever set the score first. Games with 0 points and test bots aren't recorded.
@@ -392,6 +483,7 @@ npm run bots -- ABCD 6
 (`ABCD` is the room code shown on the host screen; `6` is how many bots. Bots never appear in the Hall of Fame.)
 Each bot types one word at a time at its own speed, so in a battle royale the slower bots get knocked out first.
 In a draw battle, bots scribble on their turn and guess words, verbs, animals, characters, titles, food and people from the lists that fit the blanks.
+In a duel, bots chase the nearest foe, keep to their class's range, grab power-ups close by and use their skill.
 
 ## Tuning
 
@@ -409,11 +501,17 @@ next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team 
 streak steps (`STREAK_STEPS`), special words (`SPECIAL_CHANCE`, `GOLD_FACTOR`, `ICE_MS`, `BOMB_SHARE`) and class
 perks (`PERKS`), skills (`SKILLS`, `SKILL_WORDS`). The auto-typer limits are the `KEY_*` and `FLAG_AFTER`
 settings. Word lists are in `words.js`; if you change them a lot, the perk bonuses may need re-measuring.
-The music tracks are the `TRACKS` table in `public/js/common.js`.
+The music tracks are the `TRACKS` table in `public/js/common.js`. Everything about a duel is in
+`public/js/brawl-rules.js`: the class kits (HP, speed, attack, perk and skill), the perks' and skills' numbers
+(`PERK`, `SKILL`), the monsters, power-ups and kegs, the arena layouts, the fight's length, respawn time and
+points.
 
 ## Files
 
 - `server.js`: Express + Socket.IO server; battle, team battle and solo rooms, rounds, word spawning, scoring, HP, Hall of Fame
+- `brawl.js`: the duel's fight on the server: movement, shots, monsters, power-ups, skills and KOs
+- `public/js/brawl-rules.js`: the duel's rules, shared by the server and the screens (class kits, monsters, power-ups, layouts, collisions)
+- `public/js/brawl.js`: the duel's arena on screen (big screen and phones) and the phone's thumb sticks
 - `data/highscores.json`: saved Hall of Fame (created after the first finished game)
 - `words.js`: easy / medium / hard word pools
 - `draw-words.js`: draw battle everyday things (easy / medium / hard)

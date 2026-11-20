@@ -126,6 +126,36 @@
     .fx-chip img { width: 10px; height: 12px; image-rendering: pixelated; }
     h3 { font-size: 10px; margin: 0 0 12px; color: var(--muted); }
 
+
+    /* Duel: the arena fills the screen; your thumbs steer. A stick appears where a thumb lands. */
+    #scrBrawl { padding: 0; gap: 0; overflow: hidden; }
+    .b-hud { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font-size: 8px; background: var(--panel); box-shadow: 0 3px 0 var(--ink); z-index: 2; }
+    .b-hud .b-l { color: var(--muted); }
+    .b-hp { flex: 1; min-width: 60px; height: 10px; background: #0e0a17; box-shadow: 0 0 0 2px #0e0a17; }
+    .b-hp i { display: block; height: 100%; width: 100%; background: #5bd46a; transition: width 0.15s steps(3); }
+    .b-hud b { font-weight: normal; min-width: 28px; }
+    .b-kos { color: var(--gold); white-space: nowrap; }
+    .b-fx { display: flex; gap: 6px; }
+    .b-fx span { display: flex; align-items: center; gap: 3px; font-size: 7px; white-space: nowrap; }
+    .b-fx img { width: 14px; height: 16px; image-rendering: pixelated; }
+    .b-field { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .b-field canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .b-field.hurt::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 40px 10px rgba(232, 55, 28, 0.55); animation: pulse 0.8s steps(4) infinite; }
+    .b-stick { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; background: rgba(255, 255, 255, 0.07); box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.35); pointer-events: none; z-index: 3; }
+    .b-stick i { position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: rgba(255, 255, 255, 0.4); box-shadow: 0 0 0 3px rgba(27, 20, 38, 0.6); }
+    .b-stick.aim { box-shadow: inset 0 0 0 3px rgba(255, 90, 77, 0.6); }
+    .b-stick.aim i { background: rgba(255, 90, 77, 0.6); }
+    .b-skill { position: absolute; right: 12px; bottom: 34%; width: 78px; overflow: hidden; font: inherit; font-size: 7px; line-height: 1.6; padding: 8px 4px 10px; border: 0; cursor: pointer; background: rgba(27, 20, 38, 0.85); color: var(--muted); box-shadow: inset 0 0 0 3px var(--panel-3); z-index: 4; touch-action: none; }
+    .b-skill b { display: block; font-weight: normal; font-size: 8px; color: var(--cream); }
+    .b-skill i { position: absolute; left: 0; bottom: 0; height: 5px; background: var(--gold); transition: width 0.2s steps(4); }
+    .b-skill.ready { background: var(--gold); color: var(--ink); box-shadow: inset 0 0 0 3px #fff6b0; animation: ready 0.8s steps(2) infinite; }
+    .b-skill.ready b { color: var(--ink); }
+    .b-over { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; background: rgba(27, 20, 38, 0.6); padding: 16px; pointer-events: none; z-index: 3; }
+    .b-over .o1 { font-size: 13px; color: var(--gold); text-shadow: 3px 3px 0 var(--ink); }
+    .b-over .o2 { font-size: 26px; text-shadow: 4px 4px 0 var(--ink); }
+    .b-over .o3 { font-size: 9px; line-height: 1.9; text-shadow: 2px 2px 0 var(--ink); max-width: 420px; }
+    .b-help { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); font-size: 7px; color: var(--cream); background: rgba(27, 20, 38, 0.8); padding: 6px 9px; white-space: nowrap; pointer-events: none; z-index: 3; transition: opacity 0.6s steps(3); }
+    .b-help.gone { opacity: 0; }
     /* Game */
     #scrGame { padding: 0; gap: 0; overflow: hidden; }
     .topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; padding: 8px 10px; background: var(--panel); box-shadow: 0 3px 0 var(--ink); font-size: 10px; z-index: 2; }
@@ -314,7 +344,7 @@
     /* Landscape: phones on their side and PC windows use the whole width. (Kept last so it wins.) */
     @media (orientation: landscape) {
       #app { max-width: none; }
-      .screen:not(#scrGame) { width: 100%; max-width: 1100px; margin: 0 auto; }
+      .screen:not(#scrGame):not(#scrBrawl) { width: 100%; max-width: 1100px; margin: 0 auto; }
       #scrJoin, #scrLobby { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 18px; align-content: start; }
       #scrJoin > *, #scrLobby > * { grid-column: 1; }
       #scrJoin > #heroBox { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
@@ -541,6 +571,28 @@
       </form>
     </section>
 
+    <section id="scrBrawl" class="screen hidden">
+      <div class="topbar">
+        <div class="r" id="bRound">DUEL</div>
+        <div class="t" id="bTime">0:00</div>
+        <div class="s"><b id="bScore">0</b> · <span id="bRank">#1</span></div>
+      </div>
+      <div class="b-hud">
+        <span class="b-l">HP</span>
+        <div class="b-hp"><i id="bHpFill"></i></div>
+        <b id="bHp">100</b>
+        <span class="b-kos" id="bKos">0 KO</span>
+        <div class="b-fx" id="bFx"></div>
+      </div>
+      <div class="b-field" id="bField">
+        <canvas id="bCanvas"></canvas>
+        <button id="bSkill" class="b-skill hidden" type="button" aria-label="Use your skill (or press E)"><b id="bSkillName">SKILL</b><span id="bSkillState">0%</span><i id="bSkillFill"></i></button>
+        <div class="b-over hidden" id="bOver"><div class="o1" id="bO1"></div><div class="o2" id="bO2"></div><div class="o3" id="bO3"></div></div>
+        <div class="b-help" id="bHelp">LEFT THUMB: MOVE · RIGHT THUMB: HOLD TO ATTACK, DRAG TO AIM</div>
+        <div class="toast" id="bToast"></div>
+      </div>
+    </section>
+
     <section id="scrFinal" class="screen final hidden">
       <h1 class="logo sm" id="fTitle">VICTORY!</h1>
       <div class="fsub hidden" id="fSub"></div>
@@ -578,6 +630,8 @@
   <script src="/js/art.js"></script>
   <script src="/js/arena.js"></script>
   <script src="/js/sketch.js"></script>
+  <script src="/js/brawl-rules.js"></script>
+  <script src="/js/brawl.js"></script>
   <script src="/js/play.js"></script>
 </body>
 </html>

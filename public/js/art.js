@@ -671,6 +671,27 @@
     },
   };
 
+  // Duel power-ups: three arrows at once, and a bomb that goes off where you pick it up.
+  POWERS.triple = {
+    name: 'MULTI-SHOT', short: 'MULTI', color: '#6fe3d9',
+    pal: { R: '#e8374a' },
+    rows: [
+      '.K...K...K.',
+      'KWK.KWK.KWK',
+      'KMK.KMK.KMK',
+      '.B...B...B.',
+      '.B...B...B.',
+      '.B...B...B.',
+      '.B...B...B.',
+      'RBR.RBR.RBR',
+      'R.R.R.R.R.R',
+      '...........',
+      'KGGGGGGGGgK',
+      'KKKKKKKKKKK',
+    ],
+  };
+  POWERS.bomb = { name: 'BOMB', short: 'BOMB', color: '#ff7b1c', pal: SPECIAL_ART.bomb.pal, rows: SPECIAL_ART.bomb.rows };
+
   function paint(rows, pal) {
     const c = document.createElement('canvas');
     c.width = rows[0].length;

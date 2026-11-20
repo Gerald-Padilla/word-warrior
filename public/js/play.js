@@ -15,6 +15,10 @@
   let offset = 0;
   const now = () => Date.now() + offset;
   const arena = new Arena($('#arena'), { mode: 'phone', now });
+  // Duel: the arena (following your hero) and your thumbs on it.
+  const BR = window.BrawlRules;
+  const bView = new BrawlView($('#bCanvas'), { now, phone: true });
+  const bPad = new BrawlPad($('#bField'), { view: bView, onInput: (m) => socket.emit('brawl:in', m), onSkill: () => brawlSkill() });
 
   let code = (new URLSearchParams(location.search).get('room') || '').toUpperCase().slice(0, 4);
   let battleCode = code; // battle room to go back to after a solo quest
@@ -37,6 +41,10 @@
   let summary = null; // finished: { stats, awards }
   let boss = null; // boss round: { hp, max, down }
   let royale = null; // battle royale: { start, nextAt, ramp, total, left, hp, damage }
+  let brawl = null; // duel: { layout, start, endsAt, bossAt }
+  let myFx = {}; // duel: power-ups you have going, name -> until (server ms)
+  let lastKo = null; // duel: how you were last knocked out
+  let fightAt = 0; // duel: when the fight started here (for FIGHT! and the help line)
   const toasted = new Set();
 
   const pick = (n) => Math.floor(Math.random() * n);
@@ -56,6 +64,7 @@
   const myTeam = () => (me() ? me().team : 0);
   const royaleOn = () => mode === 'royale' && !solo;
   const knockedOut = () => royaleOn() && Boolean(me()?.out);
+  const brawlOn = () => mode === 'brawl' && !solo;
 
   // ---- viewport: keep the typing bar above the on-screen keyboard ----
   // A PC window or a tablet gets the phone layout scaled up (--ui), so nothing ends up tiny on a big
@@ -196,8 +205,15 @@
     $('#clsName').textContent = cls.name;
     $('#clsAttack').textContent = `ATTACK: ${cls.attack}`;
     $('#clsBlurb').textContent = cls.blurb;
-    $('#clsPerk').textContent = `PERK: ${cls.perk} (when class perks are on)`;
-    $('#clsSkill').textContent = `SKILL: ${cls.skill} (charges every 8 words, when skills are on)`;
+    const kit = BR.KITS[look.cls] || BR.KITS.knight;
+    if (you && brawlOn()) {
+      $('#clsAttack').textContent = `ATTACK: ${cls.attack} · ${kit.hp} HP`;
+      $('#clsPerk').textContent = `DUEL PERK: ${kit.perk.name}: ${kit.perk.text}`;
+      $('#clsSkill').textContent = `DUEL SKILL: ${kit.skill.name}: ${kit.skill.text}`;
+    } else {
+      $('#clsPerk').textContent = `PERK: ${cls.perk} (when class perks are on)`;
+      $('#clsSkill').textContent = `SKILL: ${cls.skill} (charges every 8 words, when skills are on)`;
+    }
     stage.setPlayers([{ id: 'you', ...look, name: look.name || 'You', connected: true }]);
     if (animate) stage.heroHop.set('you', performance.now());
   }
@@ -388,7 +404,9 @@
     mode = res.snapshot.mode || 'ffa';
     setPlayers(res.snapshot.players);
     arena.setWords(res.snapshot.words);
+    bView.selfId = you;
     applyState(res.snapshot);
+    if (res.snapshot.brawlShots) bView.addShots(res.snapshot.brawlShots);
     // Draw battle under way: the drawing and guesses so far, and anything only you may know.
     if (res.snapshot.strokes) {
       pad.set(res.snapshot.strokes);
@@ -730,6 +748,7 @@
 
   function setPlayers(list) {
     players = list;
+    bView.setPlayers(list);
     arena.setRoyale(royaleOn(), royale ? royale.hp : 100);
     arena.setPlayers(list);
     // Team battle: your army is drawn on the near side, the enemy across from it.
@@ -1125,6 +1144,15 @@
     ko = Boolean(s.ko);
     effects = s.effects || [{}, {}];
     arena.setEffects(effects);
+    const prevBrawl = brawl;
+    brawl = s.brawl || null;
+    if (brawl) bView.setLayout(brawl.layout);
+    if (brawl && (!prevBrawl || prevBrawl.start !== brawl.start)) {
+      bView.reset();
+      myFx = {};
+      lastKo = null;
+      fightAt = 0;
+    }
     // Draw battle: a new turn starts with a blank board and no guesses (your secret for it comes next).
     const prevDraw = draw;
     draw = s.draw || null;
@@ -1166,6 +1194,10 @@
 
   function showForState(prev) {
     const st = state.state;
+    const arenaUp = brawlOn() && (st === 'countdown' || st === 'playing');
+    bView.active = arenaUp;
+    bView.selfId = you;
+    bPad.setEnabled(arenaUp && st === 'playing');
     const typing = (st === 'countdown' || st === 'playing') && !knockedOut();
     $('#typeIn').disabled = (!typing && st !== 'intermission') || knockedOut();
     if (st === 'lobby') {
@@ -1183,6 +1215,17 @@
       const won = solo || records[you]?.rank === 1
         || (teamBattle() ? winner === myTeam() : rankPlayers(players)[0]?.id === you);
       if (prev && prev !== 'finished' && won) Sfx.play('win');
+    } else if (arenaUp) {
+      // Duel: the arena, with your thumbs on it.
+      $('#typeIn').blur();
+      showScreen('scrBrawl');
+      if (st === 'countdown' && prev !== 'countdown') Sfx.play('round');
+      if (st === 'playing' && prev !== 'playing') {
+        Sfx.play('go');
+        fightAt = performance.now();
+      }
+      renderBrawlHud();
+      brawlOverlay();
     } else if (drawOn()) {
       // Draw battle: its own screen, with the board in place of the battlefield.
       $('#typeIn').blur();
@@ -1406,6 +1449,14 @@
   }
 
   function tick() {
+    if (brawlOn() && (state.state === 'playing' || state.state === 'countdown')) {
+      const left = state.state === 'playing' ? Math.max(0, state.phaseEndsAt - now()) : (rounds[0] ? rounds[0].duration : 0);
+      $('#bTime').textContent = clockText(left);
+      $('#bTime').classList.toggle('low', state.state === 'playing' && left <= 10000);
+      renderBrawlHud();
+      brawlOverlay();
+      return;
+    }
     if (drawOn() && (state.state === 'playing' || state.state === 'countdown')) {
       // Draw battle: the clock for this part of the turn (or the countdown before the first one).
       const D = state.state === 'playing' ? draw : null;
@@ -1713,6 +1764,7 @@
       ? "TEAM BATTLE: type your side's words to hit the other team!"
       : royaleOn() ? 'BATTLE ROYALE: your own monsters and 100 HP. Words that reach you hurt. Last hero standing wins!'
         : drawOn() ? 'DRAW BATTLE: take turns drawing on your phone while everyone else guesses. The sooner you guess, the more points!'
+          : brawlOn() ? 'DUEL: your phone steers your hero around the arena. Left thumb moves, right thumb attacks. KO heroes, slay monsters, grab power-ups!'
           : 'FREE FOR ALL: first to type a word gets the points!';
     $('#lobbyCount').textContent = players.length;
     // What the host has switched on, and your class's perk when perks are on.
@@ -1724,7 +1776,8 @@
     const drawing = drawOn();
     opts.append(el('span', {
       class: 'pick',
-      text: drawing ? (rounds.length === 1 ? 'EVERYONE DRAWS ONCE' : `EVERYONE DRAWS ${rounds.length} TIMES`)
+      text: brawlOn() ? `${clockText(rounds[0] ? rounds[0].duration : 240000)} ARENA FIGHT`
+        : drawing ? (rounds.length === 1 ? 'EVERYONE DRAWS ONCE' : `EVERYONE DRAWS ${rounds.length} TIMES`)
         : royaleOn() ? 'NO ROUNDS: EASY > MEDIUM > HARD' : one ? `ONE ROUND · ${rounds[0]?.title || ''}` : `${rounds.length} ROUNDS`,
     }));
     opts.append(el('span', { class: `pick d-${level.toLowerCase()}`, text: drawing ? `${Math.round((rounds[0]?.time || 80000) / 1000)} SECONDS A DRAWING` : `${level} DIFFICULTY` }));
@@ -1733,15 +1786,24 @@
     const names = { streaks: 'STREAKS', specials: 'SPECIAL WORDS', boss: 'BOSS FINALE', perks: 'CLASS PERKS', skills: 'SKILLS', awards: 'AWARDS' };
     for (const [k, label] of Object.entries(names)) {
       if (drawing && k !== 'awards') continue; // no typing switches, perks or skills in a draw battle
+      if (brawlOn() && (k === 'streaks' || k === 'specials')) continue; // no words in a duel
+      if (brawlOn() && k === 'boss') {
+        if (options.boss && options.length !== 'one') opts.append(el('span', { text: 'DRAGON KING' }));
+        continue;
+      }
       if (options[k] && !(tb && (k === 'boss' || k === 'specials')) && !((one || royaleOn()) && k === 'boss')) opts.append(el('span', { text: label }));
     }
     if (options.wordCount) opts.append(el('span', { text: `${options.wordCount} HOST WORDS` }));
     renderChat();
-    const perk = options.perks && mine && !drawing ? classByKey(mine.cls).perk : '';
+    const kit = mine && (BR.KITS[mine.cls] || BR.KITS.knight);
+    const duel = brawlOn() && kit;
+    if (duel) $('#lobbyClass').textContent = `${classByKey(mine.cls).name} · ${kit.hp} HP · ${classByKey(mine.cls).attack}`;
+    const perk = options.perks && mine && !drawing ? (duel ? `${kit.perk.name}: ${kit.perk.text}` : classByKey(mine.cls).perk) : '';
     $('#lobbyPerk').textContent = perk ? `PERK: ${perk}` : '';
     $('#lobbyPerk').classList.toggle('hidden', !perk);
-    const skl = options.skills && mine && !drawing ? classByKey(mine.cls).skill : '';
-    $('#lobbySkill').textContent = skl ? `SKILL: ${skl} (every 8 words; tap it or press Space)` : '';
+    const skl = options.skills && mine && !drawing ? (duel ? `${kit.skill.name}: ${kit.skill.text}` : classByKey(mine.cls).skill) : '';
+    $('#lobbySkill').textContent = !skl ? '' : duel ? `SKILL: ${skl} (charges as you fight; tap SKILL or press E)`
+      : `SKILL: ${skl} (every 8 words; tap it or press Space)`;
     $('#lobbySkill').classList.toggle('hidden', !skl);
     const roster = $('#lobbyRoster');
     roster.innerHTML = '';
@@ -1769,13 +1831,23 @@
     $('#fSoloActions').classList.toggle('hidden', !solo);
     $('#fWait').classList.toggle('hidden', solo);
     $('#fScoreLbl').textContent = tb ? 'DAMAGE + BLOCKS' : 'SCORE';
-    $('#fKillsLbl').textContent = teamBattle() ? 'WORDS TYPED' : drawOn() ? 'DRAWINGS GUESSED' : 'MONSTERS SLAIN';
+    $('#fKillsLbl').textContent = teamBattle() ? 'WORDS TYPED' : drawOn() ? 'DRAWINGS GUESSED' : brawlOn() ? 'KNOCKOUTS' : 'MONSTERS SLAIN';
     $('#fTitle').style.color = '';
     $('#fPlace').style.color = '';
     // Your typing stats (none in a draw battle), and any awards you won.
     const st = summary?.stats?.[you];
-    $('#fTyping').classList.toggle('hidden', !st || !st.words || drawOn());
-    if (st) {
+    const duel = brawlOn();
+    $('#fTyping').classList.toggle('hidden', !st || (!st.words && !duel) || drawOn());
+    // A duel has no typing to measure: monsters slain, times knocked out and the best KO streak instead.
+    const label = (id, text) => { $(id).previousSibling.textContent = text; };
+    label('#fWpm', duel ? 'SLAIN' : 'SPEED');
+    label('#fAcc', duel ? "KO'D" : 'ACCURACY');
+    label('#fBest', duel ? 'BEST RUN' : 'BEST STREAK');
+    if (st && duel) {
+      $('#fWpm').textContent = st.slain;
+      $('#fAcc').textContent = st.deaths;
+      $('#fBest').textContent = st.best ? `${st.best} KO` : '-';
+    } else if (st) {
       $('#fWpm').textContent = st.wpm ? `${st.wpm} WPM` : '-';
       $('#fAcc').textContent = `${st.acc}%`;
       $('#fBest').textContent = options.streaks ? st.best : '-';
@@ -1887,6 +1959,122 @@
       }
     }
     box.classList.toggle('hidden', !box.children.length);
+  }
+
+  // ---- duel --------------------------------------------------------------
+  socket.on('brawl:snap', (snap) => bView.onSnap(snap));
+  const MOB_NAMES = { slime: 'a slime', bat: 'a bat', skull: 'a skull', boss: 'the Dragon King', ghost: 'a ghost' };
+  bView.onNews = (n) => {
+    if (n.type === 'ko' && n.id === you) {
+      lastKo = n;
+      myFx = {};
+      if (navigator.vibrate) navigator.vibrate([80, 60, 140]);
+    } else if (n.type === 'ko' && n.by === you) {
+      bToast(`KO! ${nameOf(n.id)} +${n.pts}`, 'good');
+    } else if (n.type === 'pick' && n.id === you) {
+      if (n.until) myFx[n.item] = n.until;
+      bToast(`${BR.ITEMS[n.item].name}!`, 'good');
+    } else if (n.type === 'boss') {
+      bToast('THE DRAGON KING IS HERE!', 'bad', 2500);
+    }
+  };
+
+  let bToastTimer = null;
+  function bToast(text, kind, ms = 1400) {
+    const t = $('#bToast');
+    t.textContent = text;
+    t.className = `toast show ${kind || ''}`;
+    clearTimeout(bToastTimer);
+    bToastTimer = setTimeout(() => t.classList.remove('show'), ms);
+  }
+
+  async function brawlSkill() {
+    if (!brawlOn() || state.state !== 'playing') return;
+    const res = await ack('brawl:skill', {});
+    if (res && !res.ok && res.reason === 'charging') bToast('SKILL STILL CHARGING', 'bad');
+  }
+  $('#bSkill').addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    Sfx.unlock();
+    brawlSkill();
+  });
+
+  // HP, KOs, score and place, the skill's charge and the power-ups you have going.
+  let fxShownKey = '';
+  function renderBrawlHud() {
+    const mine = me();
+    const kit = BR.KITS[mine ? mine.cls : 'knight'] || BR.KITS.knight;
+    const h = bView.hero(you);
+    const alive = Boolean(h && (h.f & BR.F.alive));
+    const hp = h ? Math.max(0, h.hp) : kit.hp;
+    const frac = Math.max(0, Math.min(1, hp / kit.hp));
+    $('#bHp').textContent = hp;
+    $('#bHpFill').style.width = `${frac * 100}%`;
+    $('#bHpFill').style.background = frac > 0.5 ? '#5bd46a' : frac > 0.25 ? '#ffd23f' : '#ff5a4d';
+    $('#bKos').textContent = `${h ? h.kos : mine ? mine.kills : 0} KO`;
+    $('#bScore').textContent = h ? h.score : mine ? mine.score : 0;
+    const list = bView.standings().sort((a, b) => b.score - a.score || b.kos - a.kos);
+    const idx = list.findIndex((x) => x.id === you);
+    $('#bRank').textContent = idx >= 0 ? `#${idx + 1}/${list.length}` : '';
+    $('#bField').classList.toggle('hurt', alive && frac <= 0.3);
+    // Skill.
+    const on = Boolean(options.skills);
+    $('#bSkill').classList.toggle('hidden', !on);
+    if (on) {
+      const charge = h ? h.charge : 0;
+      const ready = alive && charge >= BR.CHARGE_MAX;
+      $('#bSkillName').textContent = kit.skill.name;
+      $('#bSkillState').textContent = ready ? 'READY!' : `${charge}%`;
+      $('#bSkillFill').style.width = `${charge}%`;
+      $('#bSkill').classList.toggle('ready', ready);
+    }
+    // Power-ups, with seconds left.
+    const t = now();
+    const chips = Object.entries(myFx).filter(([, until]) => until > t).map(([k, until]) => [k, Math.ceil((until - t) / 1000)]);
+    const key = JSON.stringify(chips);
+    if (key !== fxShownKey) {
+      fxShownKey = key;
+      const box = $('#bFx');
+      box.innerHTML = '';
+      for (const [k, secs] of chips) {
+        box.append(el('span', { style: `color:${(POWERS[k] || {}).color || '#fff'}` }, [el('img', { src: powerDataURL(k), alt: '' }), `${secs}`]));
+      }
+    }
+  }
+
+  // A mouse and keyboard get their own instructions.
+  const pcControls = window.matchMedia('(pointer: fine)').matches && !window.matchMedia('(pointer: coarse)').matches;
+  if (pcControls) $('#bHelp').textContent = 'WASD / ARROWS: MOVE · HOLD MOUSE OR SPACE: ATTACK · E: SKILL';
+
+  // Over the arena: the countdown and how to play, FIGHT!, or who knocked you out and when you're back.
+  function brawlOverlay() {
+    const st = state.state;
+    const h = bView.hero(you);
+    const mine = me();
+    const kit = BR.KITS[mine ? mine.cls : 'knight'] || BR.KITS.knight;
+    let lines = null;
+    if (st === 'countdown') {
+      const n = Math.ceil(Math.max(0, state.phaseEndsAt - now()) / 1000);
+      const how = pcControls ? 'WASD or arrows: move. Hold the mouse button (or Space) to attack.' : 'Left thumb: move. Right thumb: hold to attack, drag to aim.';
+      lines = ['DUEL', n > 3 ? 'READY?' : String(Math.max(1, n)),
+        `${how}${options.skills ? ` SKILL (${kit.skill.name}${pcControls ? ', key E' : ''}) charges as you fight.` : ''} KO a hero: +${BR.KO_POINTS}!`];
+    } else if (st === 'playing' && performance.now() - fightAt < 800) {
+      lines = ['', 'FIGHT!', ''];
+    } else if (st === 'playing' && h && !(h.f & BR.F.alive)) {
+      const by = lastKo && lastKo.by ? `by ${nameOf(lastKo.by)}` : lastKo && lastKo.mob ? `by ${MOB_NAMES[lastKo.mob] || 'a monster'}`
+        : lastKo && lastKo.why === 'keg' ? 'by a keg' : '';
+      lines = ['KNOCKED OUT', `BACK IN ${Math.max(1, Math.ceil(h.respawn / 1000))}`, by];
+    } else if (st === 'playing' && !h) {
+      lines = ['', 'JOINING...', ''];
+    }
+    $('#bOver').classList.toggle('hidden', !lines);
+    if (lines) {
+      $('#bO1').textContent = lines[0];
+      $('#bO2').textContent = lines[1];
+      $('#bO3').textContent = lines[2];
+    }
+    $('#bHelp').classList.toggle('gone', st === 'playing' && performance.now() - fightAt > 9000);
   }
 
   $('#btnTeam').onclick = () => {

@@ -8,6 +8,8 @@
   let offset = 0;
   const now = () => Date.now() + offset;
   const arena = new Arena($('#arena'), { mode: 'host', now });
+  const brawlView = new BrawlView($('#brawlCanvas'), { now });
+  const BR = window.BrawlRules;
 
   let code = null;
   let rounds = [];
@@ -24,6 +26,8 @@
   let boss = null; // boss round: { hp, max, down }
   let royale = null; // battle royale: { start, nextAt, ramp, total, left, hp, damage }
   let draw = null; // draw battle: the turn (see drawOf on the server)
+  let brawl = null; // duel: { layout, start, endsAt, bossAt }
+  let brawlBoss = false; // duel: the Dragon King is in the arena (his music plays)
   let pushedOptions = false;
   let lastCount = 0;
   let lastBeep = null;
@@ -384,6 +388,21 @@
     announce(pw.by, pw);
   });
   socket.on('duel:retime', (list) => arena.retime(list));
+  // Duel: the arena 20 times a second; the leaderboard follows it.
+  socket.on('brawl:snap', (snap) => {
+    brawlView.onSnap(snap);
+    scheduleBoard();
+  });
+  brawlView.onNews = (n) => {
+    if (n.type === 'boss') {
+      brawlBoss = true;
+      Music.play('boss');
+    }
+    if (n.type === 'bossdown') {
+      brawlBoss = false;
+      Music.play(musicFor(state.state, rounds[state.round]));
+    }
+  };
   socket.on('room:closed', () => {
     store.set('ww_host', null);
     location.reload();
@@ -453,6 +472,7 @@
   function setPlayers(list) {
     players = list;
     arena.setPlayers(list);
+    brawlView.setPlayers(list);
     if (list.length > lastCount && state.state === 'lobby') Sfx.play('join');
     lastCount = list.length;
     renderRoster();
@@ -524,6 +544,8 @@
       $('#startHint').textContent = `${red} red vs ${players.length - red} blue. Click a hero to move them to the other team.`;
     } else if (mode === 'royale' && players.length) {
       $('#startHint').textContent = `${players.length} hero${players.length === 1 ? '' : 'es'} ready. Each fights their own monsters; the last one standing wins!`;
+    } else if (mode === 'brawl' && players.length) {
+      $('#startHint').textContent = `${players.length} hero${players.length === 1 ? '' : 'es'} ready. Phones become controllers: left thumb moves, right thumb attacks!`;
     } else {
       $('#startHint').textContent = players.length
         ? `${players.length} hero${players.length === 1 ? '' : 'es'} ready. Start when everyone is in!`
@@ -577,6 +599,7 @@
 
   function renderBoard() {
     if (mode === 'draw') return renderDrawPlayers();
+    if (mode === 'brawl') return renderBrawlBoard();
     const list = $('#boardList');
     const ry = mode === 'royale' && royale;
     $('#board').classList.toggle('royale', Boolean(ry));
@@ -608,6 +631,40 @@
     for (const p of players) prevScores.set(p.id, p.score);
   }
 
+  // Duel standings, live from the arena: score, KOs and HP (or how soon a knocked-out hero is back).
+  function renderBrawlBoard() {
+    const list = $('#boardList');
+    const live = new Map(brawlView.standings().map((h) => [h.id, h]));
+    const rows = players.map((p) => ({ p, h: live.get(p.id) }));
+    const score = (r) => (r.h ? r.h.score : r.p.score);
+    const kos = (r) => (r.h ? r.h.kos : r.p.kills);
+    rows.sort((a, b) => score(b) - score(a) || kos(b) - kos(a) || a.p.name.localeCompare(b.p.name));
+    $('#board').classList.add('royale');
+    $('#boardTitle').textContent = 'STANDINGS';
+    show('#boardLeft', true);
+    $('#boardLeft').textContent = `KO A HERO +${BR.KO_POINTS} · MONSTERS +${BR.MONSTERS.slime.pts}-${BR.MONSTERS.skull.pts}`;
+    list.innerHTML = '';
+    rows.slice(0, 10).forEach((r, i) => {
+      const { p, h } = r;
+      const max = (BR.KITS[p.cls] || BR.KITS.knight).hp;
+      const alive = h && (h.f & BR.F.alive);
+      const nm = nameParts(p).concat(
+        alive ? el('span', { class: 'hpm' }, [el('i', { style: `width:${(100 * h.hp) / max}%;background:${hpColor(h.hp / max)}` })])
+          : el('small', { class: 'ko', text: !h ? 'JOINING...' : h.f & BR.F.away ? 'AWAY' : `KO'D · BACK IN ${Math.ceil(h.respawn / 1000)}` }),
+      );
+      const bumped = prevScores.has(p.id) && prevScores.get(p.id) !== score(r);
+      list.append(el('li', { class: `row r${i + 1}${bumped ? ' bump' : ''}${alive || !h ? '' : ' out'}` }, [
+        el('span', { class: 'rk', text: `${i + 1}.` }),
+        heroImg(p),
+        el('span', { class: 'nm' }, nm),
+        el('span', { class: 'sc' }, [String(score(r)), el('small', { text: `${kos(r)} KO` })]),
+      ]));
+      prevScores.set(p.id, score(r));
+    });
+    const board = $('#board');
+    while (list.children.length > 3 && board.scrollHeight > board.clientHeight) list.lastChild.remove();
+  }
+
   // ---- phases --------------------------------------------------------
   const ROUND_OUTRO = {
     easy: 'The slime swarm has been squished!',
@@ -620,7 +677,8 @@
   // podium's drumroll.
   let revealing = false;
   function musicFor(st, r) {
-    if (st === 'countdown' || st === 'playing') return r ? r.key : 'lobby'; // a draw battle's rounds play 'draw'
+    if (st === 'playing' && mode === 'brawl' && brawlBoss) return 'boss';
+    if (st === 'countdown' || st === 'playing') return r ? r.key : 'lobby'; // a draw battle's rounds play 'draw'; a duel 'brawl'
     if (st === 'finished' && revealing) return null;
     return 'lobby';
   }
@@ -658,6 +716,14 @@
     ko = Boolean(s.ko);
     effects = s.effects || [{}, {}];
     arena.setEffects(effects);
+    // Duel: a new fight starts with an empty arena.
+    const prevBrawl = brawl;
+    brawl = s.brawl || null;
+    if (brawl) brawlView.setLayout(brawl.layout);
+    if (brawl && (!prevBrawl || prevBrawl.start !== brawl.start)) {
+      brawlView.reset();
+      brawlBoss = false;
+    }
     if (s.players) setPlayers(s.players);
     else renderRoster();
     renderOptions();
@@ -669,6 +735,11 @@
     const fighting = st === 'countdown' || st === 'playing';
     const teamsOn = mode === 'teams';
     const drawOn = mode === 'draw';
+    const brawlOn = mode === 'brawl';
+    const arenaUp = brawlOn && fighting;
+    show('#brawlCanvas', arenaUp);
+    show('#arena', !arenaUp);
+    brawlView.active = arenaUp;
 
     for (const b of document.querySelectorAll('.mode-btn')) b.classList.toggle('on', b.dataset.mode === mode);
     arena.setTeamMode(teamsOn);
@@ -698,6 +769,14 @@
       $('#bTitle').textContent = `${manyCats() ? `Drawing from: ${options.drawCatNames.join(', ')}. ` : ''}Take turns drawing on your phone. `
         + `Everyone else guesses! ${Math.round((r.time || 80000) / 1000)} seconds a drawing.`;
       renderDraw();
+    } else if (r && brawlOn) {
+      const map = BR.LAYOUTS[brawl ? brawl.layout : 0];
+      $('#hudRound').textContent = `DUEL${brawl ? ` · ${map.name}` : ''}${paceNote(' · ')}`;
+      $('#hudTitle').textContent = `KO heroes +${BR.KO_POINTS} · slay monsters · grab power-ups${brawl && brawl.bossAt ? ' · Dragon King at 1:00' : ''}`;
+      $('#bRound').textContent = 'DUEL';
+      $('#bDiff').textContent = `${clock(r.duration)} · ${String(options.level || 'normal').toUpperCase()}`;
+      $('#bDiff').className = 'b-diff d-boss';
+      $('#bTitle').textContent = 'Your phone is your controller: left thumb moves, right thumb attacks (drag to aim). Most points wins!';
     } else if (r && mode === 'royale') {
       // No rounds: the stage changes as the battle goes on (the line under it counts down in tick()).
       arena.setTheme(r.monster);
@@ -752,6 +831,7 @@
     const barH = teams && hudH ? $('#teamBar').offsetHeight : 0;
     arena.setReserveTop(hudH + barH);
     arena.setReserveRight(fighting && mode !== 'teams' && mode !== 'draw' ? $('#board').offsetWidth + 40 : 0);
+    if (mode === 'brawl') brawlView.setReserve(hudH, fighting ? $('#board').offsetWidth + 28 : 0);
     $('#inter').style.paddingTop = `${hudH + barH + 20}px`;
     $('#board').style.top = `${hudH + gap + 2}px`;
     $('#board').style.maxHeight = `calc(100vh - ${hudH + gap + 2}px - 24vh)`;
@@ -780,6 +860,17 @@
       ]));
       box.append(el('div', { class: 'round-chip easy' }, [
         `PICK ${aNoun()}: EASY · MEDIUM · HARD`, el('small', { text: `${drawCatsLabel(options.drawCatNames)} · 100 · 150 · 200 points` }),
+      ]));
+      return;
+    }
+    if (mode === 'brawl') {
+      const r = rounds[0];
+      const boss = options.boss && options.length !== 'one';
+      box.append(el('div', { class: 'round-chip hard' }, [
+        `${clock(r ? r.duration : 240000)} ARENA FIGHT`, el('small', { text: `KO a hero +${BR.KO_POINTS} · back in ${BR.RESPAWN_MS / 1000}s after a KO` }),
+      ]));
+      box.append(el('div', { class: `round-chip ${boss ? 'boss' : 'medium'}` }, [
+        'MONSTERS', el('small', { text: `Slimes, bats, skulls${boss ? ' · the Dragon King for the last minute' : ''}${pace}` }),
       ]));
       return;
     }
@@ -854,14 +945,24 @@
     const bossBtn = $('.opt[data-opt="boss"]');
     const noBoss = mode === 'teams' ? 'The boss finale is for free for all; a team battle is its own fight.'
       : mode === 'royale' ? 'A battle royale has no boss: the monsters just keep getting tougher.'
+        : mode === 'brawl' && options.length === 'one' ? 'The Dragon King joins a full duel for its last minute; one round skips him.'
         : options.length === 'one' ? 'The boss finale ends a full game; one round skips it.' : '';
     bossBtn.title = noBoss || bossBtn.querySelector('small').textContent;
     bossBtn.classList.toggle('na', Boolean(noBoss));
     // A draw battle is all drawing and guessing: no typing switches, skills or perks. They're hidden, which
     // also leaves room for the word categories.
+    // A duel has no words: no streaks, special words or word list (perks and skills are its own).
+    const offInDuel = ['streaks', 'specials'];
     for (const k of ['streaks', 'specials', 'boss', 'perks', 'skills']) {
       const b = $(`.opt[data-opt="${k}"]`);
-      b.classList.toggle('hidden', mode === 'draw');
+      b.classList.toggle('hidden', mode === 'draw' || (mode === 'brawl' && offInDuel.includes(k)));
+      if (mode === 'brawl' && !offInDuel.includes(k)) {
+        const duelTip = { boss: 'The Dragon King storms the arena for the last minute of a full duel.',
+          perks: 'Each class has its own duel perk (shown on the phones).', skills: 'Each class has its own duel skill; it charges as you fight.' };
+        if (k !== 'boss' || !noBoss) b.title = duelTip[k];
+        if (k !== 'boss') b.classList.remove('na');
+        continue;
+      }
       if (mode !== 'draw') {
         if (k !== 'boss') {
           b.classList.remove('na');
@@ -873,12 +974,15 @@
       b.title = 'Not in a draw battle: everyone just draws and guesses.';
     }
     // A battle royale is one battle that keeps going, so it has no game length to pick.
+    $('#btnWords').classList.toggle('hidden', mode === 'brawl');
     const seg = $('#segLength');
     seg.classList.toggle('na', mode === 'royale');
     seg.title = mode === 'royale' ? 'A battle royale has no rounds: it goes on until one hero is left.'
+      : mode === 'brawl' ? 'A full duel is a 4-minute fight (with the Dragon King at the end); one round is 2 minutes.'
       : mode === 'draw' ? 'A full game: everyone draws twice. One round: everyone draws once.'
         : 'A full game climbs from easy to hard; one round plays just the round that matches the difficulty';
     $('#segLevel').title = mode === 'draw' ? 'How long each drawing lasts: easy 100 seconds, normal 80, hard 60'
+      : mode === 'brawl' ? 'Easy: fewer monsters, softer hits. Hard: more of them, hitting harder'
       : 'Easy: words fall slower and come less often. Hard: faster and more at once';
     $('#wordCount').textContent = options.wordCount || 0;
     $('#musicState').textContent = Music.on ? 'ON' : 'OFF';
@@ -1014,7 +1118,8 @@
         rec ? el('div', { class: 'rec blink', text: rec.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${rec.rank}` }) : null,
         el('div', { class: 'sc', text: `${p.score} PTS` }),
         el('div', { class: 'ko', text: ry ? (p.out ? `${p.kills} SLAIN · OUT` : `${p.kills} SLAIN · ${p.hp} HP LEFT`)
-          : mode === 'draw' ? `${p.kills} GUESSED` : `${p.kills} ${tb ? 'WORDS' : 'MONSTERS SLAIN'}` }),
+          : mode === 'draw' ? `${p.kills} GUESSED` : mode === 'brawl' ? `${p.kills} KO · ${p.slain || 0} SLAIN`
+            : `${p.kills} ${tb ? 'WORDS' : 'MONSTERS SLAIN'}` }),
         el('div', { class: 'block', text: idx + 1 }),
       ]);
       pods[idx] = pod;

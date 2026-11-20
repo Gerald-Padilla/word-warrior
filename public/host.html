@@ -10,6 +10,10 @@
   <style>
     body.host { overflow: hidden; }
     #arena { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+    /* Duel: the arena fight, over the battlefield. */
+    #brawlCanvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; background: #120c1c; }
+    #board .row .nm small.ko { display: block; margin-top: 5px; font-size: 7px; color: var(--muted); }
+    #board .row .sc small { display: block; font-size: 7px; color: var(--muted); text-align: right; margin-top: 4px; }
     .overlay { position: fixed; inset: 0; pointer-events: none; }
     .overlay > * { pointer-events: auto; }
     .center { display: flex; align-items: center; justify-content: center; }
@@ -100,7 +104,7 @@
     @keyframes pulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
     .start-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
     .hint { font-size: 10px; color: var(--muted); margin: 0; }
-    .mode-pick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .mode-pick { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
     .mode-btn { font: inherit; font-size: 12px; padding: 12px; border: 0; cursor: pointer; background: var(--ink); color: var(--muted); line-height: 1.7; }
     .mode-btn small { display: block; font-size: 8px; }
     .mode-btn.on { background: var(--gold); color: var(--ink); }
@@ -400,6 +404,7 @@
     }
     @media (max-width: 700px) and (orientation: portrait) {
       .mode-pick { grid-template-columns: 1fr 1fr; }
+      .mode-pick .mode-btn:last-child { grid-column: 1 / -1; }
       .mode-btn { font-size: 10px; padding: 10px 6px; }
       .setup { grid-template-columns: 1fr; }
       .cats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -439,6 +444,7 @@
       .qr-frame img { width: min(26vw, 44vh, 190px); height: min(26vw, 44vh, 190px); }
       .room-code span { font-size: 18px; letter-spacing: 4px; }
       .mode-pick { grid-template-columns: 1fr 1fr; gap: 6px; }
+      .mode-pick .mode-btn:last-child { grid-column: 1 / -1; }
       .mode-btn { font-size: 9px; padding: 8px 6px; }
       .mode-btn small { display: none; }
       .lobby-right h2 { font-size: 11px; }
@@ -449,6 +455,7 @@
 </head>
 <body class="host">
   <canvas id="arena"></canvas>
+  <canvas id="brawlCanvas" class="hidden"></canvas>
 
   <header id="hud" class="hidden">
     <div class="hud-join">
@@ -522,6 +529,7 @@
           <button class="mode-btn" type="button" data-mode="teams">TEAM BATTLE<small>Red vs Blue: attack, block, grab power-ups</small></button>
           <button class="mode-btn" type="button" data-mode="royale">BATTLE ROYALE<small>Own monsters, 100 HP: last hero standing wins</small></button>
           <button class="mode-btn" type="button" data-mode="draw">DRAW BATTLE<small>Take turns drawing on your phone; everyone guesses</small></button>
+          <button class="mode-btn" type="button" data-mode="brawl">DUEL<small>Arena fight: phones steer your hero. KO heroes, slay monsters</small></button>
         </div>
         <h2>HEROES IN THE TAVERN: <span id="count">0</span></h2>
         <div class="lobby-mid" id="lobbyMid">
@@ -669,6 +677,8 @@
   <script src="/js/art.js"></script>
   <script src="/js/arena.js"></script>
   <script src="/js/sketch.js"></script>
+  <script src="/js/brawl-rules.js"></script>
+  <script src="/js/brawl.js"></script>
   <script src="/js/host.js"></script>
 </body>
 </html>

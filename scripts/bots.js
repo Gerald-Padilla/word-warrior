@@ -8,6 +8,7 @@ const DRAW_FOOD = require('../draw-food');
 const DRAW_PEOPLE = require('../draw-people');
 const DRAW_VERBS = require('../draw-verbs');
 const DRAW_ANIMALS = require('../draw-animals');
+const BR = require('../public/js/brawl-rules');
 
 // Draw battle: bots can't see the drawing, so they guess words (verbs, animals, characters, titles, food and people too,
 // by the name before any "|") from every category's lists that fit the blanks and any letters filled in
@@ -110,6 +111,46 @@ for (let i = 0; i < count; i++) {
       if (res && res.correct) console.log(`${name} guessed "${res.word}" (+${res.points})`);
     });
   }, 500);
+
+  // Duel: head for the nearest foe (or a power-up close by), keep to your class's range, strafe a little,
+  // hold attack while something's in reach, and use the skill when it's charged.
+  let arena = null;
+  const kit = BR.KITS[CLASSES[i % CLASSES.length]];
+  let strafe = Math.random() < 0.5 ? 1 : -1;
+  socket.on('brawl:snap', (snap) => { arena = snap; });
+  socket.on('room:state', (s) => { if (s.mode !== 'brawl' || s.state !== 'playing') arena = null; });
+  setInterval(() => {
+    const A = arena;
+    if (!A) return;
+    const mine = A.h.find((h) => h[0] === me);
+    if (!mine || !(mine[5] & BR.F.alive)) return;
+    const [x, y] = [mine[1], mine[2]];
+    const foes = A.h.filter((h) => h[0] !== me && (h[5] & BR.F.alive) && !(h[5] & (BR.F.away | BR.F.stealth))).map((h) => ({ x: h[1], y: h[2], hero: true }))
+      .concat(A.m.filter((m) => m[5] !== me).map((m) => ({ x: m[2], y: m[3] })));
+    const near = (list) => list.reduce((b, o) => (!b || Math.hypot(o.x - x, o.y - y) < Math.hypot(b.x - x, b.y - y) ? o : b), null);
+    const foe = near(foes);
+    const item = near(A.i.map((it) => ({ x: it[2], y: it[3] })));
+    let mx = 0;
+    let my = 0;
+    let fire = false;
+    if (item && Math.hypot(item.x - x, item.y - y) < 260) {
+      mx = item.x - x;
+      my = item.y - y;
+    } else if (foe) {
+      const d = Math.hypot(foe.x - x, foe.y - y) || 1;
+      const want = kit.atk.range * 0.7;
+      const ux = (foe.x - x) / d;
+      const uy = (foe.y - y) / d;
+      const k = d > want + 40 ? 1 : d < want - 60 ? -1 : 0;
+      if (Math.random() < 0.02) strafe = -strafe;
+      mx = ux * k - uy * strafe * 0.7;
+      my = uy * k + ux * strafe * 0.7;
+      fire = d < kit.atk.range;
+    }
+    const m = Math.hypot(mx, my) || 1;
+    socket.emit('brawl:in', { mx: mx / m, my: my / m, ax: 0, ay: 0, fire });
+    if (mine[6] >= BR.CHARGE_MAX && foe && Math.random() < 0.2) socket.emit('brawl:skill', {}, () => {});
+  }, 150);
 
   socket.on('room:state', (s) => {
     trackTeam(s.players);

@@ -17,6 +17,8 @@ const DRAW_PEOPLE = require('./draw-people');
 const DRAW_VERBS = require('./draw-verbs');
 const DRAW_ANIMALS = require('./draw-animals');
 const { langOf } = require('./draw-languages');
+const BRAWL = require('./brawl');
+const BRAWL_RULES = require('./public/js/brawl-rules');
 
 const PORT = Number(process.env.PORT) || 3000;
 // Render sets RENDER and RENDER_EXTERNAL_URL; there the only address phones can reach is the public one.
@@ -293,6 +295,7 @@ const BUILD = (() => {
   };
   walk(path.join(__dirname, 'public'));
   hash.update(fs.readFileSync(__filename));
+  hash.update(fs.readFileSync(path.join(__dirname, 'brawl.js'))); // the duel's snapshots are read by the pages
   return hash.digest('hex').slice(0, 12);
 })();
 app.get('/build.js', (req, res) => {
@@ -454,10 +457,11 @@ function createRoom(solo = false, daily = false) {
     boss: null, // boss round: { hp, max, down }
     royale: null, // battle royale: { start, nextAt, ramp, total, left }
     draw: null, // draw battle: whose turn it is, the word, the drawing so far (see beginDraw)
+    brawl: null, // duel: the arena fight (see brawl.js)
     iceUntil: 0, // special words: everything falls slower until then
     summary: null, // finished: { stats, awards }
     chat: [], // lobby chat: { id, by, name, color, text, at }, oldest first
-    mode: 'ffa', // or 'teams'
+    mode: 'ffa', // or 'teams', 'royale', 'draw', 'brawl' (duel)
     hostToken: token(),
     hostSocketId: null,
     players: new Map(),
@@ -496,6 +500,11 @@ function roundsFor(room) {
       key: 'draw', name: `ROUND ${i + 1}`, title: 'Draw Battle', monster: 'slime', duration: 0, multiplier: 1, time: DRAW_TIME[o.level] || DRAW_TIME.normal,
     }));
   }
+  // Duel: one timed fight in the arena (4 minutes, or 2 for one round).
+  if (room.mode === 'brawl') {
+    return [{ key: 'brawl', name: 'DUEL', title: 'Duel Arena', monster: 'skull', multiplier: 1, level: o.level,
+      duration: BRAWL_RULES.LENGTH_MS[o.length] || BRAWL_RULES.LENGTH_MS.full }];
+  }
   if (room.mode === 'royale') {
     list = ROUNDS.map((r, i) => ({ ...r, ...ROYALE_STAGES[i], duration: (ROYALE_STAGES[i + 1]?.at ?? ROYALE_STAGES[i].at) - ROYALE_STAGES[i].at }));
   } else if (o.length === 'one') list = [ROUNDS[lv.round]];
@@ -514,7 +523,7 @@ const channel = (room) => `room:${room.code}`;
 function publicPlayer(p) {
   return { id: p.id, name: p.name, cls: p.cls, color: p.color, skin: p.skin, hair: p.hair, trim: p.trim, pet: p.pet, team: p.team,
     score: p.score, kills: p.kills, roundScores: p.roundScores, connected: p.connected, flagged: p.flagged, streak: p.streak,
-    hp: p.hp, out: p.out, place: p.place, late: p.late };
+    hp: p.hp, out: p.out, place: p.place, late: p.late, deaths: p.deaths, slain: p.slain };
 }
 
 const royaleOf = (room) => {
@@ -544,7 +553,7 @@ function stateOf(room) {
     players: [...room.players.values()].map(publicPlayer), records: room.records,
     mode: room.mode, teams: room.teams, winner: room.winner, ko: room.ko, effects: room.effects,
     options: publicOptions(room), boss: room.boss, iceUntil: room.iceUntil, summary: room.summary, daily: room.daily,
-    royale: royaleOf(room), draw: drawOf(room),
+    royale: royaleOf(room), draw: drawOf(room), brawl: brawlOf(room),
   };
 }
 
@@ -556,6 +565,7 @@ function snapshot(room, player = null) {
   const snap = { ...stateOf(room), code: room.code, solo: room.solo, words, chat: room.chat, iceUntil: f ? f.iceUntil : 0 };
   const D = room.draw;
   if (D) Object.assign(snap, { strokes: D.strokes, feed: D.feed, secret: player ? drawSecret(room, player) : null });
+  if (room.brawl) snap.brawlShots = BRAWL.liveShots(room.brawl);
   return snap;
 }
 
@@ -637,7 +647,7 @@ function resetPlayers(room) {
     p.roundScores = room.rounds.map(() => 0);
     p.streak = 0;
     p.stats = newStats();
-    Object.assign(p, newKit(), newRoyale());
+    Object.assign(p, newKit(), newRoyale(), { deaths: undefined, slain: undefined });
     sendCharge(room, p);
   }
 }
@@ -653,6 +663,9 @@ function startGame(room) {
   room.teams = null;
   room.royale = null;
   room.draw = null;
+  room.brawl = null;
+  // Duel: the arena is picked now, so the countdown can show it.
+  room.brawlLayout = room.mode === 'brawl' ? Math.floor(Math.random() * BRAWL_RULES.LAYOUTS.length) : null;
   if (room.mode === 'teams') {
     balanceTeams(room, false);
     // A one-round battle starts with that round's share of the damage a full game deals, so it can
@@ -681,7 +694,7 @@ function beginPlaying(room) {
   room.hits = [[], []]; // team battle: damage each team took this round, latest last
   room.stream = newStream(Date.now() + 200);
   // A draw battle has no falling words (and its rounds have no word pool of their own).
-  room.stream.pool = room.mode === 'draw' ? [] : poolFor(room, cfg);
+  room.stream.pool = room.mode === 'draw' || room.mode === 'brawl' ? [] : poolFor(room, cfg);
   if (room.daily) {
     // Same words, places and timings for everyone today: a fixed word order and a fresh seed each round.
     const seed = hashStr(`${room.daily}:${room.round}`);
@@ -702,14 +715,20 @@ function beginPlaying(room) {
   if (room.mode === 'teams') startDuel(room, Date.now());
   if (room.mode === 'royale') beginRoyale(room, Date.now());
   else if (room.mode === 'draw') beginDraw(room, Date.now());
+  else if (room.mode === 'brawl') beginBrawl(room, Date.now(), cfg);
   else setPhase(room, 'playing', cfg.duration, () => endRound(room));
   clearInterval(room.ticker);
-  room.ticker = setInterval(() => tick(room), 100);
+  // A duel steps every BRAWL_RULES.TICK_MS; checking twice as often keeps its snapshots evenly spaced.
+  room.ticker = setInterval(() => tick(room), room.mode === 'brawl' ? BRAWL_RULES.TICK_MS / 2 : 100);
 }
 
 function endRound(room) {
   clearInterval(room.ticker);
   room.ticker = null;
+  if (room.brawl) {
+    syncBrawl(room);
+    room.brawl = null;
+  }
   room.words.clear();
   io.to(channel(room)).emit('word:clear');
   if (room.round >= room.rounds.length - 1) {
@@ -765,6 +784,25 @@ function summarize(room) {
     }
     return { stats, awards };
   }
+  // Duel: no typing either. `words` is KOs; the rest is fighting.
+  if (room.mode === 'brawl') {
+    for (const p of list) stats[p.id] = { wpm: 0, acc: 0, best: p.stats.bestStreak, words: p.kills, kos: p.kills, deaths: p.deaths || 0, slain: p.slain || 0, dmg: p.stats.dealt || 0 };
+    if (room.options.awards) {
+      const fought = list.filter((p) => p.stats.dealt > 0);
+      give('kos', 'KO KING', 'Most heroes knocked out', (p) => p.kills, (v) => `${v} KO${v === 1 ? '' : 's'}`, 1, 0);
+      give('hunter', 'MONSTER HUNTER', 'Most monsters slain', (p) => p.slain || 0, (v) => `${v} slain`, 1, 0);
+      give('hitter', 'HEAVY HITTER', 'Most damage dealt', (p) => p.stats.dealt || 0, (v) => `${v} damage`, 1, 0);
+      give('rampage', 'RAMPAGE', 'Most KOs in a row', (p) => p.stats.bestStreak, (v) => `${v} in a row`, 3, 0);
+      // Fewest KOs taken, among heroes who fought (ties: the higher score).
+      if (fought.length >= 2) {
+        const best = fought.slice().sort((a, b) => (a.deaths || 0) - (b.deaths || 0) || b.score - a.score)[0];
+        awards.push({ key: 'tough', title: 'UNTOUCHABLE', desc: 'Knocked out the fewest times', id: best.id, value: `${best.deaths || 0} time${best.deaths === 1 ? '' : 's'}` });
+      }
+      const slayer = list.find((p) => p.stats.bossKill);
+      if (slayer) awards.push({ key: 'dragon', title: 'DRAGON SLAYER', desc: 'Landed the final blow', id: slayer.id, value: 'K.O.!' });
+    }
+    return { stats, awards };
+  }
   if (room.options.awards && !room.solo) {
     give('speed', 'SPEED DEMON', 'Fastest typing', (p) => stats[p.id].wpm, (v) => `${v} WPM`, 1, 3);
     give('sharp', 'SHARPSHOOTER', 'Fewest typos', (p) => stats[p.id].acc, (v) => `${v}% accuracy`, 1, 5);
@@ -810,6 +848,7 @@ function backToLobby(room) {
   room.teams = null;
   room.royale = null;
   room.draw = null;
+  room.brawl = null;
   room.winner = null;
   room.ko = false;
   room.effects = [{}, {}];
@@ -834,6 +873,10 @@ function tick(room) {
   }
   if (room.mode === 'draw') {
     drawTick(room, now);
+    return;
+  }
+  if (room.mode === 'brawl') {
+    brawlTick(room, now);
     return;
   }
   const cfg = room.rounds[room.round];
@@ -1025,7 +1068,7 @@ function boost(room, player, w) {
 function sendCharge(room, player) {
   if (!player.socketId) return;
   io.to(player.socketId).emit('skill:charge', {
-    on: room.options.skills && room.mode !== 'draw', charge: player.charge, max: SKILL_WORDS, boost: player.empower ? player.empower.left : 0,
+    on: room.options.skills && room.mode !== 'draw' && room.mode !== 'brawl', charge: player.charge, max: SKILL_WORDS, boost: player.empower ? player.empower.left : 0,
   });
 }
 
@@ -1596,6 +1639,64 @@ function guessedIt(room, player, now) {
   return { ok: true, correct: true, word: D.word, points };
 }
 
+// ---- Duel (brawl) --------------------------------------------------------------
+// A real-time arena fight: see brawl.js. Phones steer their heroes; the server runs the fight every
+// BRAWL_RULES.TICK_MS and sends every screen a snapshot every few steps, with what happened since
+// (KOs, skills, power-ups taken) inside it. Heroes' scores reach the leaderboard through the snapshots;
+// the player list catches up now and then, and at the end.
+function brawlOf(room) {
+  const B = room.brawl;
+  if (!B) return room.state === 'countdown' && room.brawlLayout !== null && room.mode === 'brawl' ? { layout: room.brawlLayout, start: null } : null;
+  return { layout: B.layout, start: B.start, endsAt: B.endsAt, bossAt: Number.isFinite(B.bossAt) ? B.bossAt : null };
+}
+
+function beginBrawl(room, now, cfg) {
+  const o = room.options;
+  room.brawl = BRAWL.createBrawl({
+    now, duration: cfg.duration, level: o.level, perks: o.perks, skills: o.skills, boss: o.boss && o.length !== 'one', layout: room.brawlLayout,
+  });
+  room.brawlSnapAt = 0;
+  room.brawlSyncAt = 0;
+  for (const p of room.players.values()) {
+    BRAWL.addHero(room.brawl, p, now);
+    if (!p.connected) BRAWL.setAway(room.brawl, p.id, true, now);
+  }
+  setPhase(room, 'playing', cfg.duration, () => endRound(room));
+}
+
+function brawlTick(room, now) {
+  const B = room.brawl;
+  if (!B || room.state !== 'playing') return;
+  for (const p of room.players.values()) BRAWL.setAway(B, p.id, !p.connected, now);
+  if (!BRAWL.advance(B, now) || B.t < room.brawlSnapAt) return;
+  // A snapshot every SNAP_EVERY steps of the fight's own clock, however the steps happened to bunch up.
+  const every = BRAWL_RULES.TICK_MS * BRAWL_RULES.SNAP_EVERY;
+  room.brawlSnapAt = room.brawlSnapAt + every > B.t ? room.brawlSnapAt + every : B.t + every;
+  const snap = BRAWL.snapshot(B);
+  snap.n = BRAWL.takeNews(B);
+  io.to(channel(room)).emit('brawl:snap', snap);
+  if (now >= room.brawlSyncAt) {
+    room.brawlSyncAt = now + 2000;
+    syncBrawl(room);
+  }
+}
+
+// The fight's numbers onto the heroes: score, KOs (kills), KOs taken, monsters slain, and the awards' stats.
+function syncBrawl(room) {
+  const B = room.brawl;
+  if (!B) return;
+  for (const p of room.players.values()) {
+    const H = B.heroes.get(p.id);
+    if (!H) continue;
+    p.score = H.score;
+    p.kills = H.kos;
+    p.deaths = H.deaths;
+    p.slain = H.slain;
+    p.roundScores[0] = H.score;
+    Object.assign(p.stats, { dealt: H.dealt, bestStreak: H.bestStreak, bossKill: H.bossKill, bossDmg: H.bossDmg });
+  }
+}
+
 // ---- Team battle (duel) ----------------------------------------------------
 // Two armies face off. Each team has a few attack words; typing one launches it across the field at the
 // other team, carrying its word. The other team can type an incoming word to block it before it lands.
@@ -1827,7 +1928,7 @@ io.on('connection', (socket) => {
   socket.on('host:mode', (data) => {
     const { room, isHost } = ctx();
     if (!isHost || room.state !== 'lobby') return;
-    room.mode = ['teams', 'royale', 'draw'].includes(data?.mode) ? data.mode : 'ffa';
+    room.mode = ['teams', 'royale', 'draw', 'brawl'].includes(data?.mode) ? data.mode : 'ffa';
     room.rounds = roundsFor(room);
     broadcastState(room);
   });
@@ -1898,6 +1999,7 @@ io.on('connection', (socket) => {
     }
     broadcastPlayers(room);
     checkRoyaleEnd(room);
+    if (room.brawl) BRAWL.removeHero(room.brawl, p.id);
     // Draw battle: out of the turn order; if it was their turn, that turn is over.
     const D = room.draw;
     if (D && room.state === 'playing') {
@@ -1958,6 +2060,7 @@ io.on('connection', (socket) => {
     if (room.mode === 'royale' && room.state === 'playing') Object.assign(p, { late: true, out: true, hp: 0 });
     room.players.set(p.id, p);
     attachPlayer(room, p);
+    if (room.brawl && room.state === 'playing') BRAWL.addHero(room.brawl, p, Date.now());
     // A draw battle under way: guess from now on, and draw at the end of this round.
     if (room.draw && room.state === 'playing') {
       room.draw.order.push(p.id);
@@ -2018,7 +2121,7 @@ io.on('connection', (socket) => {
 
   socket.on('player:claim', (data, cb) => {
     const { room, player } = ctx();
-    if (!player || room.state !== 'playing' || room.ko || room.mode === 'draw') return reply(cb, { ok: false, reason: 'not-playing' });
+    if (!player || room.state !== 'playing' || room.ko || room.mode === 'draw' || room.mode === 'brawl') return reply(cb, { ok: false, reason: 'not-playing' });
     // Battle royale: only your own words, and only while you're still in.
     const f = fieldOf(room, player);
     if (!f || player.out) return reply(cb, { ok: false, reason: 'not-playing' });
@@ -2077,7 +2180,7 @@ io.on('connection', (socket) => {
 
   socket.on('player:skill', (_data, cb) => {
     const { room, player } = ctx();
-    const live = player && room.options.skills && room.mode !== 'draw' && room.state === 'playing' && !room.ko && !(room.boss && room.boss.down)
+    const live = player && room.options.skills && room.mode !== 'draw' && room.mode !== 'brawl' && room.state === 'playing' && !room.ko && !(room.boss && room.boss.down)
       && fieldOf(room, player) && !player.out;
     if (!live) return reply(cb, { ok: false, reason: 'not-now' });
     if (player.charge < SKILL_WORDS) return reply(cb, { ok: false, reason: 'charging' });
@@ -2085,6 +2188,21 @@ io.on('connection', (socket) => {
     useSkill(room, player, Date.now());
     sendCharge(room, player);
     reply(cb, { ok: true });
+  });
+
+  // Duel ------------------------------------------------------------------
+  // The phone's sticks: { mx, my, ax, ay, fire }. Sent when they change and every so often.
+  socket.on('brawl:in', (data) => {
+    const { room, player } = ctx();
+    if (!player || !room.brawl || room.state !== 'playing') return;
+    BRAWL.setInput(room.brawl, player.id, data);
+  });
+
+  socket.on('brawl:skill', (_data, cb) => {
+    const { room, player } = ctx();
+    if (!player || !room.brawl || room.state !== 'playing') return reply(cb, { ok: false, reason: 'not-now' });
+    const ok = BRAWL.useSkill(room.brawl, player.id, Date.now());
+    reply(cb, { ok, reason: ok ? null : 'charging' });
   });
 
   // Draw battle ----------------------------------------------------------
