@@ -28,7 +28,34 @@
   const SPECIAL_PER_DMG = 1;
   const SPECIAL_PER_HURT = 0.5;
   const SPECIAL_PER_TURN = 10;
-  const SHOW_MS = 900; // after a shot lands, how long before the next turn
+  const SHOW_MS = 2000; // after a shot lands, how long before the next turn (the screens stay on where it hit)
+
+  // Jumping: forward, the way you face, out of a hole or over a gap. It costs stamina (the blue bar), so
+  // you can jump a few times a turn. grav: how hard heroes fall (shots use GRAVITY).
+  const JUMP = { vx: 120, vy: 430, cost: 80, grav: 1100 };
+
+  // Mounts: a hero rides their pet, and each pet moves in its own way (0: no pet, on foot). jumpX/jumpY:
+  // how much farther/higher it jumps, glide: the fastest it falls (units/s) when it jumps, climb: how
+  // much higher a step it walks up, stamina/speed: how far and how fast it walks.
+  const MOUNTS = [
+    { name: 'ON FOOT', text: 'no mount: a plain jump' },
+    { name: 'POUNCE', pet: 'CAT', text: 'jumps much higher', jumpY: 1.4 },
+    { name: 'GLIDE', pet: 'OWL', text: 'jumps farther and floats gently down', jumpX: 1.3, glide: 150 },
+    { name: 'STICKY', pet: 'SLIME', text: 'walks up walls three times as high', climb: 3 },
+    { name: 'WINGS', pet: 'BABY DRAGON', text: 'has the longest jump of all', jumpX: 1.6, jumpY: 1.15 },
+    { name: 'SWIFT', pet: 'FOX', text: 'walks half again as far, and faster', stamina: 1.5, speed: 1.5 },
+  ];
+
+  // Power-ups float over the middle of the battlefield: hit one with a shot (or a blast) and it's yours.
+  // One appears at the start, then another every ORB.every turns while there are fewer than ORB.max.
+  const ORB = { r: 30, every: 3, max: 2 };
+  const ORBS = {
+    potion: { name: 'POTION', text: '+35 HP', hp: 35 },
+    fury: { name: 'FURY', text: 'next shot hits 50% harder', mult: 1.5 },
+    shield: { name: 'SHIELD', text: 'half damage till next turn', guard: 0.5 },
+    haste: { name: 'HASTE', text: 'goes twice as far next turn', stamina: 2 },
+    triple: { name: 'TWIN SHOT', text: 'next shot fires twice' },
+  };
 
   // A battle goes on until a team is wiped out. Game length sets when sudden death starts (from this turn
   // on, shots hit SUDDEN_STEP harder every turn, up to SUDDEN_MAX times as hard), so it always ends;
@@ -347,10 +374,10 @@
     }
 
     // Where a hero at x with feet at y would stand: on the ground under their feet, stepping up as much as
-    // CLIMB if their feet are in the ground. false: a wall too high to step up; null: nothing below.
-    standAt(x, y) {
+    // `climb` if their feet are in the ground. false: a wall too high to step up; null: nothing below.
+    standAt(x, y, climb = CLIMB) {
       let top = y;
-      while (top > y - CLIMB - MAP.CELL && this.solid(x, top - 1)) top -= MAP.CELL;
+      while (top > y - climb - MAP.CELL && this.solid(x, top - 1)) top -= MAP.CELL;
       if (this.solid(x, top - 1)) return false;
       return this.groundBelow(x, top);
     }
@@ -368,11 +395,18 @@
 
   // Flies one shell until it hits the ground, a hero or leaves the map (or, for a shell that splits, until
   // the top of its arc). heroes: [{ id, x, y }] (feet); `skip` is the shooter's id (they can't hit
-  // themselves in the first moment). Returns the path (a point every PATH_MS) and how it ended:
-  // { x, y, t, hit: 'ground' | 'hero' | 'gone' | 'split', hero, vx, vy }.
+  // themselves in the first moment). orbs: power-ups [{ id, x, y }] it takes on the way through.
+  // Returns the path (a point every PATH_MS), the power-ups it went through (grabs: [{ id, t }]) and how
+  // it ended: { x, y, t, hit: 'ground' | 'hero' | 'gone' | 'split', hero, vx, vy }.
   const STEP = 1 / 240;
   const PATH_MS = 30;
-  function fly(terrain, heroes, skip, s, def, wind) {
+  function fly(terrain, heroes, skip, s, def, wind, orbs = []) {
+    const grabs = [];
+    const res = flyPath(terrain, heroes, skip, s, def, wind, orbs, grabs);
+    res.grabs = grabs;
+    return res;
+  }
+  function flyPath(terrain, heroes, skip, s, def, wind, orbs, grabs) {
     let { x, y, vx, vy } = s;
     const grav = GRAVITY * (def.grav ?? 1);
     const push = WIND_ACCEL * wind * (def.wind ?? 1);
@@ -402,6 +436,9 @@
         next += PATH_MS;
       }
       if (x < -300 || x > MAP.W + 300 || y > MAP.H + 60) return { path, end: { x, y, t, hit: 'gone' } };
+      for (const o of orbs) {
+        if (Math.hypot(o.x - x, o.y - y) < ORB.r + 6 && !grabs.some((g) => g.id === o.id)) grabs.push({ id: o.id, t: Math.round(t) });
+      }
       for (const h of heroes) {
         if (h.id === skip && t < 250) continue;
         if (Math.hypot(h.x - x, h.y - HERO_MID - y) < HERO_R + 4) {
@@ -421,10 +458,51 @@
     return { path, end: { x, y, t, hit: 'gone' } };
   }
 
+  // A hero's jump, from their feet at (x, y) with this speed: up and along until they land, bump into a
+  // wall (they drop straight down) or a ceiling, or fall off the bottom. glide: the fastest they fall.
+  // Returns the path (a point every PATH_MS), where they land, how long it took, and whether they fell.
+  function hop(terrain, x, y, vx, vy, glide = 0) {
+    const path = [[0, Math.round(x), Math.round(y)]];
+    const tall = HERO_MID * 1.5; // the top of the hero (on their mount)
+    let t = 0;
+    let next = PATH_MS;
+    while (t < 8000) {
+      vy += JUMP.grav * STEP;
+      if (glide && vy > glide) vy = glide;
+      t += STEP * 1000;
+      // Along: a wall at the body's height stops them (a low step doesn't: they land on it).
+      const nx = x + vx * STEP;
+      if (vx && (nx < 12 || nx > MAP.W - 12 || terrain.solid(nx, y - CLIMB - 2) || terrain.solid(nx, y - HERO_MID) || terrain.solid(nx, y - tall))) vx = 0;
+      else x = nx;
+      const ny = y + vy * STEP;
+      if (vy < 0) {
+        if (terrain.solid(x, ny - tall)) vy = 0; // a ceiling: bump, and down they come
+        else y = ny;
+      } else if (terrain.solid(x, ny) || terrain.solid(x, y)) {
+        // Landed: stand on top of whatever they came down on.
+        let top = terrain.groundBelow(x, Math.min(y, ny));
+        let up = 0;
+        while (top !== null && terrain.solid(x, top - 1) && up < 60) {
+          top -= MAP.CELL;
+          up += MAP.CELL;
+        }
+        y = top === null ? ny : top;
+        path.push([Math.round(t), Math.round(x), Math.round(y)]);
+        return { path, x, y, t: Math.round(t), fell: false };
+      } else y = ny;
+      if (t >= next) {
+        path.push([Math.round(t), Math.round(x), Math.round(y)]);
+        next += PATH_MS;
+      }
+      if (y > MAP.H + 80) return { path, x, y: MAP.H + 80, t: Math.round(t), fell: true };
+    }
+    return { path, x, y, t: Math.round(t), fell: y > MAP.H };
+  }
+
   const Arty = {
     MAP, COLS, ROWS, GRAVITY, MAX_SPEED, WIND_ACCEL, HERO_R, HERO_MID, CLIMB, WALK_SPEED, STAMINA, HP, ANGLE_MIN, ANGLE_MAX,
     CHARGE_MS, KO_POINTS, WIN_POINTS, SUDDEN_STEP, SUDDEN_MAX, LAST_TURN, SPECIAL_MAX, SPECIAL_PER_DMG, SPECIAL_PER_HURT, SPECIAL_PER_TURN, SHOW_MS, TURNS, LEVELS,
-    SHOTS, ITEMS, STYLES, Terrain, seeded, launch, fly, PATH_MS,
+    SHOTS, ITEMS, STYLES, JUMP, MOUNTS, ORB, ORBS, Terrain, seeded, launch, fly, hop, PATH_MS,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Arty;
   else root.Arty = Arty;

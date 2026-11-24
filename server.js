@@ -1696,7 +1696,7 @@ function artyTick(room, now) {
   if (G.phase === 'start' && now >= G.endsAt) return artyNext(room, now);
   if (G.phase === 'aim') {
     const w = room.artyWalk;
-    if (w && w.id === G.active && w.dir) {
+    if (w && w.id === G.active && w.dir && now >= G.busyUntil) {
       const r = ARTY.walk(G, w.id, w.dir, dt);
       if (r === 'fell') {
         // Walked off the edge: a KO, and the turn's over.
@@ -2369,9 +2369,26 @@ io.on('connection', (socket) => {
     broadcastState(room);
     reply(cb, { ok: true });
   });
+  // Jump: worked out in full now and played out on every screen. A jump off the bottom is a KO, and the
+  // turn's over once they've fallen.
+  socket.on('arty:jump', (data, cb) => {
+    const { room, player, G } = artyCtx();
+    if (!room) return reply(cb, { ok: false });
+    const now = Date.now();
+    if (Number(data?.face) === 1 || Number(data?.face) === -1) ARTY.aim(G, player.id, undefined, Number(data.face));
+    const j = ARTY.jump(G, player.id, now);
+    if (!j) return reply(cb, { ok: false });
+    io.to(channel(room)).emit('arty:jump', j);
+    if (j.fell) {
+      artyPass(room, now, false);
+      G.endsAt = now + j.t + ARTY_PASS_MS;
+    }
+    reply(cb, { ok: true, t: j.t });
+  });
   socket.on('arty:fire', (data, cb) => {
     const { room, player, G } = artyCtx();
     if (!room) return reply(cb, { ok: false });
+    if (Date.now() < G.busyUntil) return reply(cb, { ok: false, reason: 'busy' });
     room.artyWalk = null;
     const shot = ARTY.fire(G, player.id, data, Date.now());
     if (!shot) return reply(cb, { ok: false });
@@ -2473,12 +2490,14 @@ io.on('connection', (socket) => {
     reply(cb, { ok: true });
   });
 
-  // Lobby chat. Replies { ok } or { ok: false, reason } so the phone can say why a message didn't go.
+  // Chat: in the lobby, and during an artillery battle (it's turn by turn: there's time to talk). Replies
+  // { ok } or { ok: false, reason } so the phone can say why a message didn't go.
   socket.on('chat:send', (data, cb) => {
     const { room, player } = ctx();
     if (!player || room.solo) return reply(cb, { ok: false, reason: 'not-here' });
     if (!room.options.chat) return reply(cb, { ok: false, reason: 'off' });
-    if (room.state !== 'lobby') return reply(cb, { ok: false, reason: 'not-lobby' });
+    const battle = room.mode === 'artillery' && ['countdown', 'playing'].includes(room.state);
+    if (room.state !== 'lobby' && !battle) return reply(cb, { ok: false, reason: 'not-lobby' });
     const text = cleanChat(data?.text);
     if (!text) return reply(cb, { ok: false, reason: 'empty' });
     const t = Date.now();

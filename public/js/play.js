@@ -1338,6 +1338,14 @@
     chat = chat.concat(m).slice(-30);
     renderChat();
     if (m.by !== you && state.state === 'lobby') Sfx.play('emote');
+    // In an artillery battle: over the speaker's hero, and the CHAT button lights up.
+    if (artyChatOn()) {
+      aView.say(m);
+      if (m.by !== you) {
+        Sfx.play('emote');
+        if (!artyChatOpen) $('#aChatBtn').classList.add('new');
+      }
+    }
   });
   socket.on('chat:clear', () => {
     chat = [];
@@ -1843,9 +1851,13 @@
     $('#lobbyPerk').textContent = !perk ? '' : shots ? perk : `PERK: ${perk}`;
     $('#lobbyPerk').classList.toggle('hidden', !perk);
     const skl = options.skills && mine && !drawing && !shots ? (duel ? `${kit.skill.name}: ${kit.skill.text}` : classByKey(mine.cls).skill) : '';
-    $('#lobbySkill').textContent = !skl ? '' : duel ? `SKILL: ${skl} (charges as you fight; tap SKILL or press E)`
+    // Artillery: what your mount does instead.
+    const ride = shots && mine.pet && AR.MOUNTS[mine.pet] && BR.PETS[mine.pet];
+    const mountText = !shots ? '' : ride ? `MOUNT: ${AR.MOUNTS[mine.pet].name}: your ${ride.name.toLowerCase()} ${AR.MOUNTS[mine.pet].text}`
+      : 'ON FOOT: pick a companion in CHANGE HERO to ride one (each moves its own way)';
+    $('#lobbySkill').textContent = shots ? mountText : !skl ? '' : duel ? `SKILL: ${skl} (charges as you fight; tap SKILL or press E)`
       : `SKILL: ${skl} (every 8 words; tap it or press Space)`;
-    $('#lobbySkill').classList.toggle('hidden', !skl);
+    $('#lobbySkill').classList.toggle('hidden', !skl && !mountText);
     renderHowTo(mine, kit);
     const roster = $('#lobbyRoster');
     roster.innerHTML = '';
@@ -1861,17 +1873,22 @@
     if (!(brawlOn() || artyOn()) || !mine) return;
     const pet = BR.PETS[mine.pet];
     const shots = AR.SHOTS[mine.cls] || AR.SHOTS.knight;
+    const mount = AR.MOUNTS[mine.pet] || AR.MOUNTS[0];
     const rows = artyOn() ? [
       ['TURNS', 'Your team and theirs take turns. When it\'s yours, your phone buzzes and the controls light up.'],
       ['MOVE', pcControls ? 'Left and right arrow keys walk a little (the blue bar).' : '◀ ▶ walk a little each turn (the blue bar). Walking turns you round.'],
+      ['JUMP', `${pcControls ? 'Press J' : 'Tap JUMP'} to jump the way you face: out of a hole, or over a gap. It uses up some of your walk.`],
       ['AIM', pcControls ? 'Up and down arrow keys set the angle.' : '▲ ▼ set the angle. Drag the battlefield to look around.'],
       ['FIRE', pcControls ? 'Hold Space to charge the power, let go to shoot.' : 'Hold FIRE to charge the power, let go to shoot. The white mark is your last shot.'],
       ['SHOTS', `SHOT 1: ${shots.name}. SHOT 2: ${shots.alt.name}, ${shots.alt.text}${pcControls ? ' (keys 1 and 2)' : ''}.`],
       ['WIND', 'Changes every turn and bends your shot: check the arrow at the top.'],
       options.skills ? ['SPECIAL', `${shots.special.name}: ${shots.special.text}. It charges as you hit and get hit${pcControls ? ' (key 3)' : ''}.`] : null,
       ['ITEMS', `HEAL (+40 HP) and DOUBLE (fire twice): once each a game${pcControls ? ' (keys H and X)' : ''}.`],
+      ['POWER-UPS', 'Bubbles float over the middle: shoot one to take it. POTION heals, FURY hits harder, SHIELD halves damage, HASTE goes farther, TWIN SHOT fires twice.'],
       ['WIN', `Wipe out the other team. Falling off the bottom is a KO! From turn ${rounds[0]?.turns || AR.TURNS.full}, sudden death: shots hit harder every turn.`],
-      ['MOUNT', 'You ride your companion into battle. No companion? You fight on foot (pick one in CHANGE HERO).'],
+      ['MOUNT', pet ? `You ride your ${pet.name.toLowerCase()}. ${mount.name}: it ${mount.text}.`
+        : 'No companion: you fight on foot. Pick one in CHANGE HERO: each moves its own way.'],
+      options.chat ? ['CHAT', `${pcControls ? 'Press Enter' : 'Tap CHAT'} to say something: it pops up over your hero.`] : null,
     ].filter(Boolean) : [
       ['MOVE', pcControls ? 'WASD or the arrow keys.' : 'Drag your left thumb anywhere on the left half of the screen.'],
       ['ATTACK', pcControls ? 'Hold the mouse button to attack toward the pointer, or Space to hit the nearest foe.'
@@ -2036,6 +2053,7 @@
   }
 
   // ---- artillery ---------------------------------------------------------
+  socket.on('arty:jump', (j) => aView.onJump(j));
   socket.on('arty:pos', (p) => aView.onPos(p));
   socket.on('arty:shot', (shot) => aView.onShot(shot));
   socket.on('arty:fell', ({ id }) => aView.fell(id));
@@ -2045,8 +2063,55 @@
   });
   socket.on('arty:item', ({ id, item }) => aView.callout(item === 'heal' ? 'HEAL!' : 'DOUBLE SHOT!', '#8be36b', nameOf(id)));
 
+  // Chat in the battle (when the host has chat on): CHAT opens a box over the bottom of the field, with
+  // quick sayings; on a keyboard, Enter opens it and Escape closes it. Sending closes it again.
+  let artyChatOpen = false;
+  const artyChatOn = () => artyOn() && Boolean(options.chat) && Boolean(you) && ['countdown', 'playing'].includes(state.state);
+  function renderArtyChat() {
+    const on = artyChatOn();
+    if (!on) artyChatOpen = false;
+    $('#aChatBtn').classList.toggle('hidden', !on || artyChatOpen);
+    $('#aChat').classList.toggle('hidden', !artyChatOpen);
+    aView.chatLift = artyChatOpen ? $('#aChat').getBoundingClientRect().height : 0;
+  }
+  function artyChat(open) {
+    artyChatOpen = open && artyChatOn();
+    $('#aChatBtn').classList.remove('new');
+    renderArtyChat();
+    if (artyChatOpen) $('#aChatIn').focus();
+    else $('#aChatIn').blur();
+  }
+  function artySay(text) {
+    const t = String(text || '').trim();
+    if (!t) return;
+    socket.emit('chat:send', { text: t }, (res) => {
+      if (res && res.ok) return;
+      const why = res && res.reason === 'slow' ? 'Easy there! Wait a moment.' : res && res.reason === 'off' ? 'The host has turned chat off.' : 'That didn\'t send.';
+      aView.callout('CHAT', '#ff5a4d', why);
+    });
+    $('#aChatIn').value = '';
+    artyChat(false);
+  }
+  $('#aChatBtn').onclick = () => artyChat(true);
+  $('#aChatX').onclick = () => artyChat(false);
+  $('#aChat').addEventListener('submit', (e) => {
+    e.preventDefault();
+    artySay($('#aChatIn').value);
+  });
+  for (const b of document.querySelectorAll('#aChat [data-say]')) b.onclick = () => artySay(b.dataset.say);
+  window.addEventListener('keydown', (e) => {
+    if (!artyChatOn() || e.repeat) return;
+    const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '');
+    if (e.key === 'Escape' && artyChatOpen) artyChat(false);
+    else if (e.key === 'Enter' && !typing && !artyChatOpen) {
+      e.preventDefault();
+      artyChat(true);
+    }
+  });
+
   // The turn's clock, both teams' HP, your score and team, the countdown, and what you're waiting for.
   function renderArty() {
+    renderArtyChat();
     const A = arty;
     const mine = me();
     const team = mine ? TEAMS[mine.team] : TEAMS[0];

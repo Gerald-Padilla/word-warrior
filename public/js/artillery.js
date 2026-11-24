@@ -3,7 +3,7 @@
 // field; a phone follows the action, with a minimap, and can be dragged to look around.
 (function () {
   const A = window.Arty;
-  const { heroSprite, petSprite, COLORS } = window.Art;
+  const { heroSprite, petSprite, powerSprite, COLORS, POWERS } = window.Art;
   const { TEAMS, Sfx } = window.WW;
   const { MAP, COLS, ROWS } = A;
   const PX = 3; // map units per sprite pixel
@@ -16,6 +16,48 @@
     return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
   };
   const rgb = (hex) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
+  // Where something moving along a path ([[t, x, y], ...]) is at time t.
+  const pathAt = (path, t) => {
+    let i = 1;
+    while (i < path.length && path[i][0] < t) i++;
+    if (i >= path.length) return [path[path.length - 1][1], path[path.length - 1][2]];
+    const [ta, xa, ya] = path[i - 1];
+    const [tb, xb, yb] = path[i];
+    const k = tb > ta ? clamp((t - ta) / (tb - ta), 0, 1) : 1;
+    return [lerp(xa, xb, k), lerp(ya, yb, k)];
+  };
+  // Power-ups a hero has waiting (the bits in their state), and the art for each.
+  const BUFFS = [[1, 'fury'], [2, 'shield'], [4, 'haste'], [8, 'triple']];
+  const SAY_MS = 5000; // a chat message stays over the hero this long
+  const FEED_MS = 12000; // and in the list at the bottom this long
+  // Breaks text into lines no wider than maxW (at most `most` lines, the last cut short with "…").
+  const wrap = (ctx, text, maxW, most) => {
+    const lines = [];
+    let line = '';
+    for (const word of text.split(' ')) {
+      let w = word;
+      while (ctx.measureText(w).width > maxW) {
+        // A word too long for a line: break it.
+        let n = w.length - 1;
+        while (n > 1 && ctx.measureText(w.slice(0, n)).width > maxW) n--;
+        if (line) lines.push(line);
+        lines.push(w.slice(0, n));
+        line = '';
+        w = w.slice(n);
+      }
+      const next = line ? `${line} ${w}` : w;
+      if (ctx.measureText(next).width > maxW && line) {
+        lines.push(line);
+        line = w;
+      } else line = next;
+    }
+    if (line) lines.push(line);
+    if (lines.length > most) {
+      lines.length = most;
+      lines[most - 1] = `${lines[most - 1].slice(0, -1)}…`;
+    }
+    return lines;
+  };
   const BLAST = { slash: '#fff6b0', axe: '#d5dbe6', fireball: '#ff7b1c', meteor: '#ff5a1f', arrow: '#ffd23f', dagger: '#d5dbe6', beam: '#fff6b0',
     shuriken: '#d5dbe6', soul: '#7dff6b', thorn: '#4fa865', cannon: '#ffd23f', notes: '#ff9ad0', spear: '#7fd4ff', boulder: '#a99cc7',
     frost: '#9fd7ff', seed: '#6fe08b', grape: '#ffd23f', drum: '#ff5a4d', shard: '#ff7b1c' };
@@ -52,6 +94,11 @@
       this.bolts = [];
       this.callouts = [];
       this.pets = new Map();
+      this.orbs = new Map(); // power-ups floating over the field: id -> { id, kind, x, y, t0 }
+      this.chat = []; // the latest chat messages, for the list at the bottom
+      this.chatLift = 0; // css px kept clear at the bottom (the phone's chat box)
+      this.hold = null; // where the last shot landed: the view stays there until the next turn
+      this.easeUntil = 0; // a slower, smoother pan to the next hero until then
       this.shake = { until: 0, pow: 0 };
       this.cam = null; // phone: { x, y } the middle of the view
       this.pan = null; // phone: dragged away to look around, until this time
@@ -101,7 +148,10 @@
         this.suddenShown = false;
         this.replay = null;
         this.held = null;
+        this.hold = null;
         this.heroes.clear();
+        this.orbs.clear();
+        this.orbsSeen = false;
       }
       const prev = this.state;
       this.state = s;
@@ -110,15 +160,30 @@
         return;
       }
       this.takeHeroes(s);
+      this.takeOrbs(s);
       if (s.phase === 'aim' && (!prev || prev.turn !== s.turn)) this.newTurn(s);
+    }
+
+    // The power-ups in the room's state: new ones pop in with a sparkle.
+    takeOrbs(s) {
+      const seen = new Set();
+      for (const [id, kind, x, y] of s.orbs || []) {
+        seen.add(id);
+        if (this.orbs.has(id)) continue;
+        this.orbs.set(id, { id, kind, x, y, t0: performance.now() });
+        if (this.orbsSeen) this.burst(x, y, ['#ffffff', '#ffd23f', (POWERS[kind] || {}).color || '#ffffff'], 16, 0.16);
+      }
+      for (const id of [...this.orbs.keys()]) if (!seen.has(id)) this.orbs.delete(id);
+      this.orbsSeen = true;
     }
 
     takeHeroes(s) {
       const seen = new Set();
-      for (const [id, team, x, y, hp, alive, face, angle, special, heal, double, stamina, lastPower] of s.heroes) {
+      for (const [id, team, x, y, hp, alive, face, angle, special, heal, double, stamina, lastPower, buffs, maxStamina] of s.heroes) {
         seen.add(id);
         const h = this.heroes.get(id) || { shownY: y };
-        Object.assign(h, { id, team, x, y, hp, alive: Boolean(alive), face, angle, special, heal, double, stamina, lastPower, power: 0 });
+        Object.assign(h, { id, team, x, y, hp, alive: Boolean(alive), face, angle, special, heal, double, stamina, lastPower, buffs: buffs || 0,
+          maxStamina: maxStamina || A.STAMINA, power: 0 });
         if (Math.abs(h.shownY - y) > 300) h.shownY = y;
         this.heroes.set(id, h);
       }
@@ -137,6 +202,26 @@
       const mine = this.phone && s.active === this.selfId;
       this.callout(mine ? 'YOUR TURN!' : `${(look.name || 'HERO').toUpperCase()}'S TURN`, TEAMS[h.team].color);
       this.pan = null;
+      // Off the last shot's landing spot, over to whoever's up: smoothly, not in a snap.
+      if (this.hold) this.easeUntil = performance.now() + 1400;
+      this.hold = null;
+    }
+
+    // A jump, as the server worked it out: the hero follows its path (and falls off the bottom, if it ends
+    // there).
+    onJump(j) {
+      const h = this.heroes.get(j.id);
+      if (!h) return;
+      h.jump = { path: j.path, t0: performance.now(), end: j.t, fell: j.fell };
+      Object.assign(h, { x: j.x, y: j.y, stamina: j.stamina });
+      Sfx.play('jump');
+    }
+
+    // Chat: a speech bubble over the hero who said it, and the list at the bottom.
+    say(m) {
+      this.chat = this.chat.concat({ ...m, t0: performance.now() }).slice(-5);
+      const h = this.heroes.get(m.by);
+      if (h) h.say = { text: m.text, t0: performance.now() };
     }
 
     // The active hero's aim, walk and power, as it happens.
@@ -254,6 +339,7 @@
           const s = this.held;
           this.held = null;
           this.takeHeroes(s);
+          this.takeOrbs(s);
           if (s.phase === 'aim') this.newTurn(s);
         }
       }
@@ -272,6 +358,7 @@
           { x: b.x / MAP.CELL, y: b.y / MAP.CELL, r: b.crater / MAP.CELL });
       }
       const color = BLAST[s.kind] || '#ffd23f';
+      this.hold = { x: b.x, y: b.y };
       this.rings.push({ x: b.x, y: b.y, r: b.r, color, t0: performance.now(), life: 450 });
       this.burst(b.x, b.y, [color, '#ffffff', '#ff7b1c', '#8b5a2b'], Math.min(60, 14 + b.r / 3), 0.25 + b.r / 600);
       this.shakeBy(b.r > 80 ? 7 : 4, 350);
@@ -305,18 +392,30 @@
       } else if (e.type === 'bolt') {
         this.bolts.push({ x: e.x, r: e.r, t0: performance.now(), life: 450 });
         Sfx.play('skill:valkyrie');
+      } else if (e.type === 'orb') {
+        // A power-up, hit: it pops, and the shooter has it.
+        this.orbs.delete(e.orb);
+        const color = (POWERS[e.kind] || {}).color || '#ffffff';
+        const def = A.ORBS[e.kind] || { name: 'POWER-UP', text: '' };
+        this.burst(e.x, e.y, [color, '#ffffff', '#ffd23f'], 28, 0.3);
+        this.rings.push({ x: e.x, y: e.y, r: A.ORB.r * 1.8, color, t0: performance.now(), life: 420 });
+        this.texts.push({ x: e.x, y: e.y - 20, text: def.name, color, t0: performance.now(), life: 1500, size: 15 });
+        this.callout(`${def.name}!`, color, `${look.name || 'Hero'}: ${def.text}`);
+        const bit = BUFFS.find(([, k]) => k === e.kind);
+        if (h && bit) h.buffs = (h.buffs || 0) | bit[0];
+        Sfx.play('award');
       }
       if (this.onEvent) this.onEvent(e);
     }
 
-    // A hero walked off the edge (not during a shot).
-    fell(id) {
+    // A hero walked (or jumped) off the edge (not during a shot).
+    fell(id, jumped = false) {
       const h = this.heroes.get(id);
       if (!h) return;
       h.alive = false;
       h.y = MAP.H + 80;
       const look = this.looks.get(id) || {};
-      this.callout(`${(look.name || 'HERO').toUpperCase()} FELL!`, '#ff5a4d', 'Walked off the edge');
+      this.callout(`${(look.name || 'HERO').toUpperCase()} FELL!`, '#ff5a4d', jumped ? 'Jumped off the edge' : 'Walked off the edge');
     }
 
     callout(text, color, sub = '') {
@@ -375,7 +474,7 @@
       if (!this.cam) this.cam = { ...focus };
       if (!this.pan || performance.now() > this.pan) {
         this.pan = null;
-        const k = 1 - Math.exp(-dt / 160);
+        const k = 1 - Math.exp(-dt / (performance.now() < this.easeUntil ? 420 : 160));
         this.cam.x = lerp(this.cam.x, focus.x, k);
         this.cam.y = lerp(this.cam.y, focus.y, k);
       }
@@ -426,7 +525,16 @@
       const shells = this.playReplay(pt) || [];
       const s = this.state;
       const act = s && this.heroes.get(s.active);
-      const focus = shells.length ? { x: shells[0].x, y: shells[0].y } : act ? { x: act.x, y: act.y - 120 } : { x: MAP.W / 2, y: MAP.H / 2 };
+      // The view follows the shot; once it lands it stays there (this.hold) until the next turn starts.
+      let focus;
+      if (shells.length) {
+        focus = { x: shells[0].x, y: shells[0].y };
+        this.hold = { ...focus };
+      } else if (act && act.jump) {
+        const [x, y] = pathAt(act.jump.path, pt - act.jump.t0);
+        focus = { x, y: y - 120 };
+      } else if (this.hold) focus = this.hold;
+      else focus = act ? { x: act.x, y: act.y - 120 } : { x: MAP.W / 2, y: MAP.H / 2 };
       this.camera(focus, dt);
       this.drawSky(pt);
       if (pt < this.shake.until) {
@@ -436,15 +544,104 @@
       if (this.ground) ctx.drawImage(this.ground, Math.round(this.X(0)), Math.round(this.Y(0)), Math.round(MAP.W * this.s), Math.round(MAP.H * this.s));
       this.drawAbyss(pt);
       this.drawBolts(pt);
+      this.drawOrbs(pt);
       for (const h of this.heroes.values()) this.drawHero(h, pt, dt, s);
       for (const sh of shells) this.drawShell(sh, pt);
       this.drawRings(pt);
       this.drawParticles(pt, dt);
       this.drawTexts(pt);
+      for (const h of this.heroes.values()) if (h.say && h.bubbleAt) this.drawBubble(h, pt);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       this.drawWind();
       this.drawCallouts(pt);
+      this.drawFeed(pt);
       if (this.follow) this.drawMinimap(shells);
+    }
+
+    // Power-ups: a bubble with the power-up inside, bobbing in the air.
+    drawOrbs(pt) {
+      const ctx = this.ctx;
+      for (const o of this.orbs.values()) {
+        const grow = Math.min(1, (pt - o.t0) / 400);
+        const X = this.X(o.x);
+        const Y = this.Y(o.y + Math.sin(pt / 380 + o.id * 1.7) * 6);
+        const R = (A.ORB.r + 6) * this.s * grow; // as big as a shot has to come to take it
+        if (R < 1) continue;
+        const color = (POWERS[o.kind] || {}).color || '#ffffff';
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(X, Y, R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 0.9;
+        for (let i = 0; i < 20; i++) {
+          const a = (i / 20) * Math.PI * 2 + pt / 1500;
+          this.block(X + Math.cos(a) * R, Y + Math.sin(a) * R, Math.max(2, 3.5 * this.s), i % 5 === 0 ? '#ffffff' : color);
+        }
+        ctx.globalAlpha = 1;
+        const spr = powerSprite(o.kind);
+        const k = (R * 1.2) / spr.height;
+        ctx.drawImage(spr, Math.round(X - (spr.width * k) / 2), Math.round(Y - (spr.height * k) / 2), Math.round(spr.width * k), Math.round(spr.height * k));
+        this.block(X - R * 0.5, Y - R * 0.5, Math.max(2, 5 * this.s), '#ffffff');
+      }
+    }
+
+    // What a hero said, in a speech bubble over their head (where drawHero put it this frame).
+    drawBubble(h, pt) {
+      const age = pt - h.say.t0;
+      if (age > SAY_MS) {
+        h.say = null;
+        return;
+      }
+      const ctx = this.ctx;
+      const d = this.dpr;
+      const fs = Math.round((this.phone ? 7 : clamp((10 * this.s) / d, 7, 11)) * d);
+      ctx.font = `${fs}px "Press Start 2P", monospace`;
+      ctx.textAlign = 'left';
+      const lines = wrap(ctx, h.say.text, fs * 14, 3);
+      const lh = Math.round(fs * 1.6);
+      const pad = Math.round(fs * 0.6);
+      const w = Math.ceil(Math.max(...lines.map((l) => ctx.measureText(l).width))) + pad * 2;
+      const hgt = pad * 2 + fs + (lines.length - 1) * lh;
+      const [x, bottom] = h.bubbleAt;
+      const bx = Math.round(clamp(x - w / 2, 4 * d, this.W - w - 4 * d));
+      const by = Math.round(bottom - hgt - 6 * d);
+      ctx.globalAlpha = age > SAY_MS - 400 ? (SAY_MS - age) / 400 : 1;
+      const tx = Math.round(clamp(x, bx + 8 * d, bx + w - 8 * d));
+      ctx.fillStyle = '#1b1426';
+      ctx.fillRect(bx - 2 * d, by - 2 * d, w + 4 * d, hgt + 4 * d);
+      ctx.fillRect(tx - 4 * d, by + hgt, 8 * d, 6 * d);
+      ctx.fillStyle = '#fff8e7';
+      ctx.fillRect(bx, by, w, hgt);
+      ctx.fillRect(tx - 2 * d, by + hgt, 4 * d, 4 * d);
+      ctx.fillStyle = '#1b1426';
+      lines.forEach((l, i) => ctx.fillText(l, bx + pad, by + pad + fs + i * lh));
+      ctx.globalAlpha = 1;
+    }
+
+    // The latest chat, at the bottom left: who said it and what.
+    drawFeed(pt) {
+      const list = this.chat.filter((m) => pt - m.t0 < FEED_MS).slice(-4);
+      if (!list.length) return;
+      const d = this.dpr;
+      const fs = this.follow ? 7 : 10;
+      const lh = (fs + 9) * d;
+      const most = Math.max(8, Math.floor((this.W * 0.62) / (fs * d)));
+      let y = this.H - (10 + this.chatLift) * d;
+      for (let i = list.length - 1; i >= 0; i--) {
+        const m = list[i];
+        const age = pt - m.t0;
+        this.ctx.globalAlpha = age > FEED_MS - 1000 ? (FEED_MS - age) / 1000 : 1;
+        const name = `${m.name}:`;
+        const room = Math.max(4, most - name.length - 1);
+        const text = m.text.length > room ? `${m.text.slice(0, room - 1)}…` : m.text;
+        this.ctx.fillStyle = 'rgba(27,20,38,0.6)';
+        this.ctx.fillRect(4 * d, y - (fs + 5) * d, (name.length + text.length + 2) * fs * d, lh - 2 * d);
+        const nw = this.text(name, 8 * d, y, fs, (COLORS[m.color] || COLORS[0]).Q, 'left');
+        this.text(text, 8 * d + nw + fs * d, y, fs, '#ffffff', 'left');
+        y -= lh;
+      }
+      this.ctx.globalAlpha = 1;
     }
 
     // The sky, with far-off hills, from the battlefield's colors.
@@ -497,17 +694,31 @@
 
     drawHero(h, pt, dt, s) {
       const look = this.looks.get(h.id);
+      h.bubbleAt = null;
       if (!look) return;
       const ctx = this.ctx;
-      // Falling heroes drop smoothly to where they land.
-      h.shownY = h.shownY === undefined ? h.y : h.shownY < h.y ? Math.min(h.y, h.shownY + dt * 0.9) : h.y;
-      if (!h.alive && h.shownY > MAP.H + 40) return;
-      const X = this.X(h.x);
-      const Y = this.Y(h.shownY);
+      // A jump plays out along its path. Otherwise falling heroes drop smoothly to where they land, and
+      // climbing ones step up.
+      let at = null;
+      if (h.jump) {
+        const J = h.jump;
+        if (pt - J.t0 >= J.end) {
+          h.jump = null;
+          if (J.fell) this.fell(h.id, true);
+          h.shownY = h.y;
+        } else at = pathAt(J.path, pt - J.t0);
+      }
+      if (!at) h.shownY = h.shownY === undefined ? h.y : h.shownY < h.y ? Math.min(h.y, h.shownY + dt * 0.9) : Math.max(h.y, h.shownY - dt * 0.4);
+      const alive = h.alive || Boolean(at);
+      const hx = at ? at[0] : h.x;
+      const hy = at ? at[1] : h.shownY;
+      if (!alive && hy > MAP.H + 40) return;
+      const X = this.X(hx);
+      const Y = this.Y(hy);
       const u = PX * this.s;
       const team = TEAMS[h.team];
       const up = s && s.active === h.id && s.phase === 'aim';
-      if (!h.alive) {
+      if (!alive) {
         // A gravestone where they fell.
         ctx.fillStyle = '#1b1426';
         ctx.fillRect(Math.round(X - 6 * u), Math.round(Y - 14 * u), Math.round(12 * u), Math.round(14 * u));
@@ -516,33 +727,53 @@
         ctx.fillStyle = '#4a4a60';
         ctx.fillRect(Math.round(X - u), Math.round(Y - 11 * u), Math.round(2 * u), Math.round(7 * u));
         ctx.fillRect(Math.round(X - 3 * u), Math.round(Y - 9 * u), Math.round(6 * u), Math.round(2 * u));
+        h.bubbleAt = [X, Y - 18 * u]; // out of the fight, still in the chat
         return;
       }
-      // Team mark under the feet.
-      ctx.fillStyle = team.color;
-      ctx.fillRect(Math.round(X - 9 * u), Math.round(Y - u * 0.5), Math.round(18 * u), Math.max(2, Math.round(u)));
+      // Team mark under the feet (on the ground: not in mid-jump).
+      if (!at) {
+        ctx.fillStyle = team.color;
+        ctx.fillRect(Math.round(X - 9 * u), Math.round(Y - u * 0.5), Math.round(18 * u), Math.max(2, Math.round(u)));
+      }
       const hurt = pt - (h.hurtAt || 0) < 120;
       if (hurt) ctx.globalAlpha = 0.5;
-      // Their pet, as a mount (bobbing along when they walk), and the hero on its back.
-      const flipDraw = (spr, scale, feet, dy = 0) => {
-        const w = spr.width * scale;
-        const hh = spr.height * scale;
+      // Their pet, as a mount, and the hero on its back. Walking, the pet steps along (a slime squashes)
+      // and the rider bobs; in a jump its legs stretch out.
+      const flipDraw = (spr, scale, feet, sx = 1, sy = 1) => {
+        const w = spr.width * scale * sx;
+        const hh = spr.height * scale * sy;
         ctx.save();
         ctx.translate(Math.round(X), 0);
         if (h.face < 0) ctx.scale(-1, 1);
-        ctx.drawImage(spr, Math.round(-w / 2), Math.round(feet - hh + dy), Math.round(w), Math.round(hh));
+        ctx.drawImage(spr, Math.round(-w / 2), Math.round(feet - hh), Math.round(w), Math.round(hh));
         ctx.restore();
         return hh;
       };
-      const moved = Math.abs(h.x - (h.drawnX ?? h.x)) > 0.5;
-      h.drawnX = h.x;
-      const step = moved ? Math.abs(Math.sin(pt / 90)) * -2 * this.s : 0;
-      const mount = petSprite(look.pet);
+      if (!at && Math.abs(hx - (h.drawnX ?? hx)) > 0.3) h.walkUntil = pt + 180;
+      h.drawnX = hx;
+      const walking = !at && pt < (h.walkUntil || 0);
+      const step = at ? 1 : walking ? 1 + (Math.floor(pt / 120) % 2) : 0;
+      const slime = look.pet === 3 && step ? (at ? [0.88, 1.14] : step === 1 ? [1.14, 0.86] : [0.94, 1.08]) : [1, 1];
+      const mount = petSprite(look.pet, step);
       let feet = Y;
-      if (mount) feet = Y + step - flipDraw(mount, u * 2, Y, step) * 0.55;
+      if (mount) feet = Y - flipDraw(mount, u * 2, Y, slime[0], slime[1]) * 0.55 + (step === 2 ? -u : 0);
+      else if (step === 2) feet -= u;
       const hh = flipDraw(heroSprite(look), u, feet);
       ctx.globalAlpha = 1;
-      // HP bar and name.
+      // Power-ups waiting: a shield around them, sparks of fury.
+      if (h.buffs & 2) {
+        ctx.globalAlpha = 0.45 + Math.sin(pt / 200) * 0.15;
+        const R = 40 * this.s;
+        for (let i = 0; i < 24; i++) {
+          const a = (i / 24) * Math.PI * 2;
+          this.block(X + Math.cos(a) * R, Y - A.HERO_MID * this.s + Math.sin(a) * R, Math.max(2, 3 * this.s), '#7aa7ff');
+        }
+        ctx.globalAlpha = 1;
+      }
+      if ((h.buffs & 1) && Math.random() < 0.2) {
+        this.particles.push({ x: hx + rand(-16, 16), y: hy - rand(10, 60), vx: 0, vy: -0.05, g: 0, life: 500, t0: pt, size: 4, color: Math.random() < 0.5 ? '#ff7b1c' : '#ffd23f' });
+      }
+      // HP bar and name, with the power-ups waiting beside the bar.
       const bw = 40 * this.s;
       const by = feet - hh - 10 * this.s;
       const frac = clamp(h.hp / A.HP, 0, 1);
@@ -550,9 +781,18 @@
       ctx.fillRect(Math.round(X - bw / 2 - 1), Math.round(by - 1), Math.round(bw + 2), Math.max(3, Math.round(5 * this.s)) + 2);
       ctx.fillStyle = frac > 0.5 ? '#5bd46a' : frac > 0.25 ? '#ffd23f' : '#ff5a4d';
       ctx.fillRect(Math.round(X - bw / 2), Math.round(by), Math.round(bw * frac), Math.max(3, Math.round(5 * this.s)));
+      let ix = X + bw / 2 + 4 * this.s;
+      for (const [bit, key] of BUFFS) {
+        if (!(h.buffs & bit)) continue;
+        const spr = powerSprite(key);
+        const k = Math.max(1, (20 * this.s) / spr.height);
+        ctx.drawImage(spr, Math.round(ix), Math.round(by + 3 * this.s - spr.height * k * 0.6), Math.round(spr.width * k), Math.round(spr.height * k));
+        ix += spr.width * k + 2;
+      }
       const fs = this.phone ? 7 : clamp((10 * this.s) / this.dpr, 7, 12);
       this.text(look.name, X, by - 5 * this.dpr, fs, h.id === this.selfId && this.phone ? '#ffffff' : team.color);
-      if (up) this.drawAim(h, X, Y, pt);
+      h.bubbleAt = [X, by - (fs + 8) * this.dpr];
+      if (up && !at) this.drawAim(h, X, Y, pt);
     }
 
     // Whose turn: a bouncing arrow, the aim line through the angle's arc, and their power filling up.
@@ -752,6 +992,10 @@
         ctx.fillStyle = hh.id === this.selfId ? '#ffffff' : TEAMS[hh.team].color;
         ctx.fillRect(x + hh.x * k - 2 * d, y + (hh.y - 20) * k - 2 * d, 4 * d, 4 * d);
       }
+      for (const o of this.orbs.values()) {
+        ctx.fillStyle = (POWERS[o.kind] || {}).color || '#ffffff';
+        ctx.fillRect(x + o.x * k - 2 * d, y + o.y * k - 2 * d, 4 * d, 4 * d);
+      }
       for (const sh of shells) {
         ctx.fillStyle = '#ffd23f';
         ctx.fillRect(x + sh.x * k - 1.5 * d, y + sh.y * k - 1.5 * d, 3 * d, 3 * d);
@@ -761,9 +1005,9 @@
   }
 
   // ---- the phone's controls -----------------------------------------------------------
-  // On your turn: ◀ ▶ walk (held), ▲ ▼ angle (held), FIRE: hold to charge, let go to shoot. Pick SHOT 1,
-  // SHOT 2 or your special, and use HEAL or DOUBLE. On a keyboard: arrows walk and aim, Space charges and
-  // fires, 1, 2 and 3 pick the shot, H heals, X doubles.
+  // On your turn: ◀ ▶ walk (held), JUMP, ▲ ▼ angle (held), FIRE: hold to charge, let go to shoot. Pick
+  // SHOT 1, SHOT 2 or your special, and use HEAL or DOUBLE. On a keyboard: arrows walk and aim, J jumps,
+  // Space charges and fires, 1, 2 and 3 pick the shot, H heals, X doubles.
   class ArtyPad {
     constructor(root, { send, view }) {
       this.root = root;
@@ -779,9 +1023,11 @@
       this.walking = 0;
       this.tilting = 0;
       this.sentAim = '';
+      this.airUntil = 0; // in the middle of a jump until then: no firing
       const q = (sel) => root.querySelector(sel);
       this.el = {
         left: q('[data-a="left"]'), right: q('[data-a="right"]'), up: q('[data-a="up"]'), down: q('[data-a="down"]'), fire: q('[data-a="fire"]'),
+        jump: q('[data-a="jump"]'),
         shot: q('[data-a="shot"]'), shot2: q('[data-a="shot2"]'), special: q('[data-a="special"]'), heal: q('[data-a="heal"]'), double: q('[data-a="double"]'),
         power: q('.ap-power i'), last: q('.ap-power b'), angle: q('.ap-angle'), move: q('.ap-move i'), wait: q('.ap-wait'),
       };
@@ -799,6 +1045,7 @@
       hold(this.el.up, () => { this.tilting = 1; }, () => { this.tilting = 0; this.aim(true); });
       hold(this.el.down, () => { this.tilting = -1; }, () => { this.tilting = 0; this.aim(true); });
       hold(this.el.fire, () => this.charge(), () => this.release());
+      hold(this.el.jump, () => this.jump(), () => {});
       this.el.shot.onclick = () => this.pick('one');
       this.el.shot2.onclick = () => this.pick('two');
       this.el.special.onclick = () => this.pick('special');
@@ -814,6 +1061,7 @@
         else if (k === 'arrowup' || k === 'w') this.tilting = 1;
         else if (k === 'arrowdown' || k === 's') this.tilting = -1;
         else if (k === ' ') this.charge();
+        else if (k === 'j') this.jump();
         else if (k === '1') this.pick('one');
         else if (k === '2') this.pick('two');
         else if (k === '3') this.pick('special');
@@ -885,8 +1133,20 @@
       this.send('arty:aim', { angle: Math.round(this.angle), face: this.face });
     }
 
+    // Jump the way you face (it uses up some of your walk).
+    jump() {
+      const h = this.hero;
+      if (!this.mine || this.charging || performance.now() < this.airUntil || !h || (h.stamina ?? 0) < A.JUMP.cost) return;
+      this.airUntil = performance.now() + 400; // until the server says how long
+      this.send('arty:jump', { face: this.face }, (res) => {
+        this.airUntil = res && res.ok ? performance.now() + res.t : 0;
+        this.render();
+      });
+      this.render();
+    }
+
     charge() {
-      if (!this.mine || this.charging) return;
+      if (!this.mine || this.charging || performance.now() < this.airUntil) return;
       this.walk(0);
       this.aim(true);
       this.charging = { t0: performance.now(), sentAt: 0 };
@@ -897,7 +1157,13 @@
       if (!this.mine || !this.charging) return;
       const power = Math.round(this.power);
       this.charging = null;
-      this.send('arty:fire', { angle: Math.round(this.angle), face: this.face, power, shot: this.shot });
+      this.send('arty:fire', { angle: Math.round(this.angle), face: this.face, power, shot: this.shot }, (res) => {
+        if (res && res.ok) return;
+        // Not fired (still landing from a jump, say): your turn goes on.
+        const s = this.state;
+        this.mine = Boolean(s && s.phase === 'aim' && this.hero && s.active === this.hero.id && this.hero.alive);
+        this.render();
+      });
       this.mine = false;
       this.render();
     }
@@ -943,12 +1209,15 @@
       const E = this.el;
       const h = this.hero;
       this.root.classList.toggle('mine', this.mine);
-      for (const b of [E.left, E.right, E.up, E.down, E.fire, E.shot, E.shot2, E.special, E.heal, E.double]) b.disabled = !this.mine;
+      const air = performance.now() < this.airUntil;
+      for (const b of [E.left, E.right, E.up, E.down, E.fire, E.shot, E.shot2, E.special, E.heal, E.double, E.jump]) b.disabled = !this.mine;
+      E.fire.disabled = !this.mine || air;
+      E.jump.disabled = !this.mine || air || !h || (h.stamina ?? 0) < A.JUMP.cost;
       E.power.style.width = `${this.mine ? this.power : 0}%`;
       E.last.style.left = `${h ? h.lastPower || 0 : 0}%`;
       E.last.classList.toggle('hidden', !h || !h.lastPower);
       E.angle.textContent = `${Math.round(this.mine ? this.angle : h ? h.angle : 45)}°`;
-      E.move.style.width = `${h ? (100 * (h.stamina ?? A.STAMINA)) / A.STAMINA : 0}%`;
+      E.move.style.width = `${h ? Math.min(100, (100 * (h.stamina ?? A.STAMINA)) / (h.maxStamina || A.STAMINA)) : 0}%`;
       E.shot.classList.toggle('on', this.shot === 'one');
       E.shot2.classList.toggle('on', this.shot === 'two');
       E.special.classList.toggle('on', this.shot === 'special');

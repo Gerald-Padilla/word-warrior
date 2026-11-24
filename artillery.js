@@ -27,6 +27,10 @@ function createArty({ players, length = 'full', level = 'normal', specials = tru
     active: null,
     endsAt: 0,
     double: false, // the active hero used DOUBLE this turn
+    busyUntil: 0, // the active hero is in the air (jumping) until then
+    mult: 1, // the shot being worked out hits this much harder (FURY)
+    orbs: [], // power-ups floating over the field: { id, kind, x, y }
+    orbSeq: 0,
     winner: null,
     rng,
   };
@@ -52,12 +56,18 @@ function spotFor(G, team, i = null, n = 1) {
   return { x: side(0.2) * MAP.W, y: G.terrain.groundBelow(side(0.2) * MAP.W, 0) ?? MAP.H / 2 };
 }
 
+// The hero's mount: their pet, and how it moves (see MOUNTS).
+const mountOf = (H) => A.MOUNTS[H.pet] || A.MOUNTS[0];
+
 function addHero(G, p, team = p.team, i = null, n = 1) {
   const spot = spotFor(G, team, i, n);
+  const pet = Number.isInteger(p.pet) && A.MOUNTS[p.pet] ? p.pet : 0;
+  const stamina = A.STAMINA * (A.MOUNTS[pet].stamina || 1);
   const H = {
-    id: p.id, team, cls: A.SHOTS[p.cls] ? p.cls : 'knight', x: spot.x, y: spot.y, face: team === 0 ? 1 : -1, angle: 45,
-    hp: A.HP, max: A.HP, alive: true, special: 0, items: { heal: 1, double: 1 }, stamina: A.STAMINA, away: false,
-    score: 0, dealt: 0, kos: 0, deaths: 0, best: 0, far: 0, power: 0, lastPower: 0,
+    id: p.id, team, cls: A.SHOTS[p.cls] ? p.cls : 'knight', pet, x: spot.x, y: spot.y, face: team === 0 ? 1 : -1, angle: 45,
+    hp: A.HP, max: A.HP, alive: true, special: 0, items: { heal: 1, double: 1 }, stamina, maxStamina: stamina, away: false,
+    fury: false, shield: false, haste: false, twin: false, // power-ups waiting to be used
+    score: 0, dealt: 0, kos: 0, deaths: 0, best: 0, far: 0, power: 0, lastPower: 0, orbs: 0,
   };
   G.heroes.set(H.id, H);
   G.order[team].push(H.id);
@@ -92,12 +102,53 @@ function startTurn(G, now) {
   G.active = H.id;
   G.phase = 'aim';
   G.double = false;
+  G.busyUntil = 0;
   G.wind = Math.round((G.rng() * 2 - 1) * G.level.wind);
   G.endsAt = now + G.level.turnMs;
-  H.stamina = A.STAMINA;
+  // Your shield lasts until now; HASTE doubles how far you can go this turn.
+  H.shield = false;
+  H.maxStamina = A.STAMINA * (mountOf(H).stamina || 1) * (H.haste ? A.ORBS.haste.stamina : 1);
+  H.haste = false;
+  H.stamina = H.maxStamina;
   H.power = 0;
   if (G.specials) H.special = Math.min(A.SPECIAL_MAX, H.special + A.SPECIAL_PER_TURN);
+  if (G.turn === 1 || (G.turn % A.ORB.every === 1 && G.orbs.length < A.ORB.max)) spawnOrb(G);
   return H;
+}
+
+// A power-up, floating somewhere over the middle of the field, in the open and not too near another.
+function spawnOrb(G) {
+  const kinds = Object.keys(A.ORBS);
+  for (let k = 0; k < 40; k++) {
+    const x = MAP.W * (0.3 + G.rng() * 0.4);
+    const ground = G.terrain.groundBelow(x, 0);
+    const y = Math.round(Math.max(90, (ground === null ? MAP.H * 0.65 : ground) - 110 - G.rng() * 220));
+    const T = G.terrain;
+    if ([[0, 0], [0, A.ORB.r], [0, -A.ORB.r], [A.ORB.r, 0], [-A.ORB.r, 0]].some(([dx, dy]) => T.solid(x + dx, y + dy))) continue;
+    if (G.orbs.some((o) => Math.hypot(o.x - x, o.y - y) < 200)) continue;
+    const o = { id: ++G.orbSeq, kind: kinds[Math.floor(G.rng() * kinds.length)], x: Math.round(x), y };
+    G.orbs.push(o);
+    return o;
+  }
+  return null;
+}
+
+// The shooter takes a power-up their shot hit.
+function grab(G, H, orbId, t, events) {
+  const i = G.orbs.findIndex((o) => o.id === orbId);
+  if (i < 0) return;
+  const [o] = G.orbs.splice(i, 1);
+  events.push({ t: Math.round(t), type: 'orb', id: H.id, orb: o.id, kind: o.kind, x: o.x, y: o.y });
+  H.orbs += 1;
+  if (o.kind === 'potion') {
+    if (!H.alive) return;
+    const before = H.hp;
+    H.hp = Math.min(H.max, H.hp + A.ORBS.potion.hp);
+    if (H.hp > before) events.push({ t: Math.round(t), type: 'heal', id: H.id, d: H.hp - before });
+  } else if (o.kind === 'fury') H.fury = true;
+  else if (o.kind === 'shield') H.shield = true;
+  else if (o.kind === 'haste') H.haste = true;
+  else if (o.kind === 'triple') H.twin = true;
 }
 
 const mine = (G, id) => {
@@ -105,18 +156,20 @@ const mine = (G, id) => {
   return G.phase === 'aim' && H && H.alive && G.active === id ? H : null;
 };
 
-// Walk the active hero dir (-1 or 1) for dt seconds, along the ground, while their stamina lasts.
-// Returns 'fell' if they walked off into the drop.
+// Walk the active hero dir (-1 or 1) for dt seconds, along the ground, while their stamina lasts (their
+// mount sets how fast, and how high a step they can climb). Returns 'fell' if they walked off into the drop.
 function walk(G, id, dir, dt) {
   const H = mine(G, id);
   if (!H || !dir) return null;
   H.face = dir;
-  let left = Math.min(H.stamina, A.WALK_SPEED * dt);
+  const M = mountOf(H);
+  const climb = A.CLIMB * (M.climb || 1);
+  let left = Math.min(H.stamina, A.WALK_SPEED * (M.speed || 1) * dt);
   while (left > 0) {
     const nx = H.x + dir * Math.min(2, left);
     left -= 2;
     if (nx < 12 || nx > MAP.W - 12) break;
-    const y = G.terrain.standAt(nx, H.y);
+    const y = G.terrain.standAt(nx, H.y, climb);
     if (y === false) break; // a wall
     H.stamina = Math.max(0, H.stamina - 2);
     H.x = nx;
@@ -127,6 +180,22 @@ function walk(G, id, dir, dt) {
     H.y = y;
   }
   return 'ok';
+}
+
+// Jump the way they face (their mount sets how far and how high). Worked out in full now: returns the
+// path for the screens to play, how long it takes (they can't do anything else until they land), and
+// whether they fell off the bottom (a KO). null: not now, or not enough stamina left.
+function jump(G, id, now) {
+  const H = mine(G, id);
+  if (!H || now < G.busyUntil || H.stamina < A.JUMP.cost) return null;
+  const M = mountOf(H);
+  const j = A.hop(G.terrain, H.x, H.y, H.face * A.JUMP.vx * (M.jumpX || 1), -A.JUMP.vy * (M.jumpY || 1), M.glide || 0);
+  H.stamina = Math.max(0, H.stamina - A.JUMP.cost);
+  H.x = Math.round(j.x);
+  H.y = j.y;
+  G.busyUntil = now + j.t;
+  if (j.fell) knockOut(G, H, null, 0, [], 'fell');
+  return { id: H.id, path: j.path, t: j.t, fell: j.fell, x: H.x, y: H.y, stamina: Math.round(H.stamina) };
 }
 
 function aim(G, id, angle, face) {
@@ -156,7 +225,7 @@ function useItem(G, id, item) {
 // screens need to play it out: { id, special, shells: [{ kind, t0, path, booms }], events, total }.
 function fire(G, id, data, now) {
   const H = mine(G, id);
-  if (!H) return null;
+  if (!H || now < G.busyUntil) return null;
   aim(G, id, data?.angle, data?.face);
   const power = Math.max(0, Math.min(100, Number(data?.power) || 0));
   const kit = A.SHOTS[H.cls];
@@ -165,7 +234,12 @@ function fire(G, id, data, now) {
   const def = special ? kit.special.shot : alt ? kit.alt.shot : kit.shot;
   if (special) H.special = 0;
   H.lastPower = power;
-  const out = { id: H.id, special, alt, angle: H.angle, face: H.face, power, wind: G.wind, shells: [], events: [], total: 0 };
+  // Power-ups this shot uses up: FURY hits harder, TWIN SHOT fires it once more (on top of DOUBLE).
+  G.mult = H.fury ? A.ORBS.fury.mult : 1;
+  const rounds = 1 + (G.double ? 1 : 0) + (H.twin ? 1 : 0);
+  const out = { id: H.id, special, alt, angle: H.angle, face: H.face, power, wind: G.wind, fury: H.fury, twin: H.twin, shells: [], events: [], total: 0 };
+  H.fury = false;
+  H.twin = false;
   // One volley: `count` shells at once (fanned out) or one after another (`gap`). DOUBLE fires it again.
   const volley = [];
   const n = def.count || 1;
@@ -173,7 +247,7 @@ function fire(G, id, data, now) {
     volley.push({ t0: def.gap ? i * def.gap : 0, off: def.spread ? (i - (n - 1) / 2) * def.spread : 0 });
   }
   let start = 0;
-  for (let round = 0; round < (G.double ? 2 : 1); round++) {
+  for (let round = 0; round < rounds; round++) {
     let end = start;
     for (const v of volley) {
       if (!H.alive && !def.teleport) break;
@@ -182,6 +256,7 @@ function fire(G, id, data, now) {
     start = end + 350;
   }
   out.total = Math.max(500, ...out.shells.map((s) => s.end));
+  G.mult = 1;
   G.phase = 'fly';
   G.endsAt = now + out.total + A.SHOW_MS;
   return out;
@@ -199,8 +274,9 @@ function shell(G, H, def, power, off, t0, out, from = null) {
   let done = t0;
   let bounces = def.bounce || 0;
   for (;;) {
-    const flight = A.fly(G.terrain, heroes(), from ? null : H.id, s, def, G.wind);
+    const flight = A.fly(G.terrain, heroes(), from ? null : H.id, s, def, G.wind, G.orbs);
     for (const p of flight.path) record.path.push([Math.round(t + p[0]), p[1], p[2]]);
+    for (const g of flight.grabs) grab(G, H, g.id, t + g.t, out.events);
     t += flight.end.t;
     let end = flight.end;
     if (end.hit === 'gone') break;
@@ -304,9 +380,13 @@ function boom(G, H, def, end, t, record, out) {
     }
     out.events.push({ t: Math.round(t), type: 'bolt', x, r: def.boltR });
   }
+  // A power-up caught in the blast is the shooter's too.
+  for (const o of [...G.orbs]) if (Math.hypot(o.x - x, o.y - y) < def.r + A.ORB.r) grab(G, H, o.id, t, out.events);
   let drained = 0;
-  for (const [tid, dmg] of hits) {
+  for (const [tid, raw] of hits) {
     const T = G.heroes.get(tid);
+    // FURY on the shot hits harder; a SHIELD takes half.
+    const dmg = Math.round(raw * G.mult * (T && T.shield ? A.ORBS.shield.guard : 1));
     if (!T || !T.alive || dmg <= 0) continue;
     T.hp -= dmg;
     const enemy = T.team !== H.team;
@@ -411,15 +491,18 @@ function finish(G, winner) {
   for (const H of G.heroes.values()) if (H.team === winner) H.score += A.WIN_POINTS;
 }
 
-// What every screen gets with the room's state: the battlefield (seed and style), whose turn, the wind and
-// every hero: [id, team, x, y, hp, alive, face, angle, special, heal item, double item, stamina].
+// What every screen gets with the room's state: the battlefield (seed and style), whose turn, the wind, the
+// power-ups ([id, kind, x, y]) and every hero: [id, team, x, y, hp, alive, face, angle, special, heal item,
+// double item, stamina, last power, power-ups waiting (1 fury, 2 shield, 4 haste, 8 twin), most stamina].
 function stateOf(G) {
   return {
     seed: G.seed, style: G.style, turn: G.turn, turns: G.turns, team: G.team, active: G.active, wind: G.wind, phase: G.phase,
     endsAt: G.endsAt, double: G.double, winner: G.winner, specials: G.specials, turnMs: G.level.turnMs, boost: Math.round(sudden(G) * 10) / 10,
+    orbs: G.orbs.map((o) => [o.id, o.kind, o.x, o.y]),
     heroes: [...G.heroes.values()].map((H) => [H.id, H.team, Math.round(H.x), H.y, Math.max(0, H.hp), H.alive ? 1 : 0, H.face, H.angle,
-      Math.floor(H.special), H.items.heal, H.items.double, Math.round(H.stamina), H.lastPower]),
+      Math.floor(H.special), H.items.heal, H.items.double, Math.round(H.stamina), H.lastPower,
+      (H.fury ? 1 : 0) | (H.shield ? 2 : 0) | (H.haste ? 4 : 0) | (H.twin ? 8 : 0), Math.round(H.maxStamina)]),
   };
 }
 
-module.exports = { createArty, addHero, removeHero, startTurn, walk, aim, useItem, fire, verdict, finish, stateOf, aliveIn };
+module.exports = { createArty, addHero, removeHero, startTurn, walk, jump, aim, useItem, fire, verdict, finish, stateOf, aliveIn, spawnOrb, mountOf };

@@ -1008,10 +1008,13 @@
       let pet = this.pets.get(h.id);
       const want = { x: h.x - Math.cos(h.face) * 34, y: h.y + 10 };
       if (!pet || Math.hypot(pet.x - want.x, pet.y - want.y) > 220) pet = { ...want };
+      const was = { x: pet.x, y: pet.y };
       pet.x = lerp(pet.x, want.x, 0.08);
       pet.y = lerp(pet.y, want.y, 0.08);
       this.pets.set(h.id, pet);
-      const pspr = petSprite(look.pet);
+      // Trotting along while it's catching up (its feet step), standing once it's there.
+      const trot = Math.hypot(pet.x - was.x, pet.y - was.y) > 0.3;
+      const pspr = petSprite(look.pet, trot ? 1 + (Math.floor(pt / 120) % 2) : 0);
       const pounce = Math.max(0, 1 - (pt - (this.petHops.get(h.id) || 0)) / 220);
       const petY = this.Y(pet.y) + 10 * s - Math.abs(Math.sin(pt / 160)) * 3 * s - Math.sin(pounce * Math.PI) * 9 * s;
       if (pspr && alpha > 0.3) this.sprite(pspr, this.X(pet.x), petY, u * 0.9, pet.x > h.x, alpha);

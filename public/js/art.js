@@ -50,16 +50,19 @@
     { name: 'Onyx', G: '#5a4f73', g: '#2a2238' },
   ];
 
-  // Companions that trot along beside their hero. 0 is no pet.
+  // Companions that trot along beside their hero. 0 is no pet. walk: the bottom row (the feet) in the two
+  // steps of a walk (a slime has no feet: it squashes along instead).
   const PETS = [
     null,
     {
       name: 'Cat', pal: { A: '#8a8aa0', a: '#5a5a70', E: '#ffd23f' },
       rows: ['.K....K.', 'KAK..KAK', 'KAAKKAAK', 'KAEAAEAK', 'KAAaaAAK', '.KAAAAK.', '.KAAAAKK', '..KKKKAK'],
+      walk: ['.KK..KAK', '...KK.AK'],
     },
     {
       name: 'Owl', pal: { A: '#a0703c', a: '#6e4a24', E: '#ffd23f', Y: '#ff9a3c' },
       rows: ['.K....K.', 'KAKKKKAK', 'KWWAAWWK', 'KWEAAEWK', 'KAAYYAAK', 'KAaAAaAK', '.KAAAAK.', '..Y..Y..'],
+      walk: ['.Y....Y.', '...YY...'],
     },
     {
       name: 'Slime', pal: { A: '#6fd34f', a: '#3c8f2a' },
@@ -68,10 +71,12 @@
     {
       name: 'Dragon', pal: { A: '#e8374a', a: '#a01c2e', Y: '#ffd23f' },
       rows: ['Y.....Y.', 'KK...KK.', 'KAKKKAK.', 'KAWAWAKK', '.KAAAAKA', 'KAYYYAKA', '.KAAAAKK', '..KK.KK.'],
+      walk: ['.KK...KK', '...KKK..'],
     },
     {
       name: 'Fox', pal: { A: '#ee7b2a', a: '#a8481a' },
       rows: ['K.....K.', 'KK...KK.', 'KAKKKAK.', 'KAWAWAK.', '.KAAAK..', '.KWWWKKK', '.KAAAKAW', '..K.KKKK'],
+      walk: ['.K...KKK', '...KKKKK'],
     },
   ];
 
@@ -733,11 +738,14 @@
     return cache.get(key);
   }
 
-  function petSprite(index) {
+  // A pet standing (frame 0), or in one of the two steps of its walk (1, 2).
+  function petSprite(index, frame = 0) {
     const pet = PETS[index];
     if (!pet) return null;
-    if (!cache.has(`pet:${index}`)) cache.set(`pet:${index}`, paint(pet.rows, { ...BASE, ...pet.pal }));
-    return cache.get(`pet:${index}`);
+    const step = frame && pet.walk ? pet.walk[(frame - 1) % 2] : null;
+    const key = `pet:${index}:${step ? frame : 0}`;
+    if (!cache.has(key)) cache.set(key, paint(step ? pet.rows.slice(0, -1).concat(step) : pet.rows, { ...BASE, ...pet.pal }));
+    return cache.get(key);
   }
 
   function petDataURL(index) {

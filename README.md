@@ -77,7 +77,7 @@ that computer for the next game.
 | **SKILLS** | Every 8 words you type charges your class's skill. A button next to the typing box fills up; when it glows, tap it (or press Space on a keyboard) to use it. Every screen then shows a banner with that hero's portrait and the skill's name, the field dims around the hero, and the skill plays out from them: meteors crash down, arrows rain, lightning strikes, shurikens curve out, a cannon fires, ghosts rise. The words it's about to hit are marked in the hero's color and hold still until the hit lands. The game doesn't pause, so nobody loses their place mid-word. |
 | **AWARDS** | After the podium: Speed Demon (fastest WPM), Sharpshooter (fewest typos), Streak Master, Clutch Saver (words saved at the last second), Monster Slayer, Treasure Hunter (most special words) and Dragon Slayer. Everyone's phone shows their own WPM, accuracy and best streak. |
 | **EMOTES** | Players tap 👍 😂 😮 🔥 👏 😭 on their phones in the lobby, between rounds and on the results screen; the emoji pops up over their hero on the big screen. |
-| **CHAT** | Players chat from their phones while they wait in the lobby. Messages show in a panel beside the heroes on the big screen and in a bubble on the sender's tile. Messages are up to 80 characters, one every 1.5 seconds; common English and Tagalog swear words are masked with asterisks (a basic filter, not a moderator). **CLEAR** on the big screen wipes the chat for everyone, and the hero's **X** still removes a player. |
+| **CHAT** | Players chat from their phones while they wait in the lobby (and during an artillery battle: see below). Messages show in a panel beside the heroes on the big screen and in a bubble on the sender's tile. Messages are up to 80 characters, one every 1.5 seconds; common English and Tagalog swear words are masked with asterisks (a basic filter, not a moderator). **CLEAR** on the big screen wipes the chat for everyone, and the hero's **X** still removes a player. |
 | **MY WORDS** | Paste your own words (team names, product names, in-jokes). They're sorted by length into the rounds and come up often. Tick *Only use my words* to drop the built-in words for any round you've given at least 6 words. |
 | **MUSIC** | A chiptune soundtrack on the big screen: calm in the lobby and breaks, a track per round, a boss theme. |
 
@@ -394,12 +394,15 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   controls light up; everyone else watches. You have 20 seconds (25 on easy, 15 on hard).
   - **Walk:** ◀ ▶ walk a little (the blue bar) and turn you around. You can climb small steps but not walls,
     and you can walk off a ledge.
+  - **Jump:** **JUMP** leaps forward the way you face: out of a crater, up onto a ledge, or over a gap. Each
+    jump uses up some of the blue bar (a few jumps a turn), and you can't fire until you land. Jump off the
+    edge of the world and you're out.
   - **Aim:** ▲ ▼ set the angle, from a little below level to straight up.
   - **Fire:** hold **FIRE** to charge the power (about 2 seconds to full), and let go to shoot. A white mark on
     the power bar shows your last shot's power.
   - **Pick a shot:** **SHOT 1**, **SHOT 2**, or **SPECIAL** when it's charged.
-  - **Keyboard:** the arrow keys walk and aim, Space charges and fires, 1, 2 and 3 pick the shot, H heals and
-    X doubles.
+  - **Keyboard:** the arrow keys walk and aim, J jumps, Space charges and fires, 1, 2 and 3 pick the shot,
+    H heals and X doubles. Enter opens the chat and Escape closes it.
 - **Wind.** It changes every turn (stronger on hard) and pushes every shot sideways; the arrow at the top shows
   which way and how hard. Arrows barely feel it, and soul bolts not at all.
 - **Shots.** Every class has two shots of its own to pick from (table below). A blast hurts everyone near
@@ -416,21 +419,48 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   and a little every turn; pick **SPECIAL** when it says READY.
 - **Items.** Every hero has one **HEAL** (+40 HP) and one **DOUBLE** (fire your shot twice this turn) per
   battle. Using one doesn't end your turn.
+- **Power-ups.** Bubbles float in the air over the middle of the battlefield: one at the start, then a new
+  one every 3 turns (up to 2 at a time). Hit one with a shot, or catch it in a blast, and it's yours, whoever
+  you were aiming at. The heroes show the power-ups they have waiting beside their HP bar.
+
+  | Power-up | What it does |
+  |---|---|
+  | **Potion** | +35 HP, right away |
+  | **Fury** | Your next shot hits 50% harder |
+  | **Shield** | You take half damage until your next turn |
+  | **Haste** | Walk and jump twice as far on your next turn |
+  | **Twin Shot** | Your next shot fires twice (three times with DOUBLE) |
+
 - **Winning.** The battle goes on until a team is wiped out (or both are, a draw). To make sure it ends,
   **sudden death** starts at turn 30 in a full game (16 in one round): every turn from then on, shots hit
   10% harder (up to four times as hard). **SKIP** ends the battle at once, and the team with more HP wins
   (as does a battle somehow still going after 200 turns).
-- **Mounts.** Heroes ride their companion pet into battle; a hero without one fights on foot. Hero and
-  mount are one target, the same size for everyone.
+- **Mounts.** Heroes ride their companion pet into battle (it trots along when they walk); a hero without
+  one fights on foot. Hero and mount are one target, the same size for everyone. Each pet moves its own way:
+
+  | Pet | Mount perk |
+  |---|---|
+  | **Cat** | **Pounce:** jumps much higher |
+  | **Owl** | **Glide:** jumps farther and floats gently down (glide off a cliff to cross a gap) |
+  | **Slime** | **Sticky:** walks up walls three times as high |
+  | **Baby Dragon** | **Wings:** the longest jump |
+  | **Fox** | **Swift:** walks half again as far, and faster |
+  | No pet | A plain jump |
+
 - **Points.** Damage to enemies scores 1 point per HP, a KO scores +100, and every hero on the winning team
   gets +150.
+- **Chat** (when **CHAT** is on). Turns leave time to talk: tap **CHAT** on the battlefield to type a message
+  or tap a quick one (NICE SHOT!, OOPS!, ...). It pops up in a bubble over your hero, on the big screen and
+  every phone, and in a list at the bottom of the field. Knocked out heroes can still chat.
 - **Big screen.**
   - The whole battlefield, with each team's HP in bars at the top.
   - Whose turn it is, with the clock running down, and the wind.
   - The active hero's aim and power as they charge, and every shot as it flies.
+  - After a shot lands, two seconds to see what it did before the next turn.
 - **Phone.**
   - Both teams' HP and the clock.
-  - The battlefield following the action (drag it to look around), with a minimap.
+  - The battlefield following the action (drag it to look around), with a minimap. It follows a shot until it
+    lands and stays there until the next turn starts, then pans over to whoever's up.
   - The controls. Held sideways, the controls sit in a column on the right.
 - **Details.**
   - Every hero has 120 HP.
@@ -636,7 +666,8 @@ streak steps (`STREAK_STEPS`), special words (`SPECIAL_CHANCE`, `GOLD_FACTOR`, `
 perks (`PERKS`), skills (`SKILLS`, `SKILL_WORDS`). The auto-typer limits are the `KEY_*` and `FLAG_AFTER`
 settings. Word lists are in `words.js`; if you change them a lot, the perk bonuses may need re-measuring.
 The music tracks are the `TRACKS` table in `public/js/common.js`. Artillery's numbers (gravity, wind, power, HP,
-walking, every class's shots and specials, the battlefields, turns and points) are in `public/js/arty-rules.js`.
+walking, jumping, the mounts' perks, the power-ups, every class's shots and specials, the battlefields, turns
+and points) are in `public/js/arty-rules.js`.
 Everything about a duel is in
 `public/js/brawl-rules.js`: the class kits (HP, speed, attack, perk and skill), the perks' and skills' numbers
 (`PERK`, `SKILL`), the monsters and when they come (`MONSTERS`, `MOB_WAVES`), power-ups and kegs, the arena layouts

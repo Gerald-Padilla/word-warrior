@@ -408,6 +408,7 @@
   };
   // Artillery: the active hero's aim, shots to play out, items, turns that ran out.
   socket.on('arty:pos', (p) => artyView.onPos(p));
+  socket.on('arty:jump', (j) => artyView.onJump(j));
   socket.on('arty:shot', (shot) => artyView.onShot(shot));
   socket.on('arty:fell', ({ id }) => artyView.fell(id));
   socket.on('arty:pass', ({ id }) => artyView.callout('TIME UP!', '#ff5a4d', `${nameOf(id)} lost the turn`));
@@ -900,11 +901,11 @@
     box.dataset.mode = mode;
     box.innerHTML = '';
     const tips = mode === 'artillery' ? [
-      ['MOVE', 'On your turn, ◀ ▶ walk a little (PC: arrow keys)'],
-      ['AIM', '▲ ▼ set the angle; walking turns you round'],
+      ['MOVE', 'On your turn, ◀ ▶ walk a little and JUMP out of holes (PC: arrows, J). Each pet moves its own way'],
+      ['AIM', '▲ ▼ set the angle. The wind changes every turn and bends your shot: check the arrow'],
       ['FIRE', 'Hold FIRE to charge the power, let go to shoot (PC: Space)'],
-      ['WIND', 'It changes every turn and bends your shot: check the arrow'],
       ['SHOTS', 'Two shots to pick from, and a special that charges as you fight. HEAL and DOUBLE: once each'],
+      ['POWER-UPS', 'Shoot the bubbles floating over the middle to take them'],
       ['WIN', `Wipe out the other team. From turn ${(rounds[0] || {}).turns || AR.TURNS.full}, sudden death: shots hit harder every turn`],
     ] : [
       ['MOVE', 'Left thumb: drag on the left half (PC: WASD)'],
@@ -999,6 +1000,12 @@
   socket.on('chat:msg', (m) => {
     chat = chat.concat(m).slice(-30);
     renderChat(m.id);
+    // An artillery battle: over the speaker's hero, and in the list at the bottom of the field.
+    if (mode === 'artillery' && ['countdown', 'playing'].includes(state.state)) {
+      artyView.say(m);
+      Sfx.play('emote');
+      return;
+    }
     if (state.state !== 'lobby') return;
     Sfx.play('emote');
     saying.set(m.by, m.text.length > 40 ? `${m.text.slice(0, 39)}…` : m.text);

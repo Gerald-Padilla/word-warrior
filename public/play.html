@@ -177,14 +177,25 @@
     .ap-row .ap-btn { font-size: 10px; padding: 9px 1px; }
     .ap-row.move .ap-btn { font-size: 12px; padding: 10px 2px; }
     .ap-btn small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ap-row.move { grid-template-columns: 1fr 1fr 1fr 1fr 1.8fr; }
-    .ap-btn { font: inherit; font-size: 12px; padding: 10px 2px; border: 0; cursor: pointer; background: var(--ink); color: var(--cream); box-shadow: inset 0 0 0 3px var(--panel-3); touch-action: none; line-height: 1.4; }
+    .ap-row.move { grid-template-columns: 1fr 1fr 1.3fr 1fr 1fr 1.8fr; }
+    .ap-row.move .ap-btn.jump { font-size: 8px; }
+    .ap-btn { min-width: 0; font: inherit; font-size: 12px; padding: 10px 2px; border: 0; cursor: pointer; background: var(--ink); color: var(--cream); box-shadow: inset 0 0 0 3px var(--panel-3); touch-action: none; line-height: 1.4; }
     .ap-btn small { display: block; font-size: 6px; color: var(--muted); margin-top: 2px; }
     .ap-btn.on { box-shadow: inset 0 0 0 3px var(--gold); color: var(--gold); }
     .ap-btn:disabled { opacity: 0.35; cursor: default; }
     .ap-btn.fire { background: #c0392b; color: #fff; font-size: 13px; box-shadow: inset 0 0 0 3px #ff7b4a; }
     .ap-btn.fire.charging { background: #ff7b1c; animation: ready 0.3s steps(2) infinite; }
     .ap-btn:not(:disabled):active { transform: translateY(2px); }
+    /* Chat in the battle: a button on the field, and a box over its bottom with quick sayings. */
+    .a-chat-btn { position: absolute; right: 8px; bottom: 8px; z-index: 3; font: inherit; font-size: 8px; padding: 8px 10px; border: 0; cursor: pointer; background: rgba(27, 20, 38, 0.85); color: var(--cream); box-shadow: inset 0 0 0 2px var(--panel-3); }
+    .a-chat-btn.new { color: var(--gold); box-shadow: inset 0 0 0 2px var(--gold); animation: blink 1s steps(2) 3; }
+    .a-chat { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; flex-direction: column; gap: 6px; padding: 6px 8px; background: rgba(27, 20, 38, 0.92); }
+    .a-chat input { user-select: text; -webkit-user-select: text; touch-action: auto; }
+    .a-quick { display: flex; gap: 5px; overflow-x: auto; }
+    .a-quick button { font: inherit; font-size: 7px; padding: 7px 8px; border: 0; cursor: pointer; background: var(--ink); color: var(--cream); box-shadow: inset 0 0 0 2px var(--panel-3); white-space: nowrap; flex: none; }
+    .a-chat-row { display: flex; gap: 6px; }
+    .a-chat-row .px-input { flex: 1; min-width: 0; font-size: 12px; padding: 8px; }
+    .a-chat-row .px-btn { margin: 0; flex: none; padding: 0 10px; font-size: 9px; }
     .ap-meters { display: grid; grid-template-columns: 44px 1fr 70px; gap: 8px; align-items: center; font-size: 9px; }
     .ap-angle { color: var(--gold); text-align: center; }
     .ap-power, .ap-move { position: relative; height: 12px; background: #0e0a17; box-shadow: 0 0 0 2px #0e0a17; }
@@ -417,6 +428,9 @@
       #scrArty .a-field { grid-column: 1; grid-row: 3; }
       #scrArty .a-pad { grid-column: 2; grid-row: 3; justify-content: center; gap: 5px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); box-shadow: -3px 0 0 var(--ink); }
       #scrArty .ap-btn { padding: 15px 2px; font-size: 12px; }
+      #scrArty .ap-btn.jump { font-size: 7px; }
+      #scrArty .ap-row:not(.move) { grid-template-columns: 1fr 1fr 1.3fr 1fr 0.8fr; }
+      #scrArty .ap-row:not(.move) .ap-btn { font-size: 8px; padding: 12px 1px; }
     }
     /* Draw battle on its side: the board on the left as big as the height allows, everything else beside it. */
     @media (orientation: landscape) {
@@ -654,6 +668,21 @@
         <canvas id="aCanvas"></canvas>
         <div class="b-over hidden" id="aOver"><div class="o1" id="aO1"></div><div class="o2" id="aO2"></div><div class="o3" id="aO3"></div></div>
         <div class="toast" id="aToast"></div>
+        <button class="a-chat-btn hidden" id="aChatBtn" type="button">CHAT</button>
+        <form class="a-chat hidden" id="aChat" autocomplete="off">
+          <div class="a-quick">
+            <button type="button" data-say="Nice shot!">NICE SHOT!</button>
+            <button type="button" data-say="Oops!">OOPS!</button>
+            <button type="button" data-say="Watch out!">WATCH OUT!</button>
+            <button type="button" data-say="So close!">SO CLOSE!</button>
+            <button type="button" data-say="GG!">GG!</button>
+          </div>
+          <div class="a-chat-row">
+            <input id="aChatIn" class="px-input" maxlength="80" autocomplete="off" spellcheck="true" enterkeyhint="send" placeholder="Say something...">
+            <button class="px-btn" type="submit">SEND</button>
+            <button class="px-btn" type="button" id="aChatX" aria-label="Close chat">X</button>
+          </div>
+        </form>
       </div>
       <div class="a-pad" id="aPad">
         <div class="ap-wait" id="aWait"></div>
@@ -667,6 +696,7 @@
         <div class="ap-row move">
           <button class="ap-btn" type="button" data-a="left" aria-label="Walk left">◀</button>
           <button class="ap-btn" type="button" data-a="right" aria-label="Walk right">▶</button>
+          <button class="ap-btn jump" type="button" data-a="jump">JUMP</button>
           <button class="ap-btn" type="button" data-a="up" aria-label="Aim higher">▲</button>
           <button class="ap-btn" type="button" data-a="down" aria-label="Aim lower">▼</button>
           <button class="ap-btn fire" type="button" data-a="fire">FIRE<small style="color:#ffd8c8">HOLD</small></button>

@@ -152,6 +152,7 @@
         case 'reveal': this.tone(523, 0.1, { vol: 0.07 }); this.tone(784, 0.16, { delay: 0.08, vol: 0.06 }); break;
         case 'award': [784, 988, 1175, 1568].forEach((f, i) => this.tone(f, 0.12, { delay: i * 0.08, type: 'triangle', vol: 0.06 })); break;
         case 'emote': this.tone(1046, 0.06, { type: 'triangle', vol: 0.04 }); break;
+        case 'jump': this.tone(260, 0.16, { to: 720, vol: 0.04 }); break;
         // Class skills, one sound each.
         case 'skill:knight': [523, 659, 784, 1046, 1318].forEach((f, i) => this.tone(f, 0.16, { delay: i * 0.07, vol: 0.07 })); break;
         case 'skill:barbarian': this.tone(130, 0.5, { to: 70, type: 'sawtooth', vol: 0.09 }); this.noise(0.4, { vol: 0.08, freq: 600 }); break;
