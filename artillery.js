@@ -289,6 +289,7 @@ function boom(G, H, def, end, t, record, out) {
     G.craters.push([x, y, def.crater, 0]);
   }
   const hits = new Map();
+  const boost = sudden(G);
   for (const T of G.heroes.values()) {
     if (!T.alive) continue;
     const d = Math.hypot(T.x - x, T.y - HERO_MID - y);
@@ -296,11 +297,11 @@ function boom(G, H, def, end, t, record, out) {
     const direct = end.hit === 'hero' && end.hero === T.id;
     let dmg = def.dmg * (1 - 0.5 * Math.min(1, d / def.r));
     if (direct) dmg = def.dmg * (def.direct || 1.25);
-    hits.set(T.id, Math.round(dmg));
+    hits.set(T.id, Math.round(dmg * boost));
   }
   if (def.bolt) {
     for (const T of G.heroes.values()) {
-      if (T.alive && Math.abs(T.x - x) < def.boltR) hits.set(T.id, (hits.get(T.id) || 0) + def.bolt);
+      if (T.alive && Math.abs(T.x - x) < def.boltR) hits.set(T.id, (hits.get(T.id) || 0) + Math.round(def.bolt * boost));
     }
     out.events.push({ t: Math.round(t), type: 'bolt', x, r: def.boltR });
   }
@@ -384,8 +385,14 @@ function knockOut(G, T, H, t, events, why = 'hp') {
   events.push({ t: Math.round(t), type: 'ko', id: T.id, by: enemy ? H.id : null, why });
 }
 
-// Who won, once a team is wiped out or the turns are up: 0, 1, -1 for a draw, or null if it goes on.
-function verdict(G) {
+// Sudden death: from turn G.turns on, every hit is SUDDEN_STEP harder each turn (heals aren't).
+function sudden(G) {
+  return Math.min(A.SUDDEN_MAX, 1 + Math.max(0, G.turn - G.turns) * A.SUDDEN_STEP);
+}
+
+// Who won: 0, 1, -1 for a draw, or null if it goes on. A battle ends when a team is wiped out (or both
+// are). `now`: end it here anyway (the host skipped, or LAST_TURN): the team with more HP wins.
+function verdict(G, now = false) {
   const up = [aliveIn(G, 0), aliveIn(G, 1)];
   const had = [G.order[0].length, G.order[1].length];
   if (had[0] && had[1]) {
@@ -393,7 +400,7 @@ function verdict(G) {
     if (!up[0].length) return 1;
     if (!up[1].length) return 0;
   } else if (!up[0].length && !up[1].length) return -1;
-  if (G.turn < G.turns) return null;
+  if (!now && G.turn < A.LAST_TURN) return null;
   const hp = up.map((list) => list.reduce((s, h) => s + h.hp, 0));
   return hp[0] === hp[1] ? -1 : hp[0] > hp[1] ? 0 : 1;
 }
@@ -410,7 +417,7 @@ function finish(G, winner) {
 function stateOf(G) {
   return {
     seed: G.seed, style: G.style, turn: G.turn, turns: G.turns, team: G.team, active: G.active, wind: G.wind, phase: G.phase,
-    endsAt: G.endsAt, double: G.double, winner: G.winner, specials: G.specials, turnMs: G.level.turnMs,
+    endsAt: G.endsAt, double: G.double, winner: G.winner, specials: G.specials, turnMs: G.level.turnMs, boost: Math.round(sudden(G) * 10) / 10,
     heroes: [...G.heroes.values()].map((H) => [H.id, H.team, Math.round(H.x), H.y, Math.max(0, H.hp), H.alive ? 1 : 0, H.face, H.angle,
       Math.floor(H.special), H.items.heal, H.items.double, Math.round(H.stamina), H.lastPower]),
   };

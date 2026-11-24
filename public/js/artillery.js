@@ -98,6 +98,7 @@
         }
         this.paintGround();
         this.backdrop = null;
+        this.suddenShown = false;
         this.replay = null;
         this.held = null;
         this.heroes.clear();
@@ -127,6 +128,11 @@
     newTurn(s) {
       const h = this.heroes.get(s.active);
       if (!h) return;
+      if (s.boost > 1 && !this.suddenShown) {
+        this.suddenShown = true;
+        this.callout('SUDDEN DEATH!', '#ff5a4d', 'Every turn from now on, shots hit harder');
+        Sfx.play('roar');
+      }
       const look = this.looks.get(s.active) || {};
       const mine = this.phone && s.active === this.selfId;
       this.callout(mine ? 'YOUR TURN!' : `${(look.name || 'HERO').toUpperCase()}'S TURN`, TEAMS[h.team].color);
@@ -512,35 +518,33 @@
         ctx.fillRect(Math.round(X - 3 * u), Math.round(Y - 9 * u), Math.round(6 * u), Math.round(2 * u));
         return;
       }
-      // Pet, a step behind.
-      const pspr = petSprite(look.pet);
-      if (pspr) {
-        let pet = this.pets.get(h.id);
-        const want = h.x - h.face * 26;
-        if (!pet || Math.abs(pet.x - want) > 200) pet = { x: want };
-        pet.x = lerp(pet.x, want, 0.1);
-        this.pets.set(h.id, pet);
-        const py = this.terrain ? this.terrain.groundBelow(pet.x, h.y - 30) ?? h.y : h.y;
-        ctx.drawImage(pspr, Math.round(this.X(pet.x) - (pspr.width * u * 0.8) / 2), Math.round(this.Y(Math.min(py, h.shownY + 20)) - pspr.height * u * 0.8),
-          Math.round(pspr.width * u * 0.8), Math.round(pspr.height * u * 0.8));
-      }
       // Team mark under the feet.
       ctx.fillStyle = team.color;
       ctx.fillRect(Math.round(X - 9 * u), Math.round(Y - u * 0.5), Math.round(18 * u), Math.max(2, Math.round(u)));
-      const spr = heroSprite(look);
-      const w = spr.width * u;
-      const hh = spr.height * u;
       const hurt = pt - (h.hurtAt || 0) < 120;
       if (hurt) ctx.globalAlpha = 0.5;
-      ctx.save();
-      ctx.translate(Math.round(X), 0);
-      if (h.face < 0) ctx.scale(-1, 1);
-      ctx.drawImage(spr, Math.round(-w / 2), Math.round(Y - hh), Math.round(w), Math.round(hh));
-      ctx.restore();
+      // Their pet, as a mount (bobbing along when they walk), and the hero on its back.
+      const flipDraw = (spr, scale, feet, dy = 0) => {
+        const w = spr.width * scale;
+        const hh = spr.height * scale;
+        ctx.save();
+        ctx.translate(Math.round(X), 0);
+        if (h.face < 0) ctx.scale(-1, 1);
+        ctx.drawImage(spr, Math.round(-w / 2), Math.round(feet - hh + dy), Math.round(w), Math.round(hh));
+        ctx.restore();
+        return hh;
+      };
+      const moved = Math.abs(h.x - (h.drawnX ?? h.x)) > 0.5;
+      h.drawnX = h.x;
+      const step = moved ? Math.abs(Math.sin(pt / 90)) * -2 * this.s : 0;
+      const mount = petSprite(look.pet);
+      let feet = Y;
+      if (mount) feet = Y + step - flipDraw(mount, u * 2, Y, step) * 0.55;
+      const hh = flipDraw(heroSprite(look), u, feet);
       ctx.globalAlpha = 1;
       // HP bar and name.
       const bw = 40 * this.s;
-      const by = Y - hh - 10 * this.s;
+      const by = feet - hh - 10 * this.s;
       const frac = clamp(h.hp / A.HP, 0, 1);
       ctx.fillStyle = '#1b1426';
       ctx.fillRect(Math.round(X - bw / 2 - 1), Math.round(by - 1), Math.round(bw + 2), Math.max(3, Math.round(5 * this.s)) + 2);
@@ -700,6 +704,7 @@
         for (let i = 0; i < 4; i++) this.block(cx + dir * (w - i * 2 * d), y, (8 - i * 2) * d, '#7fd4ff');
       }
       this.text(`WIND ${Math.abs(s.wind)}`, cx, y + 26 * d, this.follow ? 7 : 10, '#ffffff');
+      if (s.boost > 1) this.text(`SUDDEN DEATH x${s.boost}`, cx, y + 42 * d, this.follow ? 7 : 10, '#ff5a4d');
     }
 
     drawCallouts(pt) {

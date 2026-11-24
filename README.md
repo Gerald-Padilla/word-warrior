@@ -55,7 +55,7 @@ Above the options in the lobby, the host picks two things (remembered on that co
   less time, arrive 20% closer together, and one more fits on screen. In a team battle it sets how long attacks
   take to fly, and in a battle royale the pace of every stage. Points per word don't change, but harder games
   have more words to score. In a draw battle, difficulty sets the drawing time (100, 80 or 60 seconds), and
-  **GAME** sets how many times everyone draws (twice, or once). In artillery, **GAME** sets the number of turns (30 or 16) and difficulty sets the wind and the time to aim
+  **GAME** sets how many times everyone draws (twice, or once). In artillery, **GAME** sets when sudden death starts (turn 30 or 16) and difficulty sets the wind and the time to aim
   (25, 20 or 15 seconds). In a duel, **GAME** sets the fight's length
   (4 minutes or 2) and difficulty sets the monsters.
 
@@ -417,8 +417,12 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   and a little every turn; pick **SPECIAL** when it says READY.
 - **Items.** Every hero has one **HEAL** (+40 HP) and one **DOUBLE** (fire your shot twice this turn) per
   battle. Using one doesn't end your turn.
-- **Winning.** A team that's wiped out loses at once. Otherwise, when the turns run out (30 in a full game,
-  16 in one round), the team with more HP left wins. **SKIP** ends the battle the same way.
+- **Winning.** The battle goes on until a team is wiped out (or both are, a draw). To make sure it ends,
+  **sudden death** starts at turn 30 in a full game (16 in one round): every turn from then on, shots hit
+  10% harder (up to four times as hard). **SKIP** ends the battle at once, and the team with more HP wins
+  (as does a battle somehow still going after 200 turns).
+- **Mounts.** Heroes ride their companion pet into battle; a hero without one fights on foot. Hero and
+  mount are one target, the same size for everyone.
 - **Points.** Damage to enemies scores 1 point per HP, a KO scores +100, and every hero on the winning team
   gets +150.
 - **Big screen.**
@@ -456,7 +460,7 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
 | Druid | **Thorn Vine:** drills into the ground before it blows up | **Seed Pod:** splits into three seeds at the top of its arc | **Overgrowth:** raises a mound of earth where it lands, for cover or a bridge |
 | Pirate | **Cannonball:** heavy, with a wide blast | **Grapeshot:** four small shots at once, spread wide | **Cannon Barrage:** three cannonballs, one after another |
 | Bard | **Power Chord:** bounces once, blowing up both times | **Drumroll:** lands and rolls along the ground before it blows | **Encore:** bounces three times |
-| Valkyrie | **Storm Spear:** lightning also strikes anyone just beside where it lands | **Sky Hunter:** turns toward the nearest enemy as it comes down, with a little lightning | **Thunderclap:** lightning strikes everyone near where it lands |
+| Valkyrie | **Storm Spear:** lightning also strikes anyone just beside where it lands | **Thunder Strike:** drills into the ground, then lightning strikes beside it | **Thunderclap:** lightning strikes everyone near where it lands |
 
 ## PC, tablet and phone
 

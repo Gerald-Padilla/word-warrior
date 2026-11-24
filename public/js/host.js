@@ -796,7 +796,7 @@
       renderDraw();
     } else if (r && artyOn) {
       $('#bRound').textContent = 'ARTILLERY';
-      $('#bDiff').textContent = `${r.turns} TURNS · ${Math.round(r.time / 1000)}s TO AIM`;
+      $('#bDiff').textContent = `LAST TEAM STANDING · ${Math.round(r.time / 1000)}s TO AIM`;
       $('#bDiff').className = 'b-diff d-hard';
       $('#bTitle').textContent = 'Teams take turns. Set the angle, hold FIRE to charge the power, mind the wind. Last team standing wins!';
       artyHud();
@@ -905,7 +905,7 @@
       ['FIRE', 'Hold FIRE to charge the power, let go to shoot (PC: Space)'],
       ['WIND', 'It changes every turn and bends your shot: check the arrow'],
       ['SHOTS', 'Two shots to pick from, and a special that charges as you fight. HEAL and DOUBLE: once each'],
-      ['WIN', 'Wipe out the other team, or have more HP when the turns run out'],
+      ['WIN', `Wipe out the other team. From turn ${(rounds[0] || {}).turns || AR.TURNS.full}, sudden death: shots hit harder every turn`],
     ] : [
       ['MOVE', 'Left thumb: drag on the left half (PC: WASD)'],
       ['ATTACK', 'Right thumb: hold to attack, drag to aim (PC: mouse)'],
@@ -940,10 +940,10 @@
       const r = rounds[0] || {};
       const lv = AR.LEVELS[options.level] || AR.LEVELS.normal;
       box.append(el('div', { class: 'round-chip hard' }, [
-        `${r.turns || AR.TURNS.full} TURNS`, el('small', { text: `${Math.round(lv.turnMs / 1000)} seconds to aim · teams take turns` }),
+        'LAST TEAM STANDING', el('small', { text: `${Math.round(lv.turnMs / 1000)} seconds to aim · teams take turns · wind up to ${lv.wind}` }),
       ]));
       box.append(el('div', { class: 'round-chip medium' }, [
-        'LAST TEAM STANDING', el('small', { text: `Wind up to ${lv.wind} · or the most HP when the turns run out` }),
+        `SUDDEN DEATH FROM TURN ${r.turns || AR.TURNS.full}`, el('small', { text: `Then shots hit ${Math.round(AR.SUDDEN_STEP * 100)}% harder every turn, until a team falls` }),
       ]));
       return;
     }
@@ -1069,7 +1069,7 @@
     seg.classList.toggle('na', mode === 'royale');
     seg.title = mode === 'royale' ? 'A battle royale has no rounds: it goes on until one hero is left.'
       : mode === 'brawl' ? 'A full duel is a 4-minute fight (with the Dragon King at the end); one round is 2 minutes.'
-        : mode === 'artillery' ? `A full battle is ${AR.TURNS.full} turns; one round is ${AR.TURNS.one}. A team wiped out loses at once.`
+        : mode === 'artillery' ? `The battle goes on until a team is wiped out. Sudden death (harder hits every turn) starts at turn ${AR.TURNS.full} in a full game, ${AR.TURNS.one} in one round.`
       : mode === 'draw' ? 'A full game: everyone draws twice. One round: everyone draws once.'
         : 'A full game climbs from easy to hard; one round plays just the round that matches the difficulty';
     $('#segLevel').title = mode === 'draw' ? 'How long each drawing lasts: easy 100 seconds, normal 80, hard 60'
@@ -1361,7 +1361,8 @@
       const team = TEAMS[A.team];
       const who = `${p ? p.name : 'Someone'} (${team.short})`;
       line = A.phase === 'aim' ? `${who} is aiming` : A.phase === 'fly' ? `${who} fired!` : A.phase === 'pass' ? `${who} ran out of time` : '';
-      line = `TURN ${A.turn} OF ${A.turns} · ${line} · WIND ${A.wind > 0 ? '▶' : A.wind < 0 ? '◀' : ''}${Math.abs(A.wind)}`;
+      const sd = A.boost > 1 ? ` · SUDDEN DEATH x${A.boost}` : ` · sudden death at ${A.turns}`;
+      line = `TURN ${A.turn}${sd} · ${line} · WIND ${A.wind > 0 ? '▶' : A.wind < 0 ? '◀' : ''}${Math.abs(A.wind)}`;
     }
     $('#hudTitle').textContent = line;
     const sec = Math.ceil(left / 1000);

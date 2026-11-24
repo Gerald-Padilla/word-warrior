@@ -12,8 +12,9 @@
   const GRAVITY = 1000; // units/s² pulling shots down
   const MAX_SPEED = 1400; // a shot at full power leaves at this speed
   const WIND_ACCEL = 18; // units/s² per point of wind
-  const HERO_R = 18; // how close a shot must come to a hero's middle to hit them
-  const HERO_MID = 22; // a hero's middle is this far above their feet
+  // Heroes ride their pets (a hero without one stands): the hit area covers hero and mount, the same for all.
+  const HERO_R = 28; // how close a shot must come to a hero's middle to hit them
+  const HERO_MID = 40; // a hero's middle is this far above the ground they stand on
   const CLIMB = 14; // the highest step a hero can walk up
   const WALK_SPEED = 90; // units/s
   const STAMINA = 260; // how far a hero can walk in one turn
@@ -29,8 +30,14 @@
   const SPECIAL_PER_TURN = 10;
   const SHOW_MS = 900; // after a shot lands, how long before the next turn
 
-  // Game length (turns in all, before the team with more HP wins) and difficulty (wind and time to aim).
+  // A battle goes on until a team is wiped out. Game length sets when sudden death starts (from this turn
+  // on, shots hit SUDDEN_STEP harder every turn, up to SUDDEN_MAX times as hard), so it always ends;
+  // difficulty sets the wind and the time to aim. LAST_TURN: a battle still going after this many turns
+  // (everyone hiding, say) goes to the team with more HP.
   const TURNS = { full: 30, one: 16 };
+  const SUDDEN_STEP = 0.1;
+  const SUDDEN_MAX = 4;
+  const LAST_TURN = 200;
   const LEVELS = {
     easy: { wind: 5, turnMs: 25000 },
     normal: { wind: 10, turnMs: 20000 },
@@ -105,7 +112,7 @@
     },
     valkyrie: {
       name: 'STORM SPEAR', shot: { kind: 'spear', dmg: 28, r: 50, crater: 34, bolt: 16, boltR: 50 },
-      alt: { name: 'SKY HUNTER', text: 'turns toward the nearest enemy as it comes down', shot: { kind: 'spear', dmg: 24, r: 45, crater: 28, seek: 1.8, bolt: 10, boltR: 40 } },
+      alt: { name: 'THUNDER STRIKE', text: 'drills into the ground, then lightning strikes beside it', shot: { kind: 'spear', dmg: 22, r: 45, crater: 30, drill: 60, bolt: 16, boltR: 65 } },
       special: { name: 'THUNDERCLAP', text: 'lightning strikes everyone near where it lands', shot: { kind: 'spear', dmg: 30, r: 50, crater: 34, bolt: 40, boltR: 150 } },
     },
   };
@@ -433,7 +440,7 @@
 
   const Arty = {
     MAP, COLS, ROWS, GRAVITY, MAX_SPEED, WIND_ACCEL, HERO_R, HERO_MID, CLIMB, WALK_SPEED, STAMINA, HP, ANGLE_MIN, ANGLE_MAX,
-    CHARGE_MS, KO_POINTS, WIN_POINTS, SPECIAL_MAX, SPECIAL_PER_DMG, SPECIAL_PER_HURT, SPECIAL_PER_TURN, SHOW_MS, TURNS, LEVELS,
+    CHARGE_MS, KO_POINTS, WIN_POINTS, SUDDEN_STEP, SUDDEN_MAX, LAST_TURN, SPECIAL_MAX, SPECIAL_PER_DMG, SPECIAL_PER_HURT, SPECIAL_PER_TURN, SHOW_MS, TURNS, LEVELS,
     SHOTS, ITEMS, STYLES, Terrain, seeded, launch, fly, PATH_MS,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Arty;

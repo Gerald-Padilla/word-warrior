@@ -2109,9 +2109,8 @@ io.on('connection', (socket) => {
     else if (room.state === 'playing' && room.royale) royaleStep(room, Date.now()); // on to the next stage, or faster
     else if (room.state === 'playing' && room.draw) skipDraw(room, Date.now());
     else if (room.state === 'playing' && room.arty) {
-      // Artillery: over now, as if the turns had run out (the team with more HP wins).
-      room.arty.turn = Math.max(room.arty.turn, room.arty.turns);
-      artyOver(room, ARTY.verdict(room.arty) ?? -1);
+      // Artillery: over now (the team with more HP wins).
+      artyOver(room, ARTY.verdict(room.arty, true));
     } else if (room.state === 'playing') endRound(room);
   });
 

@@ -1808,7 +1808,7 @@
     const drawing = drawOn();
     opts.append(el('span', {
       class: 'pick',
-      text: artyOn() ? `${rounds[0]?.turns || AR.TURNS.full} TURNS · ${Math.round((rounds[0]?.time || 20000) / 1000)}s TO AIM`
+      text: artyOn() ? `LAST TEAM STANDING · SUDDEN DEATH AT TURN ${rounds[0]?.turns || AR.TURNS.full}`
         : brawlOn() ? `${clockText(rounds[0] ? rounds[0].duration : 240000)} ARENA FIGHT`
         : drawing ? (rounds.length === 1 ? 'EVERYONE DRAWS ONCE' : `EVERYONE DRAWS ${rounds.length} TIMES`)
         : royaleOn() ? 'NO ROUNDS: EASY > MEDIUM > HARD' : one ? `ONE ROUND · ${rounds[0]?.title || ''}` : `${rounds.length} ROUNDS`,
@@ -1870,7 +1870,8 @@
       ['WIND', 'Changes every turn and bends your shot: check the arrow at the top.'],
       options.skills ? ['SPECIAL', `${shots.special.name}: ${shots.special.text}. It charges as you hit and get hit${pcControls ? ' (key 3)' : ''}.`] : null,
       ['ITEMS', `HEAL (+40 HP) and DOUBLE (fire twice): once each a game${pcControls ? ' (keys H and X)' : ''}.`],
-      ['WIN', 'Wipe out the other team, or have more HP when the turns run out. Falling off the bottom is a KO!'],
+      ['WIN', `Wipe out the other team. Falling off the bottom is a KO! From turn ${rounds[0]?.turns || AR.TURNS.full}, sudden death: shots hit harder every turn.`],
+      ['MOUNT', 'You ride your companion into battle. No companion? You fight on foot (pick one in CHANGE HERO).'],
     ].filter(Boolean) : [
       ['MOVE', pcControls ? 'WASD or the arrow keys.' : 'Drag your left thumb anywhere on the left half of the screen.'],
       ['ATTACK', pcControls ? 'Hold the mouse button to attack toward the pointer, or Space to hit the nearest foe.'
@@ -2054,7 +2055,7 @@
     $('#aTeam').style.color = team.color;
     const aiming = A && A.phase === 'aim';
     const left = aiming ? Math.max(0, A.endsAt - now()) : 0;
-    $('#aTime').textContent = aiming ? `0:${String(Math.ceil(left / 1000)).padStart(2, '0')}` : A ? `${A.turn}/${A.turns}` : '';
+    $('#aTime').textContent = aiming ? `0:${String(Math.ceil(left / 1000)).padStart(2, '0')}` : A ? `TURN ${A.turn}` : '';
     $('#aTime').classList.toggle('low', aiming && left <= 5000);
     (teams || [{ hp: 0, max: 1 }, { hp: 0, max: 1 }]).forEach((t, i) => {
       $(`#aHp${i}`).textContent = t.hp;
@@ -2085,6 +2086,7 @@
       wait = A.phase === 'aim' ? (A.active === you ? 'YOUR TURN! AIM AND FIRE' : `${who} IS AIMING...`)
         : A.phase === 'fly' ? 'INCOMING!' : A.phase === 'pass' ? 'NEXT TURN...' : '';
       if (A.phase === 'aim' && A.active !== you && A.team === (mine ? mine.team : -1)) wait += ' (YOUR TEAM)';
+      if (A.boost > 1) wait += ` · SUDDEN DEATH x${A.boost}`;
     } else if (st === 'countdown' || (A && A.phase === 'start')) wait = 'GET READY...';
     $('#aWait').textContent = wait;
     if (aiming && A.active === you && left > 0 && left <= 5000) {
