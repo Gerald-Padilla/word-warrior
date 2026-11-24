@@ -904,7 +904,7 @@
       ['AIM', '▲ ▼ set the angle; walking turns you round'],
       ['FIRE', 'Hold FIRE to charge the power, let go to shoot (PC: Space)'],
       ['WIND', 'It changes every turn and bends your shot: check the arrow'],
-      ['SPECIAL', 'Charges as you hit and get hit. HEAL and DOUBLE: once each'],
+      ['SHOTS', 'Two shots to pick from, and a special that charges as you fight. HEAL and DOUBLE: once each'],
       ['WIN', 'Wipe out the other team, or have more HP when the turns run out'],
     ] : [
       ['MOVE', 'Left thumb: drag on the left half (PC: WASD)'],

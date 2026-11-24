@@ -374,7 +374,7 @@ A turn-based team battle, with no typing. Pick **ARTILLERY** in the host lobby (
 Players split into Red Dragons and Blue Griffins like a team battle: **SWITCH TEAM** on the phone, or on the
 big screen click a hero to move them, or **SHUFFLE TEAMS**.
 
-- **The battlefield.** A side-on landscape, one of five, a little different every game. Teams start on opposite
+- **The battlefield.** A side-on landscape, one of ten, a little different every game. Teams start on opposite
   sides.
 
   | Battlefield | What's in it |
@@ -384,6 +384,11 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   | **Sky Islands** | Floating islands over a bottomless drop |
   | **Red Canyon** | High ground on both sides and a deep valley between |
   | **The Great Peak** | A mountain in the middle: lob over it, or dig through |
+  | **Broken Bridge** | Two cliffs over a bottomless chasm, joined by a stone bridge: blow it out from under them |
+  | **The Ziggurat** | A stepped stone pyramid in the middle |
+  | **Hollow Hills** | Hills with hidden caves: blow a roof in and whoever's on it drops through |
+  | **Sawtooth Ridge** | Jagged, snowy peaks all the way across |
+  | **Crater Field** | A battered plain full of old pits |
 
 - **Turns.** The teams take turns, each team's heroes in rotation. On your turn your phone buzzes and its
   controls light up; everyone else watches. You have 20 seconds (25 on easy, 15 on hard).
@@ -392,12 +397,20 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   - **Aim:** ▲ ▼ set the angle, from a little below level to straight up.
   - **Fire:** hold **FIRE** to charge the power (about 2 seconds to full), and let go to shoot. A white mark on
     the power bar shows your last shot's power.
-  - **Keyboard:** the arrow keys walk and aim, Space charges and fires, 1 and 2 pick the shot, H heals and
+  - **Pick a shot:** **SHOT 1**, **SHOT 2**, or **SPECIAL** when it's charged.
+  - **Keyboard:** the arrow keys walk and aim, Space charges and fires, 1, 2 and 3 pick the shot, H heals and
     X doubles.
 - **Wind.** It changes every turn (stronger on hard) and pushes every shot sideways; the arrow at the top shows
   which way and how hard. Arrows barely feel it, and soul bolts not at all.
-- **Shots.** Every class fires its own shot (table below). A blast hurts everyone near it, teammates and
-  yourself included, and digs a crater. A direct hit does extra damage.
+- **Shots.** Every class has two shots of its own to pick from (table below). A blast hurts everyone near
+  it, teammates and yourself included, and digs a crater. A direct hit does extra damage. Some shots fly in
+  their own way:
+  - **Straight:** flies dead straight a long way (no drop, no wind) before it falls.
+  - **Rolling:** lands and rolls along the ground, over bumps and down slopes, before it blows.
+  - **Splitting:** splits into three at the top of its arc.
+  - **Homing:** turns toward the nearest enemy as it comes down.
+  - **Bursting:** bursts into little bomblets where it lands.
+  - **Bouncing:** bounces, blowing up each time.
 - **The ground.** Craters stay for the rest of the battle. A hero with nothing under their feet drops to the
   ground below. One who falls off the bottom of the map is out, and if an enemy dug the hole, the KO is theirs.
 - **Special shots** (when **SKILLS** is on). Every class has one. It charges as you deal damage and take it,
@@ -430,20 +443,20 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
 
 ### Shots
 
-| Class | Shot | Special shot |
-|-------|------|--------------|
-| Knight | **Sword Beam:** a steady all-rounder | **Holy Blade:** a huge blade of light, with a big blast and a big hit |
-| Barbarian | **Spinning Axe:** heavy (it drops faster), hits hard, digs deep | **Earthquake:** a giant crater that drops everyone around it |
-| Wizard | **Fireball:** a wide blast | **Meteor:** a flaming rock with a huge blast |
-| Elf Archer | **Piercing Arrow:** light, barely feels the wind, deadly on a direct hit | **Arrow Rain:** five arrows at once, fanned out |
-| Rogue | **Dagger Volley:** two daggers, one after the other | **Shadow Step:** a dagger that takes you with it: you land where it hits |
-| Cleric | **Holy Light:** heals teammates near the blast by 15 | **Sanctuary:** heals teammates near the blast by 40 |
-| Ninja | **Shuriken:** three at once, fanned out | **Shuriken Storm:** six at once |
-| Necromancer | **Soul Bolt:** ignores the wind | **Soul Drain:** a heavy bolt that heals you by half its damage |
-| Druid | **Thorn Vine:** drills into the ground before it blows up | **Overgrowth:** raises a mound of earth where it lands, for cover or a bridge |
-| Pirate | **Cannonball:** heavy, with a wide blast | **Cannon Barrage:** three cannonballs, one after another |
-| Bard | **Power Chord:** bounces once, blowing up both times | **Encore:** bounces three times |
-| Valkyrie | **Storm Spear:** lightning also strikes anyone just beside where it lands | **Thunderclap:** lightning strikes everyone near where it lands |
+| Class | Shot 1 | Shot 2 | Special shot |
+|-------|--------|--------|--------------|
+| Knight | **Sword Beam:** a steady all-rounder | **Lance:** flies dead straight a long way before it drops | **Holy Blade:** a huge blade of light, with a big blast and a big hit |
+| Barbarian | **Spinning Axe:** heavy (it drops faster), hits hard, digs deep | **Boulder:** lands and rolls along the ground before it blows | **Earthquake:** a giant crater that drops everyone around it |
+| Wizard | **Fireball:** a wide blast | **Frost Shards:** splits into three at the top of its arc | **Meteor:** a flaming rock with a huge blast |
+| Elf Archer | **Piercing Arrow:** light, barely feels the wind, deadly on a direct hit | **Hawk Arrow:** turns toward the nearest enemy as it comes down | **Arrow Rain:** five arrows at once, fanned out |
+| Rogue | **Dagger Volley:** two daggers, one after the other | **Caltrops:** bursts into four little blasts where it lands | **Shadow Step:** a dagger that takes you with it: you land where it hits |
+| Cleric | **Holy Light:** heals teammates near the blast by 15 | **Smite:** a beam of light, dead straight and deaf to the wind | **Sanctuary:** heals teammates near the blast by 40 |
+| Ninja | **Shuriken:** three at once, fanned out | **Ricochet Star:** bounces twice, blowing up each time | **Shuriken Storm:** six at once |
+| Necromancer | **Soul Bolt:** ignores the wind | **Bone Burst:** bursts into five bone shards where it lands | **Soul Drain:** a heavy bolt that heals you by half its damage |
+| Druid | **Thorn Vine:** drills into the ground before it blows up | **Seed Pod:** splits into three seeds at the top of its arc | **Overgrowth:** raises a mound of earth where it lands, for cover or a bridge |
+| Pirate | **Cannonball:** heavy, with a wide blast | **Grapeshot:** four small shots at once, spread wide | **Cannon Barrage:** three cannonballs, one after another |
+| Bard | **Power Chord:** bounces once, blowing up both times | **Drumroll:** lands and rolls along the ground before it blows | **Encore:** bounces three times |
+| Valkyrie | **Storm Spear:** lightning also strikes anyone just beside where it lands | **Sky Hunter:** turns toward the nearest enemy as it comes down, with a little lightning | **Thunderclap:** lightning strikes everyone near where it lands |
 
 ## PC, tablet and phone
 
@@ -601,7 +614,7 @@ Each bot types one word at a time at its own speed, so in a battle royale the sl
 In a draw battle, bots scribble on their turn and guess words, verbs, animals, characters, titles, food and people from the lists that fit the blanks.
 In a duel, bots chase the nearest foe, keep to their class's range, grab power-ups close by and use their skill.
 In artillery, a bot on its turn tries angles and powers against the ground, aims at the nearest enemy and fires, a little off
-like a person (and uses its special shot when it's ready).
+like a person (it uses SHOT 2 now and then, and its special shot when it's ready).
 
 ## Tuning
 

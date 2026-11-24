@@ -216,7 +216,7 @@
     const kit = BR.KITS[look.cls] || BR.KITS.knight;
     if (you && artyOn()) {
       const shots = AR.SHOTS[look.cls] || AR.SHOTS.knight;
-      $('#clsAttack').textContent = `SHOT: ${shots.name}`;
+      $('#clsAttack').textContent = `SHOT 1: ${shots.name} · SHOT 2: ${shots.alt.name}, ${shots.alt.text}`;
       $('#clsPerk').textContent = `SPECIAL SHOT: ${shots.special.name}: ${shots.special.text}`;
       $('#clsSkill').textContent = 'Every hero also has one HEAL and one DOUBLE shot a game.';
     } else if (you && brawlOn()) {
@@ -1837,7 +1837,7 @@
     const duel = brawlOn() && kit;
     if (duel) $('#lobbyClass').textContent = `${classByKey(mine.cls).name} · ${kit.hp} HP · ${classByKey(mine.cls).attack}`;
     const shots = artyOn() && mine && (AR.SHOTS[mine.cls] || AR.SHOTS.knight);
-    if (shots) $('#lobbyClass').textContent = `${classByKey(mine.cls).name} · SHOT: ${shots.name}`;
+    if (shots) $('#lobbyClass').textContent = `${classByKey(mine.cls).name} · ${shots.name} · ${shots.alt.name}`;
     const perk = shots ? (options.skills ? `SPECIAL: ${shots.special.name}: ${shots.special.text}` : '')
       : options.perks && mine && !drawing ? (duel ? `${kit.perk.name}: ${kit.perk.text}` : classByKey(mine.cls).perk) : '';
     $('#lobbyPerk').textContent = !perk ? '' : shots ? perk : `PERK: ${perk}`;
@@ -1866,8 +1866,9 @@
       ['MOVE', pcControls ? 'Left and right arrow keys walk a little (the blue bar).' : '◀ ▶ walk a little each turn (the blue bar). Walking turns you round.'],
       ['AIM', pcControls ? 'Up and down arrow keys set the angle.' : '▲ ▼ set the angle. Drag the battlefield to look around.'],
       ['FIRE', pcControls ? 'Hold Space to charge the power, let go to shoot.' : 'Hold FIRE to charge the power, let go to shoot. The white mark is your last shot.'],
+      ['SHOTS', `SHOT 1: ${shots.name}. SHOT 2: ${shots.alt.name}, ${shots.alt.text}${pcControls ? ' (keys 1 and 2)' : ''}.`],
       ['WIND', 'Changes every turn and bends your shot: check the arrow at the top.'],
-      options.skills ? ['SPECIAL', `${shots.special.name}: ${shots.special.text}. It charges as you hit and get hit${pcControls ? ' (key 2)' : ''}.`] : null,
+      options.skills ? ['SPECIAL', `${shots.special.name}: ${shots.special.text}. It charges as you hit and get hit${pcControls ? ' (key 3)' : ''}.`] : null,
       ['ITEMS', `HEAL (+40 HP) and DOUBLE (fire twice): once each a game${pcControls ? ' (keys H and X)' : ''}.`],
       ['WIN', 'Wipe out the other team, or have more HP when the turns run out. Falling off the bottom is a KO!'],
     ].filter(Boolean) : [
@@ -2061,7 +2062,11 @@
       $(`#aFill${i}`).style.background = TEAMS[i].color;
       $(`#aName${i}`).style.color = TEAMS[i].color;
     });
-    if (mine) $('#aShotName').textContent = (AR.SHOTS[mine.cls] || AR.SHOTS.knight).name;
+    if (mine) {
+      const kit = AR.SHOTS[mine.cls] || AR.SHOTS.knight;
+      $('#aShotName').textContent = kit.name;
+      $('#aShotName2').textContent = kit.alt.name;
+    }
     // Over the field: the countdown, or that you're out.
     const st = state.state;
     const h = aView.heroes.get(you);

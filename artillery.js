@@ -160,11 +160,12 @@ function fire(G, id, data, now) {
   aim(G, id, data?.angle, data?.face);
   const power = Math.max(0, Math.min(100, Number(data?.power) || 0));
   const kit = A.SHOTS[H.cls];
-  const special = Boolean(data?.special) && G.specials && H.special >= A.SPECIAL_MAX;
-  const def = special ? kit.special.shot : kit.shot;
+  const special = (data?.shot === 'special' || Boolean(data?.special)) && G.specials && H.special >= A.SPECIAL_MAX;
+  const alt = !special && data?.shot === 'two';
+  const def = special ? kit.special.shot : alt ? kit.alt.shot : kit.shot;
   if (special) H.special = 0;
   H.lastPower = power;
-  const out = { id: H.id, special, angle: H.angle, face: H.face, power, wind: G.wind, shells: [], events: [], total: 0 };
+  const out = { id: H.id, special, alt, angle: H.angle, face: H.face, power, wind: G.wind, shells: [], events: [], total: 0 };
   // One volley: `count` shells at once (fanned out) or one after another (`gap`). DOUBLE fires it again.
   const volley = [];
   const n = def.count || 1;
@@ -186,27 +187,92 @@ function fire(G, id, data, now) {
   return out;
 }
 
-// One shell: fly it, blow it up (and bounce it), apply what happens. Returns when it's done (ms).
-function shell(G, H, def, power, off, t0, out) {
+// One shell: fly it, blow it up (and bounce it, roll it, split it, burst it), apply what happens.
+// `from`: where and how fast it starts, for shells that come out of another (splits, bomblets); otherwise
+// it leaves the hero's hands. Returns when it's all done (ms).
+function shell(G, H, def, power, off, t0, out, from = null) {
   const heroes = () => [...G.heroes.values()].filter((h) => h.alive).map((h) => ({ id: h.id, x: h.x, y: h.y }));
-  let s = A.launch(H.x, H.y, H.face, H.angle + off, power);
+  const foes = () => [...G.heroes.values()].filter((h) => h.alive && h.team !== H.team).map((h) => ({ x: h.x, y: h.y }));
+  let s = from || A.launch(H.x, H.y, H.face, H.angle + off, power);
   const record = { kind: def.kind, big: def.big || 1, t0, path: [], booms: [], end: t0 };
   out.shells.push(record);
   let t = t0;
+  let done = t0;
   let bounces = def.bounce || 0;
   for (;;) {
-    const { path, end } = A.fly(G.terrain, heroes(), H.id, s, def, G.wind);
-    for (const p of path) record.path.push([Math.round(t + p[0]), p[1], p[2]]);
-    t += end.t;
+    const flight = A.fly(G.terrain, heroes(), from ? null : H.id, s, def, G.wind, def.seek ? foes() : null);
+    for (const p of flight.path) record.path.push([Math.round(t + p[0]), p[1], p[2]]);
+    t += flight.end.t;
+    let end = flight.end;
     if (end.hit === 'gone') break;
+    if (end.hit === 'split') {
+      // The top of its arc: it splits into several, fanning out.
+      const child = { ...def, split: 0, big: 0.8 };
+      for (let i = 0; i < def.split; i++) {
+        const k = i - (def.split - 1) / 2;
+        done = Math.max(done, shell(G, H, child, power, 0, t, out, { x: end.x, y: end.y, vx: end.vx + k * 110, vy: end.vy }));
+      }
+      break;
+    }
+    if (end.hit === 'ground' && def.roll) {
+      const rolled = roll(G, H, end, def, t, record);
+      t = rolled.t;
+      end = rolled.end;
+      if (end.hit === 'gone') break;
+    }
     boom(G, H, def, end, t, record, out);
+    if (def.cluster) {
+      // Bomblets, flung up and out from the blast.
+      const c = def.cluster;
+      const bit = { kind: 'shard', dmg: c.dmg, r: c.r, crater: c.crater, big: 0.6 };
+      for (let i = 0; i < c.n; i++) {
+        const vx = -260 + (520 * (i + 0.5)) / c.n + (G.rng() - 0.5) * 80;
+        done = Math.max(done, shell(G, H, bit, 0, 0, t, out, { x: end.x, y: end.y - 10, vx, vy: -380 - G.rng() * 200 }));
+      }
+    }
     if (end.hit !== 'ground' || bounces <= 0) break;
     bounces -= 1;
     // Off it goes again, a little slower.
     s = { x: end.x, y: end.y - 8, vx: (end.vx || 0) * 0.75, vy: -Math.abs(end.vy || 0) * 0.55 };
   }
   record.end = t;
-  return t;
+  return Math.max(t, done);
+}
+
+// A shell that lands and rolls: along the ground the way it was going, over bumps, down slopes, until it
+// has rolled its distance, meets a wall or a hero (then it blows), or rolls off into the drop.
+const ROLL_SPEED = 300;
+function roll(G, H, end, def, t, record) {
+  const dir = Math.sign(end.vx || 0) || H.face;
+  let x = end.x;
+  let y = G.terrain.groundBelow(x, end.y - 16);
+  if (y === null) return { t, end };
+  let left = def.roll;
+  let n = 0;
+  while (left > 0) {
+    const nx = x + dir * 4;
+    if (nx < 4 || nx > MAP.W - 4) return { t, end: { x, y: y - 8, hit: 'gone' } };
+    const ny = G.terrain.standAt(nx, y);
+    if (ny === false) break; // a wall
+    t += (4 / ROLL_SPEED) * 1000;
+    if (ny === null) {
+      record.path.push([Math.round(t), Math.round(nx), y], [Math.round(t + 500), Math.round(nx + dir * 40), MAP.H + 80]);
+      return { t: t + 500, end: { x: nx, y: MAP.H + 80, hit: 'gone' } };
+    }
+    x = nx;
+    y = ny;
+    left -= 4;
+    if (++n % 3 === 0) record.path.push([Math.round(t), Math.round(x), y - 8]);
+    for (const T of G.heroes.values()) {
+      if (!T.alive || T === H) continue;
+      if (Math.hypot(T.x - x, T.y - HERO_MID - (y - 8)) < HERO_R + 10) {
+        record.path.push([Math.round(t), Math.round(x), y - 8]);
+        return { t, end: { x, y: y - 8, hit: 'hero', hero: T.id } };
+      }
+    }
+  }
+  record.path.push([Math.round(t), Math.round(x), y - 8]);
+  return { t, end: { x, y: y - 8, hit: 'ground' } };
 }
 
 // A blast at the end of a shell: dig (or raise) the ground, hurt everyone near, heal teammates, strike

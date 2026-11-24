@@ -37,60 +37,75 @@
     hard: { wind: 16, turnMs: 15000 },
   };
 
-  // Every class's shot, and its special (when SKILLS is on). dmg at the middle of the blast (half at its
-  // edge), r: blast size, crater: hole it leaves (0: none), grav/wind: how much gravity and wind move it,
-  // direct: damage multiplier for hitting a hero head on, count/spread: several at once (degrees apart),
-  // gap: one after another (ms), drill: goes this far into the ground first, bounce: bounces this many
-  // times (each bounce blows up), bolt/boltR: lightning that also strikes everyone within boltR across,
-  // heal/healR: heals teammates near the blast, drain: heals the shooter by this share of damage,
-  // grow: raises a mound instead of digging, teleport: the shooter lands where it hits.
+  // Every class's two shots (SHOT 1 and SHOT 2) and its special (when SKILLS is on). dmg at the middle of
+  // the blast (half at its edge), r: blast size, crater: hole it leaves (0: none), grav/wind: how much
+  // gravity and wind move it, direct: damage multiplier for hitting a hero head on, count/spread: several
+  // at once (degrees apart), gap: one after another (ms), drill: goes this far into the ground first,
+  // bounce: bounces this many times (each bounce blows up), bolt/boltR: lightning that also strikes
+  // everyone within boltR across, heal/healR: heals teammates near the blast, drain: heals the shooter by
+  // this share of damage, grow: raises a mound instead of digging, teleport: the shooter lands where it
+  // hits, straight: flies dead straight this far (no gravity or wind) before it drops, roll: lands and
+  // rolls along the ground this far before it blows, split: splits into this many at the top of its arc,
+  // seek: turns toward the nearest enemy as it comes down (radians/s), cluster: bursts into bomblets.
   const SHOTS = {
     knight: {
       name: 'SWORD BEAM', shot: { kind: 'slash', dmg: 30, r: 60, crater: 40 },
+      alt: { name: 'LANCE', text: 'flies dead straight a long way before it drops', shot: { kind: 'spear', dmg: 26, r: 45, crater: 30, straight: 650 } },
       special: { name: 'HOLY BLADE', text: 'a huge blade of light: big blast, big hit', shot: { kind: 'slash', dmg: 58, r: 85, crater: 60, big: 1.8 } },
     },
     barbarian: {
       name: 'SPINNING AXE', shot: { kind: 'axe', dmg: 36, r: 55, crater: 50, grav: 1.25 },
+      alt: { name: 'BOULDER', text: 'lands and rolls along the ground before it blows', shot: { kind: 'boulder', dmg: 34, r: 60, crater: 46, grav: 1.2, roll: 420 } },
       special: { name: 'EARTHQUAKE', text: 'a giant crater that drops everyone around it', shot: { kind: 'axe', dmg: 42, r: 95, crater: 135, grav: 1.25, big: 1.8 } },
     },
     wizard: {
       name: 'FIREBALL', shot: { kind: 'fireball', dmg: 30, r: 75, crater: 50 },
+      alt: { name: 'FROST SHARDS', text: 'splits into three at the top of its arc', shot: { kind: 'frost', dmg: 16, r: 45, crater: 26, split: 3 } },
       special: { name: 'METEOR', text: 'a flaming rock with a huge blast', shot: { kind: 'meteor', dmg: 62, r: 110, crater: 90 } },
     },
     archer: {
       name: 'PIERCING ARROW', shot: { kind: 'arrow', dmg: 24, r: 45, crater: 28, grav: 0.85, wind: 0.6, direct: 1.7 },
+      alt: { name: 'HAWK ARROW', text: 'turns toward the nearest enemy as it comes down', shot: { kind: 'arrow', dmg: 21, r: 40, crater: 24, wind: 0.6, seek: 2.2 } },
       special: { name: 'ARROW RAIN', text: 'five arrows at once, fanned out', shot: { kind: 'arrow', dmg: 22, r: 45, crater: 28, grav: 0.85, wind: 0.6, direct: 1.5, count: 5, spread: 4 } },
     },
     rogue: {
       name: 'DAGGER VOLLEY', shot: { kind: 'dagger', dmg: 17, r: 40, crater: 26, count: 2, gap: 260 },
+      alt: { name: 'CALTROPS', text: 'bursts into four little blasts where it lands', shot: { kind: 'dagger', dmg: 14, r: 40, crater: 22, cluster: { n: 4, dmg: 9, r: 32, crater: 16 } } },
       special: { name: 'SHADOW STEP', text: 'a dagger that takes you with it: you land where it hits', shot: { kind: 'dagger', dmg: 26, r: 45, crater: 26, teleport: true } },
     },
     cleric: {
       name: 'HOLY LIGHT', shot: { kind: 'beam', dmg: 25, r: 60, crater: 36, heal: 15, healR: 90 },
+      alt: { name: 'SMITE', text: 'a beam of light, dead straight and deaf to the wind', shot: { kind: 'beam', dmg: 24, r: 45, crater: 26, straight: 900, wind: 0 } },
       special: { name: 'SANCTUARY', text: 'heals teammates near the blast by 40', shot: { kind: 'beam', dmg: 30, r: 90, crater: 40, heal: 40, healR: 230, big: 1.5 } },
     },
     ninja: {
       name: 'SHURIKEN', shot: { kind: 'shuriken', dmg: 13, r: 40, crater: 22, count: 3, spread: 3 },
+      alt: { name: 'RICOCHET STAR', text: 'bounces twice, blowing up each time', shot: { kind: 'shuriken', dmg: 13, r: 38, crater: 20, bounce: 2 } },
       special: { name: 'SHURIKEN STORM', text: 'six shurikens at once', shot: { kind: 'shuriken', dmg: 14, r: 40, crater: 22, count: 6, spread: 4 } },
     },
     necromancer: {
       name: 'SOUL BOLT', shot: { kind: 'soul', dmg: 28, r: 55, crater: 34, wind: 0 },
+      alt: { name: 'BONE BURST', text: 'bursts into five bone shards where it lands', shot: { kind: 'soul', dmg: 12, r: 38, crater: 20, wind: 0, cluster: { n: 5, dmg: 8, r: 30, crater: 14 } } },
       special: { name: 'SOUL DRAIN', text: 'a heavy bolt that heals you by half the damage', shot: { kind: 'soul', dmg: 48, r: 65, crater: 40, wind: 0, drain: 0.5, big: 1.6 } },
     },
     druid: {
       name: 'THORN VINE', shot: { kind: 'thorn', dmg: 27, r: 50, crater: 34, drill: 90 },
+      alt: { name: 'SEED POD', text: 'splits into three seeds at the top of its arc', shot: { kind: 'seed', dmg: 15, r: 45, crater: 26, split: 3 } },
       special: { name: 'OVERGROWTH', text: 'raises a mound of earth where it lands (cover, or a bridge)', shot: { kind: 'thorn', dmg: 24, r: 60, crater: 0, grow: 75 } },
     },
     pirate: {
       name: 'CANNONBALL', shot: { kind: 'cannon', dmg: 34, r: 68, crater: 52, grav: 1.2 },
+      alt: { name: 'GRAPESHOT', text: 'four small shots at once, spread wide', shot: { kind: 'grape', dmg: 11, r: 34, crater: 18, count: 4, spread: 7 } },
       special: { name: 'CANNON BARRAGE', text: 'three cannonballs, one after another', shot: { kind: 'cannon', dmg: 30, r: 64, crater: 48, grav: 1.2, count: 3, gap: 380 } },
     },
     bard: {
       name: 'POWER CHORD', shot: { kind: 'notes', dmg: 19, r: 50, crater: 30, bounce: 1 },
+      alt: { name: 'DRUMROLL', text: 'lands and rolls along the ground before it blows', shot: { kind: 'drum', dmg: 26, r: 55, crater: 34, roll: 360 } },
       special: { name: 'ENCORE', text: 'bounces three times, blowing up each time', shot: { kind: 'notes', dmg: 22, r: 55, crater: 32, bounce: 3 } },
     },
     valkyrie: {
       name: 'STORM SPEAR', shot: { kind: 'spear', dmg: 28, r: 50, crater: 34, bolt: 16, boltR: 50 },
+      alt: { name: 'SKY HUNTER', text: 'turns toward the nearest enemy as it comes down', shot: { kind: 'spear', dmg: 24, r: 45, crater: 28, seek: 1.8, bolt: 10, boltR: 40 } },
       special: { name: 'THUNDERCLAP', text: 'lightning strikes everyone near where it lands', shot: { kind: 'spear', dmg: 30, r: 50, crater: 34, bolt: 40, boltR: 150 } },
     },
   };
@@ -110,6 +125,11 @@
     { key: 'islands', name: 'SKY ISLANDS', sky: ['#5ba8e8', '#a8d8f8', '#e8f6ff'], grass: '#6fd34f', dirt: ['#9a6a3a', '#8b5a2b'], rock: '#6e6488' },
     { key: 'canyon', name: 'RED CANYON', sky: ['#c4481a', '#f08040', '#ffd08a'], grass: '#c9a66b', dirt: ['#b5532a', '#9a4422'], rock: '#7a3a1e' },
     { key: 'peak', name: 'THE GREAT PEAK', sky: ['#1e2a4a', '#4a5a8a', '#9ab0d8'], grass: '#e8f0f8', dirt: ['#6e6488', '#5a5073'], rock: '#3a3452' },
+    { key: 'bridge', name: 'BROKEN BRIDGE', sky: ['#2a1e4a', '#6a4a8a', '#e0a0a0'], grass: '#5fae4a', dirt: ['#7a5a3a', '#6b4a2e'], rock: '#4a4060' },
+    { key: 'ziggurat', name: 'THE ZIGGURAT', sky: ['#4aa3df', '#9ad0ef', '#f5e6c8'], grass: '#e0c27a', dirt: ['#c9a66b', '#b8945a'], rock: '#8a6a3a' },
+    { key: 'hollow', name: 'HOLLOW HILLS', sky: ['#0e1630', '#23305a', '#46508a'], grass: '#3f8f4a', dirt: ['#5c4a3a', '#4a3a2a'], rock: '#2e2a40' },
+    { key: 'sawtooth', name: 'SAWTOOTH RIDGE', sky: ['#7fb0e0', '#c0dcf0', '#ffffff'], grass: '#f4f8fc', dirt: ['#8a96b8', '#7a86a8'], rock: '#4a5070' },
+    { key: 'craters', name: 'CRATER FIELD', sky: ['#2a0e1e', '#5e1e2e', '#a04a3a'], grass: '#8a6a5a', dirt: ['#4a3a3a', '#3e3030'], rock: '#2a2020' },
   ];
 
   // Repeatable random numbers (mulberry32).
@@ -131,6 +151,8 @@
       this.style = STYLES[style] ? style : 0;
       this.cells = new Uint8Array(COLS * ROWS);
       this.depth = new Uint8Array(COLS * ROWS);
+      this.under = new Uint8Array(COLS * ROWS); // deep inside the earth: once dug out, a dark hollow (not sky)
+      this.holes = []; // caves and pits, dug once the ground's colors are worked out
       this.generate();
     }
 
@@ -173,12 +195,62 @@
             const d = Math.abs(cx - COLS / 2) / (COLS / 2);
             return ROWS * (0.86 - 0.42 * Math.min(1, Math.max(0, (d - 0.12) / 0.3))) + rough(cx);
           };
+        } else if (key === 'bridge') {
+          // Two cliffs over a bottomless chasm; the bridge comes after.
+          const rough = waves(0, [[5, 90], [2, 23]]);
+          surface = (cx) => (Math.abs(cx - COLS / 2) < COLS * 0.13 ? ROWS + 10 : ROWS * 0.5 + rough(cx));
+        } else if (key === 'ziggurat') {
+          surface = waves(ROWS * 0.76, [[6, 200], [2, 41]]);
+        } else if (key === 'hollow') {
+          surface = waves(ROWS * 0.55, [[18, 240], [8, 80], [3, 29]]);
+        } else if (key === 'sawtooth') {
+          // Jagged peaks: a sawtooth wave, roughened.
+          const period = 64 + rnd() * 20;
+          const shift = rnd() * period;
+          const rough = waves(0, [[3, 17], [2, 7]]);
+          surface = (cx) => {
+            const k = ((cx + shift) % period) / period;
+            return ROWS * 0.62 - 38 * (1 - Math.abs(k * 2 - 1)) + rough(cx);
+          };
+        } else if (key === 'craters') {
+          surface = waves(ROWS * 0.6, [[6, 220], [3, 61]]);
         } else {
           // A great mountain in the middle: lob it, or tunnel through it.
           const rough = waves(0, [[8, 120], [3, 37]]);
           surface = (cx) => ROWS * (0.72 - 0.55 * Math.exp(-(((cx - COLS / 2) / 70) ** 2))) + rough(cx);
         }
         for (let cx = 0; cx < COLS; cx++) fill(cx, surface(cx), ROWS);
+        // Round holes: caves inside the hills, pits across the field (dug after the colors, below).
+        const hole = (x, y, rx, ry) => this.holes.push([x, y, rx, ry]);
+        if (key === 'bridge') {
+          // A stone bridge across the chasm, with posts along the top.
+          const y0 = Math.round(ROWS * 0.5) + 2;
+          for (let cx = Math.floor(COLS * 0.35); cx < Math.ceil(COLS * 0.65); cx++) {
+            fill(cx, y0, y0 + 7, 2);
+            if (cx % 12 < 2) fill(cx, y0 - 4, y0, 2);
+          }
+        } else if (key === 'ziggurat') {
+          // A stepped stone pyramid in the middle.
+          const base = surface(COLS / 2);
+          for (let step = 0; step < 6; step++) {
+            const half = 100 - step * 16;
+            const top = base - 10 * (step + 1);
+            for (let cx = Math.round(COLS / 2 - half); cx < COLS / 2 + half; cx++) fill(cx, top, surface(cx) + 2, 2);
+          }
+        } else if (key === 'hollow') {
+          // Caves under the surface: blow the roof in and whoever's on it drops through.
+          for (let i = 0; i < 11; i++) {
+            const x = 30 + rnd() * (COLS - 60);
+            hole(x, surface(x) + 30 + rnd() * 50, 14 + rnd() * 18, 7 + rnd() * 9);
+          }
+        } else if (key === 'craters') {
+          // Old pits, everywhere.
+          for (let i = 0; i < 14; i++) {
+            const x = 20 + rnd() * (COLS - 40);
+            const r = 8 + rnd() * 16;
+            hole(x, surface(x) - r * 0.3, r, r * 0.8);
+          }
+        }
         if (key === 'towers') {
           // A stone tower near each side, with battlements.
           for (const fx of [0.13, 0.87]) {
@@ -193,15 +265,25 @@
           }
         }
       }
-      // How deep each cell is below its surface, for the colors.
+      // How deep each cell is below its surface, for the colors; deep earth shows dark when dug out.
       for (let cx = 0; cx < COLS; cx++) {
         let run = 0;
         for (let cy = 0; cy < ROWS; cy++) {
           const i = cy * COLS + cx;
           if (C[i]) {
             this.depth[i] = Math.min(255, run);
+            if (C[i] === 1 && run >= 8) this.under[i] = 1;
             run += 1;
           } else run = 0;
+        }
+      }
+      // Now the caves and pits: their floors and walls keep the earth's colors, no grass.
+      for (const [x, y, rx, ry] of this.holes) {
+        for (let cy = Math.floor(y - ry); cy <= y + ry; cy++) {
+          for (let cx = Math.floor(x - rx); cx <= x + rx; cx++) {
+            if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) continue;
+            if (((cx - x) / rx) ** 2 + ((cy - y) / ry) ** 2 <= 1) C[cy * COLS + cx] = 0;
+          }
         }
       }
     }
@@ -277,12 +359,13 @@
     return { x: x + dx * 20, y: y - HERO_MID + dy * 20, vx: dx * speed, vy: dy * speed };
   }
 
-  // Flies one shell until it hits the ground, a hero or leaves the map. heroes: [{ id, x, y }] (feet);
-  // `skip` is the shooter's id (they can't hit themselves in the first moment). Returns the path (a point
-  // every PATH_MS) and how it ended: { x, y, t, hit: 'ground' | 'hero' | 'gone', hero, vx, vy }.
+  // Flies one shell until it hits the ground, a hero or leaves the map (or, for a shell that splits, until
+  // the top of its arc). heroes: [{ id, x, y }] (feet); `skip` is the shooter's id (they can't hit
+  // themselves in the first moment); `foes`: enemies a seeking shell turns toward. Returns the path (a
+  // point every PATH_MS) and how it ended: { x, y, t, hit: 'ground' | 'hero' | 'gone' | 'split', hero, vx, vy }.
   const STEP = 1 / 240;
   const PATH_MS = 30;
-  function fly(terrain, heroes, skip, s, def, wind) {
+  function fly(terrain, heroes, skip, s, def, wind, foes = null) {
     let { x, y, vx, vy } = s;
     const grav = GRAVITY * (def.grav ?? 1);
     const push = WIND_ACCEL * wind * (def.wind ?? 1);
@@ -290,13 +373,40 @@
     let t = 0;
     let next = PATH_MS;
     let drilled = 0;
+    let flown = 0;
     const drill = def.drill || 0;
+    const straight = def.straight || 0;
     while (t < 14000) {
-      vx += push * STEP;
-      vy += grav * STEP;
+      if (flown < straight) {
+        flown += Math.hypot(vx, vy) * STEP; // still flying straight: no gravity, no wind
+      } else {
+        vx += push * STEP;
+        vy += grav * STEP;
+        if (def.seek && vy > 0 && foes && foes.length) {
+          // Coming down: bend toward the nearest enemy in reach.
+          let best = null;
+          for (const f of foes) {
+            const d = Math.hypot(f.x - x, f.y - HERO_MID - y);
+            if (d < 700 && (!best || d < best.d)) best = { d, f };
+          }
+          if (best) {
+            const a = Math.atan2(vy, vx);
+            let off = Math.atan2(best.f.y - HERO_MID - y, best.f.x - x) - a;
+            off = Math.atan2(Math.sin(off), Math.cos(off));
+            const turn = Math.max(-def.seek * STEP, Math.min(def.seek * STEP, off));
+            const sp = Math.hypot(vx, vy);
+            vx = Math.cos(a + turn) * sp;
+            vy = Math.sin(a + turn) * sp;
+          }
+        }
+      }
       x += vx * STEP;
       y += vy * STEP;
       t += STEP * 1000;
+      if (def.split && vy >= 0 && t > 120) {
+        path.push([Math.round(t), Math.round(x), Math.round(y)]);
+        return { path, end: { x, y, t, hit: 'split', vx, vy } };
+      }
       if (t >= next) {
         path.push([Math.round(t), Math.round(x), Math.round(y)]);
         next += PATH_MS;

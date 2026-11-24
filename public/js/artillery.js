@@ -17,7 +17,18 @@
   };
   const rgb = (hex) => [parseInt(hex.slice(1, 3), 16), parseInt(hex.slice(3, 5), 16), parseInt(hex.slice(5, 7), 16)];
   const BLAST = { slash: '#fff6b0', axe: '#d5dbe6', fireball: '#ff7b1c', meteor: '#ff5a1f', arrow: '#ffd23f', dagger: '#d5dbe6', beam: '#fff6b0',
-    shuriken: '#d5dbe6', soul: '#7dff6b', thorn: '#4fa865', cannon: '#ffd23f', notes: '#ff9ad0', spear: '#7fd4ff' };
+    shuriken: '#d5dbe6', soul: '#7dff6b', thorn: '#4fa865', cannon: '#ffd23f', notes: '#ff9ad0', spear: '#7fd4ff', boulder: '#a99cc7',
+    frost: '#9fd7ff', seed: '#6fe08b', grape: '#ffd23f', drum: '#ff5a4d', shard: '#ff7b1c' };
+  // Shells only artillery has (the rest are the heroes' usual attacks): blocks of [dx, dy, size, color] in
+  // sprite pixels, turned to face the way they fly (boulders and drums just tumble).
+  const SHELLS = {
+    boulder: [[0, 0, 5, '#1b1426'], [0, 0, 4, '#8a8aa0'], [-1, -1, 2, '#c9cfdc'], [1, 1, 1.5, '#5a5a70']],
+    frost: [[0, 0, 3.5, '#5fb8ff'], [1, 0, 2, '#bfe9ff'], [-1.5, 0, 1.5, '#ffffff']],
+    seed: [[0, 0, 3.5, '#2f7d4a'], [0, 0, 2.4, '#6fe08b'], [-0.6, -0.6, 1, '#e9ffd9']],
+    grape: [[0, 0, 2.2, '#1b1426'], [-0.4, -0.4, 0.8, '#8691a6']],
+    drum: [[0, 0, 4.6, '#1b1426'], [0, 0, 3.8, '#e8374a'], [0, 0, 2.4, '#efe6d0'], [0, -1.6, 3.8, '#f5c542']],
+    shard: [[0, 0, 2.2, '#ff7b1c'], [0, 0, 1.2, '#ffd23f']],
+  };
 
   class ArtyView {
     constructor(canvas, { now = () => Date.now(), phone = false } = {}) {
@@ -139,6 +150,7 @@
         this.gctx = this.ground.getContext('2d');
       }
       this.pal = { grass: rgb(st.grass), dirt: st.dirt.map(rgb), rock: rgb(st.rock), vine: [rgb('#3f8f4a'), rgb('#4fa865')], stone: [rgb('#8a8aa0'), rgb('#6e6e88'), rgb('#4a4a60')] };
+      this.pal.hollow = this.pal.dirt[1].map((c) => c * 0.32);
       this.img = this.gctx.createImageData(COLS, ROWS);
       this.redraw(0, 0, COLS - 1, ROWS - 1);
     }
@@ -170,7 +182,12 @@
           const o = (cy * COLS + cx) * 4;
           const c = this.cellColor(cx, cy);
           if (!c) {
-            data[o + 3] = 0;
+            // Dug out of deep earth: a dark hollow, not the sky.
+            const under = this.terrain.under[cy * COLS + cx];
+            if (under) {
+              const n = 0.85 + hash(cx, cy) * 0.15;
+              [data[o], data[o + 1], data[o + 2], data[o + 3]] = [this.pal.hollow[0] * n, this.pal.hollow[1] * n, this.pal.hollow[2] * n, 255];
+            } else data[o + 3] = 0;
             continue;
           }
           let k = 1;
@@ -571,6 +588,18 @@
     drawShell(sh, pt) {
       const X = this.X(sh.x);
       const Y = this.Y(sh.y);
+      const own = SHELLS[sh.kind];
+      if (own) {
+        const u = 2.6 * this.s * (sh.big || 1);
+        const spin = sh.kind === 'boulder' || sh.kind === 'drum' ? pt / 120 : sh.a;
+        for (const [dx, dy, size, color] of own) {
+          const rx = dx * Math.cos(spin) - dy * Math.sin(spin);
+          const ry = dx * Math.sin(spin) + dy * Math.cos(spin);
+          this.block(X + rx * u, Y + ry * u, size * u, color);
+        }
+        if (Math.random() < 0.5) this.particles.push({ x: sh.x, y: sh.y, vx: 0, vy: 0, g: 0, life: 260, t0: pt, size: 3, color: BLAST[sh.kind] });
+        return;
+      }
       const fake = { U: 2.6 * this.s * (sh.big || 1), ctx: this.ctx, block: (x, y, size, color) => this.block(x, y, size, color) };
       const kind = sh.kind === 'meteor' ? 'fireball' : sh.kind;
       const look = this.looks.get(this.replay ? this.replay.shot.id : null) || {};
@@ -727,9 +756,9 @@
   }
 
   // ---- the phone's controls -----------------------------------------------------------
-  // On your turn: ◀ ▶ walk (held), ▲ ▼ angle (held), FIRE: hold to charge, let go to shoot. Pick your shot or
-  // your special, and use HEAL or DOUBLE. On a keyboard: arrows walk and aim, Space charges and fires,
-  // 1 and 2 pick the shot, H heals, D doubles.
+  // On your turn: ◀ ▶ walk (held), ▲ ▼ angle (held), FIRE: hold to charge, let go to shoot. Pick SHOT 1,
+  // SHOT 2 or your special, and use HEAL or DOUBLE. On a keyboard: arrows walk and aim, Space charges and
+  // fires, 1, 2 and 3 pick the shot, H heals, X doubles.
   class ArtyPad {
     constructor(root, { send, view }) {
       this.root = root;
@@ -739,7 +768,7 @@
       this.hero = null;
       this.angle = 45;
       this.face = 1;
-      this.special = false;
+      this.shot = 'one'; // 'one', 'two' or 'special'
       this.power = 0;
       this.charging = null;
       this.walking = 0;
@@ -748,7 +777,7 @@
       const q = (sel) => root.querySelector(sel);
       this.el = {
         left: q('[data-a="left"]'), right: q('[data-a="right"]'), up: q('[data-a="up"]'), down: q('[data-a="down"]'), fire: q('[data-a="fire"]'),
-        shot: q('[data-a="shot"]'), special: q('[data-a="special"]'), heal: q('[data-a="heal"]'), double: q('[data-a="double"]'),
+        shot: q('[data-a="shot"]'), shot2: q('[data-a="shot2"]'), special: q('[data-a="special"]'), heal: q('[data-a="heal"]'), double: q('[data-a="double"]'),
         power: q('.ap-power i'), last: q('.ap-power b'), angle: q('.ap-angle'), move: q('.ap-move i'), wait: q('.ap-wait'),
       };
       const hold = (btn, on, off) => {
@@ -765,8 +794,9 @@
       hold(this.el.up, () => { this.tilting = 1; }, () => { this.tilting = 0; this.aim(true); });
       hold(this.el.down, () => { this.tilting = -1; }, () => { this.tilting = 0; this.aim(true); });
       hold(this.el.fire, () => this.charge(), () => this.release());
-      this.el.shot.onclick = () => this.pick(false);
-      this.el.special.onclick = () => this.pick(true);
+      this.el.shot.onclick = () => this.pick('one');
+      this.el.shot2.onclick = () => this.pick('two');
+      this.el.special.onclick = () => this.pick('special');
       this.el.heal.onclick = () => this.item('heal');
       this.el.double.onclick = () => this.item('double');
       const keys = new Set();
@@ -779,8 +809,9 @@
         else if (k === 'arrowup' || k === 'w') this.tilting = 1;
         else if (k === 'arrowdown' || k === 's') this.tilting = -1;
         else if (k === ' ') this.charge();
-        else if (k === '1') this.pick(false);
-        else if (k === '2') this.pick(true);
+        else if (k === '1') this.pick('one');
+        else if (k === '2') this.pick('two');
+        else if (k === '3') this.pick('special');
         else if (k === 'h') this.item('heal');
         else if (k === 'x') this.item('double');
         else return;
@@ -817,7 +848,7 @@
       if (this.mine && !was) {
         this.angle = h.angle;
         this.face = h.face;
-        this.special = false;
+        if (this.shot === 'special') this.shot = 'one'; // keep your last pick, but the special charges up again
         this.power = 0;
         this.charging = null;
         if (navigator.vibrate) navigator.vibrate([60, 40, 60]);
@@ -861,15 +892,15 @@
       if (!this.mine || !this.charging) return;
       const power = Math.round(this.power);
       this.charging = null;
-      this.send('arty:fire', { angle: Math.round(this.angle), face: this.face, power, special: this.special });
+      this.send('arty:fire', { angle: Math.round(this.angle), face: this.face, power, shot: this.shot });
       this.mine = false;
       this.render();
     }
 
-    pick(special) {
+    pick(shot) {
       if (!this.mine) return;
-      if (special && !this.specialReady()) return;
-      this.special = special;
+      if (shot === 'special' && !this.specialReady()) return;
+      this.shot = shot;
       this.render();
     }
 
@@ -907,14 +938,15 @@
       const E = this.el;
       const h = this.hero;
       this.root.classList.toggle('mine', this.mine);
-      for (const b of [E.left, E.right, E.up, E.down, E.fire, E.shot, E.special, E.heal, E.double]) b.disabled = !this.mine;
+      for (const b of [E.left, E.right, E.up, E.down, E.fire, E.shot, E.shot2, E.special, E.heal, E.double]) b.disabled = !this.mine;
       E.power.style.width = `${this.mine ? this.power : 0}%`;
       E.last.style.left = `${h ? h.lastPower || 0 : 0}%`;
       E.last.classList.toggle('hidden', !h || !h.lastPower);
       E.angle.textContent = `${Math.round(this.mine ? this.angle : h ? h.angle : 45)}°`;
       E.move.style.width = `${h ? (100 * (h.stamina ?? A.STAMINA)) / A.STAMINA : 0}%`;
-      E.shot.classList.toggle('on', !this.special);
-      E.special.classList.toggle('on', this.special);
+      E.shot.classList.toggle('on', this.shot === 'one');
+      E.shot2.classList.toggle('on', this.shot === 'two');
+      E.special.classList.toggle('on', this.shot === 'special');
       const ready = this.specialReady();
       E.special.disabled = !this.mine || !ready;
       E.special.querySelector('small').textContent = !this.state || !this.state.specials ? 'OFF' : ready ? 'READY!' : `${h ? h.special : 0}%`;

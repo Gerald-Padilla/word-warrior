@@ -173,7 +173,10 @@
     .a-pad { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--panel); box-shadow: 0 -3px 0 var(--ink); z-index: 2; user-select: none; -webkit-user-select: none; }
     .ap-wait { font-size: 8px; text-align: center; color: var(--muted); min-height: 12px; }
     .a-pad.mine .ap-wait { color: var(--gold); animation: blink 1s steps(2) infinite; }
-    .ap-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .ap-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+    .ap-row .ap-btn { font-size: 10px; padding: 9px 1px; }
+    .ap-row.move .ap-btn { font-size: 12px; padding: 10px 2px; }
+    .ap-btn small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .ap-row.move { grid-template-columns: 1fr 1fr 1fr 1fr 1.8fr; }
     .ap-btn { font: inherit; font-size: 12px; padding: 10px 2px; border: 0; cursor: pointer; background: var(--ink); color: var(--cream); box-shadow: inset 0 0 0 3px var(--panel-3); touch-action: none; line-height: 1.4; }
     .ap-btn small { display: block; font-size: 6px; color: var(--muted); margin-top: 2px; }
@@ -655,7 +658,8 @@
       <div class="a-pad" id="aPad">
         <div class="ap-wait" id="aWait"></div>
         <div class="ap-row">
-          <button class="ap-btn on" type="button" data-a="shot">SHOT<small id="aShotName"></small></button>
+          <button class="ap-btn on" type="button" data-a="shot">SHOT 1<small id="aShotName"></small></button>
+          <button class="ap-btn" type="button" data-a="shot2">SHOT 2<small id="aShotName2"></small></button>
           <button class="ap-btn" type="button" data-a="special">SPECIAL<small>0%</small></button>
           <button class="ap-btn" type="button" data-a="heal">HEAL<small>+40 HP</small></button>
           <button class="ap-btn" type="button" data-a="double">x2<small>DOUBLE</small></button>
