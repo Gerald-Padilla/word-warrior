@@ -121,6 +121,11 @@
     { name: 'SLIME', attack: 'GOO BALL', text: 'spits goo that slows foes down', kind: 'goo', dmg: 4, cd: 1150, speed: 520, range: 320, r: 11, slow: 900 },
     { name: 'BABY DRAGON', attack: 'EMBER', text: 'spits little fireballs', kind: 'ember', dmg: 6, cd: 1300, speed: 560, range: 360, r: 10 },
     { name: 'FOX', attack: 'FOX FIRE', text: 'sends out fox fire that homes in on foes', kind: 'foxfire', dmg: 5, cd: 1300, speed: 460, range: 380, r: 10, homing: 3 },
+    { name: 'BUNNY', attack: 'CARROT TOSS', text: 'lobs carrots at foes', kind: 'carrot', dmg: 5, cd: 1050, speed: 640, range: 340, r: 10 },
+    { name: 'FROG', attack: 'TONGUE LASH', text: 'lashes out at foes close by', kind: 'tongue', dmg: 7, cd: 850, speed: 1100, range: 220, r: 12 },
+    { name: 'TURTLE', attack: 'SHELL SPIN', text: 'sends its shell spinning through foes, shoving them', kind: 'shell', dmg: 7, cd: 1600, speed: 420, range: 300, r: 13, pierce: 1, knock: 120 },
+    { name: 'GOAT', attack: 'HEADBUTT', text: 'butts foes close by, knocking them back', kind: 'ram', dmg: 8, cd: 1000, speed: 800, range: 170, r: 15, knock: 220 },
+    { name: 'BAT', attack: 'SONIC SCREECH', text: 'screeches a wave that goes through every foe in a line', kind: 'sonic', dmg: 4, cd: 1250, speed: 620, range: 360, r: 14, pierce: 9 },
   ];
 
   // The perks' and skills' numbers, used by the server.

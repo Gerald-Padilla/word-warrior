@@ -28,6 +28,10 @@ function createArty({ players, length = 'full', level = 'normal', specials = tru
     endsAt: 0,
     double: false, // the active hero used DOUBLE this turn
     busyUntil: 0, // the active hero is in the air (jumping) until then
+    hop: null, // their jump: { t0, path }, and whether they've flapped (a bat's second jump) in it
+    flapped: false,
+    fallAt: 0, // a hero who jumped off the bottom is out at this time (fallId), unless a flap saves them
+    fallId: null,
     mult: 1, // the shot being worked out hits this much harder (FURY)
     orbs: [], // power-ups floating over the field: { id, kind, x, y }
     orbSeq: 0,
@@ -58,6 +62,17 @@ function spotFor(G, team, i = null, n = 1) {
 
 // The hero's mount: their pet, and how it moves (see MOUNTS).
 const mountOf = (H) => A.MOUNTS[H.pet] || A.MOUNTS[0];
+
+// Where something moving along a path ([[t, x, y], ...]) is at time t.
+function pathAt(path, t) {
+  let i = 1;
+  while (i < path.length && path[i][0] < t) i++;
+  if (i >= path.length) return [path[path.length - 1][1], path[path.length - 1][2]];
+  const [ta, xa, ya] = path[i - 1];
+  const [tb, xb, yb] = path[i];
+  const k = tb > ta ? Math.max(0, Math.min(1, (t - ta) / (tb - ta))) : 1;
+  return [xa + (xb - xa) * k, ya + (yb - ya) * k];
+}
 
 function addHero(G, p, team = p.team, i = null, n = 1) {
   const spot = spotFor(G, team, i, n);
@@ -171,6 +186,7 @@ function walk(G, id, dir, dt) {
     if (nx < 12 || nx > MAP.W - 12) break;
     const y = G.terrain.standAt(nx, H.y, climb);
     if (y === false) break; // a wall
+    if (y === null && M.sure) break; // a goat stops at the edge of the drop
     H.stamina = Math.max(0, H.stamina - 2);
     H.x = nx;
     if (y === null) {
@@ -182,20 +198,44 @@ function walk(G, id, dir, dt) {
   return 'ok';
 }
 
-// Jump the way they face (their mount sets how far and how high). Worked out in full now: returns the
-// path for the screens to play, how long it takes (they can't do anything else until they land), and
-// whether they fell off the bottom (a KO). null: not now, or not enough stamina left.
+// Jump the way they face (their mount sets how far and how high, and what it costs). Worked out in full
+// now: returns the path for the screens to play, how long it takes (they can't do anything else until
+// they land), and whether it ends off the bottom (a KO once they've fallen: see fallNow). A bat can jump
+// once more in mid-air (a flap: half the cost, a little lower), from wherever it is on its way.
+// null: not now, or not enough stamina left.
 function jump(G, id, now) {
   const H = mine(G, id);
-  if (!H || now < G.busyUntil || H.stamina < A.JUMP.cost) return null;
+  if (!H) return null;
   const M = mountOf(H);
-  const j = A.hop(G.terrain, H.x, H.y, H.face * A.JUMP.vx * (M.jumpX || 1), -A.JUMP.vy * (M.jumpY || 1), M.glide || 0);
-  H.stamina = Math.max(0, H.stamina - A.JUMP.cost);
+  let from = [H.x, H.y];
+  const flap = now < G.busyUntil;
+  if (flap) {
+    if (!M.flap || G.flapped || !G.hop) return null;
+    from = pathAt(G.hop.path, now - G.hop.t0);
+  }
+  const cost = Math.round(A.JUMP.cost * (M.jumpCost || 1) * (flap ? 0.5 : 1));
+  if (H.stamina < cost) return null;
+  const j = A.hop(G.terrain, from[0], from[1], H.face * A.JUMP.vx * (M.jumpX || 1), -A.JUMP.vy * (M.jumpY || 1) * (flap ? 0.85 : 1), M.glide || 0);
+  H.stamina = Math.max(0, H.stamina - cost);
   H.x = Math.round(j.x);
   H.y = j.y;
   G.busyUntil = now + j.t;
-  if (j.fell) knockOut(G, H, null, 0, [], 'fell');
-  return { id: H.id, path: j.path, t: j.t, fell: j.fell, x: H.x, y: H.y, stamina: Math.round(H.stamina) };
+  G.hop = { t0: now, path: j.path };
+  G.flapped = flap;
+  G.fallAt = j.fell ? now + j.t : 0;
+  G.fallId = j.fell ? H.id : null;
+  return { id: H.id, path: j.path, t: j.t, fell: j.fell, flap, x: H.x, y: H.y, stamina: Math.round(H.stamina) };
+}
+
+// A hero who jumped off the bottom is out once they've fallen. Returns their id when it happens.
+function fallNow(G, now) {
+  if (!G.fallAt || now < G.fallAt) return null;
+  const H = G.heroes.get(G.fallId);
+  G.fallAt = 0;
+  G.fallId = null;
+  if (!H || !H.alive) return null;
+  knockOut(G, H, null, 0, [], 'fell');
+  return H.id;
 }
 
 function aim(G, id, angle, face) {
@@ -385,8 +425,8 @@ function boom(G, H, def, end, t, record, out) {
   let drained = 0;
   for (const [tid, raw] of hits) {
     const T = G.heroes.get(tid);
-    // FURY on the shot hits harder; a SHIELD takes half.
-    const dmg = Math.round(raw * G.mult * (T && T.shield ? A.ORBS.shield.guard : 1));
+    // FURY on the shot hits harder; a SHIELD takes half, and a turtle a little.
+    const dmg = Math.round(raw * G.mult * (T && T.shield ? A.ORBS.shield.guard : 1) * (T ? mountOf(T).guard || 1 : 1));
     if (!T || !T.alive || dmg <= 0) continue;
     T.hp -= dmg;
     const enemy = T.team !== H.team;
@@ -505,4 +545,4 @@ function stateOf(G) {
   };
 }
 
-module.exports = { createArty, addHero, removeHero, startTurn, walk, jump, aim, useItem, fire, verdict, finish, stateOf, aliveIn, spawnOrb, mountOf };
+module.exports = { createArty, addHero, removeHero, startTurn, walk, jump, fallNow, aim, useItem, fire, verdict, finish, stateOf, aliveIn, spawnOrb, mountOf };

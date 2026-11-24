@@ -36,7 +36,9 @@
 
   // Mounts: a hero rides their pet, and each pet moves in its own way (0: no pet, on foot). jumpX/jumpY:
   // how much farther/higher it jumps, glide: the fastest it falls (units/s) when it jumps, climb: how
-  // much higher a step it walks up, stamina/speed: how far and how fast it walks.
+  // much higher a step it walks up, stamina/speed: how far and how fast it walks, jumpCost: what a jump
+  // costs (times JUMP.cost), guard: damage taken (times), sure: never walks off into the drop, flap: can
+  // jump once more in mid-air.
   const MOUNTS = [
     { name: 'ON FOOT', text: 'no mount: a plain jump' },
     { name: 'POUNCE', pet: 'CAT', text: 'jumps much higher', jumpY: 1.4 },
@@ -44,6 +46,11 @@
     { name: 'STICKY', pet: 'SLIME', text: 'walks up walls three times as high', climb: 3 },
     { name: 'WINGS', pet: 'BABY DRAGON', text: 'has the longest jump of all', jumpX: 1.6, jumpY: 1.15 },
     { name: 'SWIFT', pet: 'FOX', text: 'walks half again as far, and faster', stamina: 1.5, speed: 1.5 },
+    { name: 'HOP', pet: 'BUNNY', text: 'jumps for half the cost: twice as many jumps', jumpCost: 0.5 },
+    { name: 'LEAP', pet: 'FROG', text: 'jumps higher and farther', jumpX: 1.35, jumpY: 1.25 },
+    { name: 'SHELL', pet: 'TURTLE', text: 'takes 15% less damage, but walks less far', guard: 0.85, stamina: 0.75 },
+    { name: 'SURE-FOOTED', pet: 'GOAT', text: 'climbs steep slopes and never walks off into the drop', climb: 2, sure: true },
+    { name: 'FLAP', pet: 'BAT', text: 'jumps again in mid-air (tap JUMP while flying)', flap: true },
   ];
 
   // Power-ups float over the middle of the battlefield: hit one with a shot (or a blast) and it's yours.

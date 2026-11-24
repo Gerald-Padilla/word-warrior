@@ -78,6 +78,31 @@
       rows: ['K.....K.', 'KK...KK.', 'KAKKKAK.', 'KAWAWAK.', '.KAAAK..', '.KWWWKKK', '.KAAAKAW', '..K.KKKK'],
       walk: ['.K...KKK', '...KKKKK'],
     },
+    {
+      name: 'Bunny', pal: { A: '#ece6f2', a: '#b9aecb', P: '#ff9ad0' },
+      rows: ['..K..K..', '.KPKKPK.', '.KPKKPK.', 'KAAAAAAK', 'KAKAAKAK', 'KaAPPAaK', '.KaAAaKW', '..KK.KK.'],
+      walk: ['.KK...KK', '...KKK..'],
+    },
+    {
+      name: 'Frog', pal: { A: '#3fae5a', a: '#2a7a3e', Y: '#d8f0a0' },
+      rows: ['.KK..KK.', 'KWWKKWWK', 'KWKAAKWK', 'KAAAAAAK', 'KKAAAAKK', 'KaKKKKaK', '.KYYYYK.', 'KK.KK.KK'],
+      walk: ['K.KK..KK', 'KK..KK.K'],
+    },
+    {
+      name: 'Turtle', pal: { A: '#8fd16a', S: '#4a7a2a', s: '#2f5a1e', E: '#ffffff' },
+      rows: ['..KKKK..', '.KAAAAK.', '.KEAAEK.', 'KSKAAKSK', 'KSsKKsSK', 'KsSsSsSK', '.KKKKKK.', '.KA..AK.'],
+      walk: ['KA....AK', '..KAAK..'],
+    },
+    {
+      name: 'Goat', pal: { A: '#e8e2d0', a: '#b8ad94', H: '#c9a66b', P: '#ff9ad0', E: '#ffd23f' },
+      rows: ['KK....KK', 'KHK..KHK', '.KKKKKK.', 'KAEAAEAK', 'KAAaaAAK', '.KAPPAK.', '.KAWWAKK', '..K..K..'],
+      walk: ['.K....K.', '...KK...'],
+    },
+    {
+      name: 'Bat', pal: { A: '#7a55b0', V: '#45306b', R: '#ff3b3b' },
+      rows: ['.K....K.', '.KK..KK.', '.KAKKAK.', 'KKRAARKK', 'KVKAAKVK', 'KVVAAVVK', 'K.KAAK.K', '...KK...'],
+      walk: ['..K..K..', '..KKKK..'],
+    },
   ];
 
   const CLASSES = [

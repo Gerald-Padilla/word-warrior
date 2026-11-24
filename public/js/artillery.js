@@ -182,7 +182,7 @@
       for (const [id, team, x, y, hp, alive, face, angle, special, heal, double, stamina, lastPower, buffs, maxStamina] of s.heroes) {
         seen.add(id);
         const h = this.heroes.get(id) || { shownY: y };
-        Object.assign(h, { id, team, x, y, hp, alive: Boolean(alive), face, angle, special, heal, double, stamina, lastPower, buffs: buffs || 0,
+        Object.assign(h, { id, team, x, y, hp, alive: Boolean(alive) && y <= MAP.H, face, angle, special, heal, double, stamina, lastPower, buffs: buffs || 0,
           maxStamina: maxStamina || A.STAMINA, power: 0 });
         if (Math.abs(h.shownY - y) > 300) h.shownY = y;
         this.heroes.set(id, h);
@@ -552,7 +552,7 @@
       this.drawTexts(pt);
       for (const h of this.heroes.values()) if (h.say && h.bubbleAt) this.drawBubble(h, pt);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.drawWind();
+      this.drawWind(pt, dt);
       this.drawCallouts(pt);
       this.drawFeed(pt);
       if (this.follow) this.drawMinimap(shells);
@@ -923,28 +923,85 @@
       this.texts = keep;
     }
 
-    // The wind: an arrow along the top, longer the stronger it blows.
-    drawWind() {
+    // The wind: a gauge along the top (on a phone, as wide as the room beside the minimap; on the big screen,
+    // over the middle of the field). An arrow grows from the middle the way it blows, longer and hotter in
+    // color the stronger it is, with streaks drifting along; ticks mark every 4 points, up to 16. Under it,
+    // the number, which way, and how strong in a word.
+    drawWind(pt, dt) {
       const s = this.state;
       if (!s) return;
       const d = this.dpr;
-      // Phone: top left, out of the minimap's way. Big screen: over the middle of the field.
-      const half = this.follow ? 62 : 110;
-      const cx = this.follow ? (8 + half) * d : this.ox + (MAP.W * this.s) / 2;
-      const y = ((this.phone ? 0 : this.reserveTop) + (this.follow ? 18 : 22)) * d;
-      const max = 16;
-      const w = Math.round((Math.abs(s.wind) / max) * (half - 20) * d);
       const ctx = this.ctx;
-      ctx.fillStyle = 'rgba(27,20,38,0.75)';
-      ctx.fillRect(cx - half * d, y - 12 * d, half * 2 * d, 24 * d);
-      if (s.wind) {
-        const dir = Math.sign(s.wind);
-        ctx.fillStyle = '#7fd4ff';
-        ctx.fillRect(dir > 0 ? cx : cx - w, y - 3 * d, w, 6 * d);
-        for (let i = 0; i < 4; i++) this.block(cx + dir * (w - i * 2 * d), y, (8 - i * 2) * d, '#7fd4ff');
+      const MAX = 16;
+      const mini = this.follow ? Math.min(this.W * 0.42, 170 * d) / d : 0;
+      const half = this.follow ? clamp((this.W / d - mini - 32) / 2, 60, 130) : 180;
+      const cx = this.follow ? (8 + half) * d : this.ox + (MAP.W * this.s) / 2;
+      const top = ((this.phone ? 0 : this.reserveTop) + 8) * d;
+      const h = (this.follow ? 26 : 34) * d;
+      const y = top + h / 2;
+      const w = half * d;
+      const span = w - 14 * d; // the longest the arrow gets
+      // The arrow grows (or shrinks, or swings round) to a new wind, rather than jumping.
+      this.windShown = this.windShown === undefined ? s.wind : this.windShown + (s.wind - this.windShown) * (1 - Math.exp(-dt / 180));
+      const n = Math.abs(s.wind);
+      const dir = Math.sign(this.windShown) || Math.sign(s.wind);
+      const len = span * Math.min(1, Math.abs(this.windShown) / MAX);
+      const color = n === 0 ? '#c9cfdc' : n <= 4 ? '#7fd4ff' : n <= 9 ? '#ffd23f' : n <= 13 ? '#ff9a3c' : '#ff5a4d';
+      ctx.fillStyle = '#1b1426';
+      ctx.fillRect(Math.round(cx - w - 2 * d), Math.round(top - 2 * d), Math.round(w * 2 + 4 * d), Math.round(h + 4 * d));
+      ctx.fillStyle = 'rgba(45,35,66,0.92)';
+      ctx.fillRect(Math.round(cx - w), Math.round(top), Math.round(w * 2), Math.round(h));
+      // Streaks drifting the way it blows, faster the stronger.
+      if (n) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(cx - w, top, w * 2, h);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(255,255,255,0.18)';
+        const lanes = [0.25, 0.5, 0.75];
+        for (let i = 0; i < 7; i++) {
+          const run = half * 2 + 40;
+          const pos = ((pt * (0.02 + n * 0.01) + i * 61) % run) - 20;
+          const x = Math.sign(s.wind) > 0 ? cx - w + pos * d : cx + w - pos * d;
+          ctx.fillRect(Math.round(x), Math.round(top + h * lanes[i % 3]), Math.round((8 + n) * d), Math.max(1, Math.round(d)));
+        }
+        ctx.restore();
       }
-      this.text(`WIND ${Math.abs(s.wind)}`, cx, y + 26 * d, this.follow ? 7 : 10, '#ffffff');
-      if (s.boost > 1) this.text(`SUDDEN DEATH x${s.boost}`, cx, y + 42 * d, this.follow ? 7 : 10, '#ff5a4d');
+      // Ticks every 4 points either way, and the middle.
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      for (let k = 4; k <= MAX; k += 4) {
+        for (const side of [-1, 1]) ctx.fillRect(Math.round(cx + side * (span * k) / MAX - d / 2), Math.round(top + h - 6 * d), Math.max(1, Math.round(d)), Math.round(4 * d));
+      }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(Math.round(cx - d), Math.round(top + 3 * d), Math.round(2 * d), Math.round(h - 6 * d));
+      // The arrow: a bar from the middle and a stepped head, outlined.
+      if (len > 2 * d) {
+        const bar = 6 * d;
+        const x0 = dir > 0 ? cx : cx - len;
+        ctx.fillStyle = '#1b1426';
+        ctx.fillRect(Math.round(x0), Math.round(y - bar / 2 - d), Math.round(len), Math.round(bar + 2 * d));
+        ctx.fillStyle = color;
+        ctx.fillRect(Math.round(x0), Math.round(y - bar / 2), Math.round(len), Math.round(bar));
+        const tip = cx + dir * len;
+        for (let i = 0; i < 5; i++) {
+          const hh = (2 * (5 - i) - 1) * 2 * d;
+          const x = dir > 0 ? tip + i * 2 * d : tip - (i + 1) * 2 * d;
+          ctx.fillStyle = '#1b1426';
+          ctx.fillRect(Math.round(x - d), Math.round(y - hh / 2 - d), Math.round(4 * d), Math.round(hh + 2 * d));
+        }
+        for (let i = 0; i < 5; i++) {
+          const hh = (2 * (5 - i) - 1) * 2 * d;
+          const x = dir > 0 ? tip + i * 2 * d : tip - (i + 1) * 2 * d;
+          ctx.fillStyle = color;
+          ctx.fillRect(Math.round(x), Math.round(y - hh / 2), Math.round(2 * d), Math.round(hh));
+        }
+      }
+      const word = n === 0 ? 'CALM' : n <= 4 ? 'LIGHT' : n <= 9 ? 'BREEZY' : n <= 13 ? 'STRONG' : 'GALE';
+      const way = s.wind < 0 ? '◀ ' : '';
+      const back = s.wind > 0 ? ' ▶' : '';
+      const fs = this.follow ? 8 : 12;
+      this.text(n ? `${way}WIND ${n} ${word}${back}` : 'NO WIND', cx, top + h + (fs + 8) * d, fs, color);
+      if (s.boost > 1) this.text(`SUDDEN DEATH x${s.boost}`, cx, top + h + (fs * 2 + 16) * d, this.follow ? 7 : 10, '#ff5a4d');
     }
 
     drawCallouts(pt) {
@@ -1133,13 +1190,31 @@
       this.send('arty:aim', { angle: Math.round(this.angle), face: this.face });
     }
 
-    // Jump the way you face (it uses up some of your walk).
-    jump() {
+    // Your mount: what a jump costs, and whether it can flap (a bat) in mid-air.
+    mount() {
+      const look = this.hero && this.view.looks.get(this.hero.id);
+      return A.MOUNTS[look ? look.pet : 0] || A.MOUNTS[0];
+    }
+
+    canJump() {
       const h = this.hero;
-      if (!this.mine || this.charging || performance.now() < this.airUntil || !h || (h.stamina ?? 0) < A.JUMP.cost) return;
-      this.airUntil = performance.now() + 400; // until the server says how long
+      if (!this.mine || this.charging || !h || this.jumping) return false;
+      const air = performance.now() < this.airUntil;
+      if (air && (!this.mount().flap || this.flapped)) return false;
+      return (h.stamina ?? 0) >= Math.round(A.JUMP.cost * (this.mount().jumpCost || 1) * (air ? 0.5 : 1));
+    }
+
+    // Jump the way you face (it uses up some of your walk); on a bat, JUMP again in mid-air to flap.
+    jump() {
+      if (!this.canJump()) return;
+      const air = performance.now() < this.airUntil;
+      this.flapped = air;
+      this.jumping = true;
+      if (!air) this.airUntil = performance.now() + 400; // until the server says how long
       this.send('arty:jump', { face: this.face }, (res) => {
-        this.airUntil = res && res.ok ? performance.now() + res.t : 0;
+        this.jumping = false;
+        if (res && res.ok) this.airUntil = performance.now() + res.t;
+        else if (!air) this.airUntil = 0;
         this.render();
       });
       this.render();
@@ -1212,7 +1287,9 @@
       const air = performance.now() < this.airUntil;
       for (const b of [E.left, E.right, E.up, E.down, E.fire, E.shot, E.shot2, E.special, E.heal, E.double, E.jump]) b.disabled = !this.mine;
       E.fire.disabled = !this.mine || air;
-      E.jump.disabled = !this.mine || air || !h || (h.stamina ?? 0) < A.JUMP.cost;
+      E.jump.disabled = !this.canJump();
+      const jumpLabel = air && this.mount().flap && !this.flapped ? 'FLAP' : 'JUMP';
+      if (E.jump.textContent !== jumpLabel) E.jump.textContent = jumpLabel;
       E.power.style.width = `${this.mine ? this.power : 0}%`;
       E.last.style.left = `${h ? h.lastPower || 0 : 0}%`;
       E.last.classList.toggle('hidden', !h || !h.lastPower);

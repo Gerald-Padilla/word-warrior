@@ -316,6 +316,11 @@ A real-time arena fight with no typing: phones become controllers and heroes fig
   | **Slime** | **Goo Ball:** spits goo that slows foes down |
   | **Baby Dragon** | **Ember:** spits little fireballs |
   | **Fox** | **Fox Fire:** sends out fox fire that homes in on foes |
+  | **Bunny** | **Carrot Toss:** lobs carrots at foes |
+  | **Frog** | **Tongue Lash:** lashes out at foes close by |
+  | **Turtle** | **Shell Spin:** sends its shell spinning through foes, shoving them |
+  | **Goat** | **Headbutt:** butts foes close by, knocking them back |
+  | **Bat** | **Sonic Screech:** a wave that goes through every foe in a line |
 
 - **How to play, in the lobby.** With DUEL picked, the big screen's lobby has a row of tips (moving,
   attacking, skills, pets, power-ups, points). Each phone's lobby has a **HOW TO PLAY** box for that device
@@ -403,8 +408,10 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   - **Pick a shot:** **SHOT 1**, **SHOT 2**, or **SPECIAL** when it's charged.
   - **Keyboard:** the arrow keys walk and aim, J jumps, Space charges and fires, 1, 2 and 3 pick the shot,
     H heals and X doubles. Enter opens the chat and Escape closes it.
-- **Wind.** It changes every turn (stronger on hard) and pushes every shot sideways; the arrow at the top shows
-  which way and how hard. Arrows barely feel it, and soul bolts not at all.
+- **Wind.** It changes every turn (stronger on hard) and pushes every shot sideways. The gauge at the top
+  shows it: an arrow from the middle the way it blows, longer and redder the stronger it is (ticks mark every
+  4 points, up to 16), and under it the number and a word: calm, light, breezy, strong or gale. Arrows barely
+  feel it, and soul bolts not at all.
 - **Shots.** Every class has two shots of its own to pick from (table below). A blast hurts everyone near
   it, teammates and yourself included, and digs a crater. A direct hit does extra damage. Some shots fly in
   their own way:
@@ -445,6 +452,11 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   | **Slime** | **Sticky:** walks up walls three times as high |
   | **Baby Dragon** | **Wings:** the longest jump |
   | **Fox** | **Swift:** walks half again as far, and faster |
+  | **Bunny** | **Hop:** jumps for half the cost, so twice as many jumps |
+  | **Frog** | **Leap:** jumps higher and farther |
+  | **Turtle** | **Shell:** takes 15% less damage, but walks less far |
+  | **Goat** | **Sure-footed:** climbs steeper slopes and never walks off into the drop |
+  | **Bat** | **Flap:** tap **JUMP** again in mid-air (it says **FLAP**) for a second, smaller jump: over a wider gap, or back from the edge |
   | No pet | A plain jump |
 
 - **Points.** Damage to enemies scores 1 point per HP, a KO scores +100, and every hero on the winning team
@@ -520,7 +532,8 @@ Both pages adjust to the screen they're on.
 
 **Heroes:** twelve classes, each with its own attack. Customize each with 8 colors, 4 skin tones, 8 hair/beard
 colors (for the classes that show hair), 6 trims (the gold accents) and a companion pet (cat, owl, slime, baby
-dragon or fox) that follows your hero into battle, and fights beside them in a duel. The creator shows your hero on a mini battlefield doing
+dragon, fox, bunny, frog, turtle, goat or bat) that follows your hero into battle, fights beside them in a duel,
+and carries them in artillery. The creator shows your hero on a mini battlefield doing
 their attack (tap it to attack again), with their perk and skill, and has **RANDOM LOOK** and a random-name button.
 
 ## Classes

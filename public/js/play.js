@@ -1881,7 +1881,7 @@
       ['AIM', pcControls ? 'Up and down arrow keys set the angle.' : '▲ ▼ set the angle. Drag the battlefield to look around.'],
       ['FIRE', pcControls ? 'Hold Space to charge the power, let go to shoot.' : 'Hold FIRE to charge the power, let go to shoot. The white mark is your last shot.'],
       ['SHOTS', `SHOT 1: ${shots.name}. SHOT 2: ${shots.alt.name}, ${shots.alt.text}${pcControls ? ' (keys 1 and 2)' : ''}.`],
-      ['WIND', 'Changes every turn and bends your shot: check the arrow at the top.'],
+      ['WIND', 'Changes every turn and bends your shot. The gauge at the top shows which way and how hard: the longer and redder the arrow, the stronger.'],
       options.skills ? ['SPECIAL', `${shots.special.name}: ${shots.special.text}. It charges as you hit and get hit${pcControls ? ' (key 3)' : ''}.`] : null,
       ['ITEMS', `HEAL (+40 HP) and DOUBLE (fire twice): once each a game${pcControls ? ' (keys H and X)' : ''}.`],
       ['POWER-UPS', 'Bubbles float over the middle: shoot one to take it. POTION heals, FURY hits harder, SHIELD halves damage, HASTE goes farther, TWIN SHOT fires twice.'],

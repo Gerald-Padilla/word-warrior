@@ -1161,7 +1161,8 @@
       }
     }
 
-    // A pet's attack in flight: a claw swipe, a feather, a goo ball, an ember or a wisp of fox fire.
+    // A pet's attack in flight: a claw swipe, a feather, a goo ball, an ember, a wisp of fox fire, a carrot,
+    // a tongue, a spinning shell, a pair of horns or a sound wave.
     drawPetShot(kind, X, Y, x, y, a, pt) {
       const u = 2.4 * this.s;
       const dx = Math.cos(a);
@@ -1209,6 +1210,39 @@
           trail('#5ee0ff');
           break;
         }
+        case 'carrot':
+          for (let k = 0; k < 4; k++) this.block(X - dx * k * u, Y - dy * k * u, u * (1.3 - k * 0.15), k ? '#ee7b2a' : '#ffb061');
+          this.block(X - dx * 4.4 * u + px * u * 0.8, Y - dy * 4.4 * u + py * u * 0.8, u * 0.9, '#4fa865');
+          this.block(X - dx * 4.4 * u - px * u * 0.8, Y - dy * 4.4 * u - py * u * 0.8, u * 0.9, '#4fa865');
+          break;
+        case 'tongue':
+          for (let k = 1; k <= 6; k++) this.block(X - dx * k * u, Y - dy * k * u, u * 0.8, '#e86a8a');
+          this.block(X, Y, u * 1.8, '#ff9ad0');
+          break;
+        case 'shell': {
+          const spin = pt / 70;
+          this.block(X, Y, u * 2.8, '#1b1426');
+          this.block(X, Y, u * 2.3, '#4a7a2a');
+          for (let i = 0; i < 4; i++) {
+            const b = spin + (i * Math.PI) / 2;
+            this.block(X + Math.cos(b) * u * 0.7, Y + Math.sin(b) * u * 0.7, u * 0.7, '#8fd16a');
+          }
+          break;
+        }
+        case 'ram':
+          this.block(X + px * u * 1.1, Y + py * u * 1.1, u * 1.3, '#c9a66b');
+          this.block(X - px * u * 1.1, Y - py * u * 1.1, u * 1.3, '#c9a66b');
+          this.block(X + dx * u * 0.6, Y + dy * u * 0.6, u * 1.1, '#e8e2d0');
+          trail('#c9b28a');
+          break;
+        case 'sonic':
+          for (let k = 0; k < 3; k++) {
+            const spread = (1 + k) * u * 0.55;
+            for (let i = -2; i <= 2; i++) {
+              this.block(X - dx * k * u * 1.4 + px * i * spread, Y - dy * k * u * 1.4 + py * i * spread, u * 0.7, k ? '#a07ad0' : '#e0c8ff');
+            }
+          }
+          break;
         default:
           this.block(X, Y, u * 2, '#ffffff');
       }

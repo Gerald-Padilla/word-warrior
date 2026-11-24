@@ -69,7 +69,7 @@ const COLOR_COUNT = 8;
 const SKIN_COUNT = 4;
 const HAIR_COUNT = 8; // 0 = the class's own hair color
 const TRIM_COUNT = 6;
-const PET_COUNT = 6; // 0 = no pet
+const PET_COUNT = 11; // 0 = no pet
 
 // Auto-type guard: every claim carries the gaps between the player's keystrokes for that word.
 const KEY_MIN_MS = 25; // a word typed faster than this per letter on average (~400+ WPM) is a machine
@@ -1693,6 +1693,11 @@ function artyTick(room, now) {
   if (!G || room.state !== 'playing') return;
   const dt = Math.min(0.2, (now - room.artyLast) / 1000);
   room.artyLast = now;
+  // Jumped off the bottom, and now they're gone: out, and the turn's over.
+  if (ARTY.fallNow(G, now)) {
+    if (G.phase === 'aim') return artyPass(room, now, false);
+    broadcastState(room);
+  }
   if (G.phase === 'start' && now >= G.endsAt) return artyNext(room, now);
   if (G.phase === 'aim') {
     const w = room.artyWalk;
@@ -1722,6 +1727,7 @@ function artyPass(room, now, timeUp = true) {
 
 function artyNext(room, now) {
   const G = room.arty;
+  ARTY.fallNow(G, Infinity); // anyone still falling off the bottom is out before the next turn
   syncArty(room);
   const verdict = ARTY.verdict(G);
   if (verdict !== null) return artyOver(room, verdict);
@@ -2369,8 +2375,8 @@ io.on('connection', (socket) => {
     broadcastState(room);
     reply(cb, { ok: true });
   });
-  // Jump: worked out in full now and played out on every screen. A jump off the bottom is a KO, and the
-  // turn's over once they've fallen.
+  // Jump (or a bat's flap in mid-air): worked out in full now and played out on every screen. A jump off
+  // the bottom is a KO, and the turn's over, once they've fallen (artyTick).
   socket.on('arty:jump', (data, cb) => {
     const { room, player, G } = artyCtx();
     if (!room) return reply(cb, { ok: false });
@@ -2379,10 +2385,6 @@ io.on('connection', (socket) => {
     const j = ARTY.jump(G, player.id, now);
     if (!j) return reply(cb, { ok: false });
     io.to(channel(room)).emit('arty:jump', j);
-    if (j.fell) {
-      artyPass(room, now, false);
-      G.endsAt = now + j.t + ARTY_PASS_MS;
-    }
     reply(cb, { ok: true, t: j.t });
   });
   socket.on('arty:fire', (data, cb) => {
