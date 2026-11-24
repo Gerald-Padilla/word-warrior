@@ -188,7 +188,7 @@ for (let i = 0; i < count; i++) {
     const live = heroes.filter((h) => h.alive);
     for (let angle = 20; angle <= 80; angle += 4) {
       for (let power = 25; power <= 100; power += 3) {
-        const { end } = AR.fly(field.terrain, live, me, AR.launch(H.x, H.y, face, angle, power), def, A.wind, foes);
+        const { end } = AR.fly(field.terrain, live, me, AR.launch(H.x, H.y, face, angle, power), def, A.wind);
         if (end.hit === 'gone') continue;
         const miss = end.hit === 'hero' && end.hero === T.id ? 0 : Math.hypot(end.x - T.x, end.y - T.y + AR.HERO_MID);
         if (!best || miss < best.miss) best = { angle, power, miss };

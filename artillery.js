@@ -192,7 +192,6 @@ function fire(G, id, data, now) {
 // it leaves the hero's hands. Returns when it's all done (ms).
 function shell(G, H, def, power, off, t0, out, from = null) {
   const heroes = () => [...G.heroes.values()].filter((h) => h.alive).map((h) => ({ id: h.id, x: h.x, y: h.y }));
-  const foes = () => [...G.heroes.values()].filter((h) => h.alive && h.team !== H.team).map((h) => ({ x: h.x, y: h.y }));
   let s = from || A.launch(H.x, H.y, H.face, H.angle + off, power);
   const record = { kind: def.kind, big: def.big || 1, t0, path: [], booms: [], end: t0 };
   out.shells.push(record);
@@ -200,7 +199,7 @@ function shell(G, H, def, power, off, t0, out, from = null) {
   let done = t0;
   let bounces = def.bounce || 0;
   for (;;) {
-    const flight = A.fly(G.terrain, heroes(), from ? null : H.id, s, def, G.wind, def.seek ? foes() : null);
+    const flight = A.fly(G.terrain, heroes(), from ? null : H.id, s, def, G.wind);
     for (const p of flight.path) record.path.push([Math.round(t + p[0]), p[1], p[2]]);
     t += flight.end.t;
     let end = flight.end;

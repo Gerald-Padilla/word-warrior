@@ -408,7 +408,6 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   - **Straight:** flies dead straight a long way (no drop, no wind) before it falls.
   - **Rolling:** lands and rolls along the ground, over bumps and down slopes, before it blows.
   - **Splitting:** splits into three at the top of its arc.
-  - **Homing:** turns toward the nearest enemy as it comes down.
   - **Bursting:** bursts into little bomblets where it lands.
   - **Bouncing:** bounces, blowing up each time.
 - **The ground.** Craters stay for the rest of the battle. A hero with nothing under their feet drops to the
@@ -452,7 +451,7 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
 | Knight | **Sword Beam:** a steady all-rounder | **Lance:** flies dead straight a long way before it drops | **Holy Blade:** a huge blade of light, with a big blast and a big hit |
 | Barbarian | **Spinning Axe:** heavy (it drops faster), hits hard, digs deep | **Boulder:** lands and rolls along the ground before it blows | **Earthquake:** a giant crater that drops everyone around it |
 | Wizard | **Fireball:** a wide blast | **Frost Shards:** splits into three at the top of its arc | **Meteor:** a flaming rock with a huge blast |
-| Elf Archer | **Piercing Arrow:** light, barely feels the wind, deadly on a direct hit | **Hawk Arrow:** turns toward the nearest enemy as it comes down | **Arrow Rain:** five arrows at once, fanned out |
+| Elf Archer | **Piercing Arrow:** light, barely feels the wind, deadly on a direct hit | **Eagle Arrow:** flies flat and far, barely feeling the wind | **Arrow Rain:** five arrows at once, fanned out |
 | Rogue | **Dagger Volley:** two daggers, one after the other | **Caltrops:** bursts into four little blasts where it lands | **Shadow Step:** a dagger that takes you with it: you land where it hits |
 | Cleric | **Holy Light:** heals teammates near the blast by 15 | **Smite:** a beam of light, dead straight and deaf to the wind | **Sanctuary:** heals teammates near the blast by 40 |
 | Ninja | **Shuriken:** three at once, fanned out | **Ricochet Star:** bounces twice, blowing up each time | **Shuriken Storm:** six at once |

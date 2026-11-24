@@ -53,7 +53,7 @@
   // this share of damage, grow: raises a mound instead of digging, teleport: the shooter lands where it
   // hits, straight: flies dead straight this far (no gravity or wind) before it drops, roll: lands and
   // rolls along the ground this far before it blows, split: splits into this many at the top of its arc,
-  // seek: turns toward the nearest enemy as it comes down (radians/s), cluster: bursts into bomblets.
+  // cluster: bursts into bomblets. No shot steers itself: every hit is aimed.
   const SHOTS = {
     knight: {
       name: 'SWORD BEAM', shot: { kind: 'slash', dmg: 30, r: 60, crater: 40 },
@@ -72,7 +72,7 @@
     },
     archer: {
       name: 'PIERCING ARROW', shot: { kind: 'arrow', dmg: 24, r: 45, crater: 28, grav: 0.85, wind: 0.6, direct: 1.7 },
-      alt: { name: 'HAWK ARROW', text: 'turns toward the nearest enemy as it comes down', shot: { kind: 'arrow', dmg: 21, r: 40, crater: 24, wind: 0.6, seek: 2.2 } },
+      alt: { name: 'EAGLE ARROW', text: 'a light arrow that flies flat and far, barely feeling the wind', shot: { kind: 'arrow', dmg: 20, r: 38, crater: 22, grav: 0.55, wind: 0.3, direct: 1.5 } },
       special: { name: 'ARROW RAIN', text: 'five arrows at once, fanned out', shot: { kind: 'arrow', dmg: 22, r: 45, crater: 28, grav: 0.85, wind: 0.6, direct: 1.5, count: 5, spread: 4 } },
     },
     rogue: {
@@ -368,11 +368,11 @@
 
   // Flies one shell until it hits the ground, a hero or leaves the map (or, for a shell that splits, until
   // the top of its arc). heroes: [{ id, x, y }] (feet); `skip` is the shooter's id (they can't hit
-  // themselves in the first moment); `foes`: enemies a seeking shell turns toward. Returns the path (a
-  // point every PATH_MS) and how it ended: { x, y, t, hit: 'ground' | 'hero' | 'gone' | 'split', hero, vx, vy }.
+  // themselves in the first moment). Returns the path (a point every PATH_MS) and how it ended:
+  // { x, y, t, hit: 'ground' | 'hero' | 'gone' | 'split', hero, vx, vy }.
   const STEP = 1 / 240;
   const PATH_MS = 30;
-  function fly(terrain, heroes, skip, s, def, wind, foes = null) {
+  function fly(terrain, heroes, skip, s, def, wind) {
     let { x, y, vx, vy } = s;
     const grav = GRAVITY * (def.grav ?? 1);
     const push = WIND_ACCEL * wind * (def.wind ?? 1);
@@ -389,23 +389,6 @@
       } else {
         vx += push * STEP;
         vy += grav * STEP;
-        if (def.seek && vy > 0 && foes && foes.length) {
-          // Coming down: bend toward the nearest enemy in reach.
-          let best = null;
-          for (const f of foes) {
-            const d = Math.hypot(f.x - x, f.y - HERO_MID - y);
-            if (d < 700 && (!best || d < best.d)) best = { d, f };
-          }
-          if (best) {
-            const a = Math.atan2(vy, vx);
-            let off = Math.atan2(best.f.y - HERO_MID - y, best.f.x - x) - a;
-            off = Math.atan2(Math.sin(off), Math.cos(off));
-            const turn = Math.max(-def.seek * STEP, Math.min(def.seek * STEP, off));
-            const sp = Math.hypot(vx, vy);
-            vx = Math.cos(a + turn) * sp;
-            vy = Math.sin(a + turn) * sp;
-          }
-        }
       }
       x += vx * STEP;
       y += vy * STEP;
