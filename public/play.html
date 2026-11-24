@@ -160,6 +160,34 @@
     .b-over .o3 { font-size: 9px; line-height: 1.9; text-shadow: 2px 2px 0 var(--ink); max-width: 420px; }
     .b-help { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); font-size: 7px; color: var(--cream); background: rgba(27, 20, 38, 0.8); padding: 6px 9px; white-space: nowrap; pointer-events: none; z-index: 3; transition: opacity 0.6s steps(3); }
     .b-help.gone { opacity: 0; }
+
+    /* Artillery: the battlefield, then the controls (live on your turn). */
+    #scrArty { padding: 0; gap: 0; overflow: hidden; }
+    .a-teams { display: grid; grid-template-columns: auto 1fr 1fr auto; align-items: center; gap: 6px; padding: 5px 10px; font-size: 8px; background: var(--panel); box-shadow: 0 3px 0 var(--ink); z-index: 2; }
+    .a-teams b { font-weight: normal; color: var(--cream); }
+    .a-bar { height: 9px; background: #0e0a17; box-shadow: 0 0 0 2px #0e0a17; display: flex; }
+    .a-bar.right { justify-content: flex-end; }
+    .a-bar i { display: block; height: 100%; transition: width 0.3s steps(4); }
+    .a-field { position: relative; flex: 1; min-height: 0; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+    .a-field canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .a-pad { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); background: var(--panel); box-shadow: 0 -3px 0 var(--ink); z-index: 2; user-select: none; -webkit-user-select: none; }
+    .ap-wait { font-size: 8px; text-align: center; color: var(--muted); min-height: 12px; }
+    .a-pad.mine .ap-wait { color: var(--gold); animation: blink 1s steps(2) infinite; }
+    .ap-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .ap-row.move { grid-template-columns: 1fr 1fr 1fr 1fr 1.8fr; }
+    .ap-btn { font: inherit; font-size: 12px; padding: 10px 2px; border: 0; cursor: pointer; background: var(--ink); color: var(--cream); box-shadow: inset 0 0 0 3px var(--panel-3); touch-action: none; line-height: 1.4; }
+    .ap-btn small { display: block; font-size: 6px; color: var(--muted); margin-top: 2px; }
+    .ap-btn.on { box-shadow: inset 0 0 0 3px var(--gold); color: var(--gold); }
+    .ap-btn:disabled { opacity: 0.35; cursor: default; }
+    .ap-btn.fire { background: #c0392b; color: #fff; font-size: 13px; box-shadow: inset 0 0 0 3px #ff7b4a; }
+    .ap-btn.fire.charging { background: #ff7b1c; animation: ready 0.3s steps(2) infinite; }
+    .ap-btn:not(:disabled):active { transform: translateY(2px); }
+    .ap-meters { display: grid; grid-template-columns: 44px 1fr 70px; gap: 8px; align-items: center; font-size: 9px; }
+    .ap-angle { color: var(--gold); text-align: center; }
+    .ap-power, .ap-move { position: relative; height: 12px; background: #0e0a17; box-shadow: 0 0 0 2px #0e0a17; }
+    .ap-power i { display: block; height: 100%; background: linear-gradient(90deg, #ffd23f, #ff7b1c, #e8371c); }
+    .ap-power b { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1px; background: #fff; }
+    .ap-move i { display: block; height: 100%; background: #7fd4ff; }
     /* Game */
     #scrGame { padding: 0; gap: 0; overflow: hidden; }
     .topbar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; padding: 8px 10px; background: var(--panel); box-shadow: 0 3px 0 var(--ink); font-size: 10px; z-index: 2; }
@@ -348,7 +376,7 @@
     /* Landscape: phones on their side and PC windows use the whole width. (Kept last so it wins.) */
     @media (orientation: landscape) {
       #app { max-width: none; }
-      .screen:not(#scrGame):not(#scrBrawl) { width: 100%; max-width: 1100px; margin: 0 auto; }
+      .screen:not(#scrGame):not(#scrBrawl):not(#scrArty) { width: 100%; max-width: 1100px; margin: 0 auto; }
       #scrJoin, #scrLobby { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); column-gap: 18px; align-content: start; }
       #scrJoin > *, #scrLobby > * { grid-column: 1; }
       #scrJoin > #heroBox { grid-column: 2; grid-row: 1 / span 8; align-self: start; }
@@ -377,6 +405,15 @@
       .tap-hint { bottom: 20%; }
       .steal { padding: 10px 14px; }
       .steal .s1 { font-size: 18px; }
+    }
+    /* Artillery on its side: the battlefield gets the full height, the controls a column on the right. */
+    @media (orientation: landscape) and (max-height: 520px) {
+      #scrArty { display: grid; grid-template-columns: minmax(0, 1fr) 280px; grid-template-rows: auto auto minmax(0, 1fr); }
+      #scrArty .topbar { grid-column: 1 / -1; padding: 4px 8px; }
+      #scrArty .a-teams { grid-column: 1 / -1; padding: 3px 8px; }
+      #scrArty .a-field { grid-column: 1; grid-row: 3; }
+      #scrArty .a-pad { grid-column: 2; grid-row: 3; justify-content: center; gap: 5px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); box-shadow: -3px 0 0 var(--ink); }
+      #scrArty .ap-btn { padding: 15px 2px; font-size: 12px; }
     }
     /* Draw battle on its side: the board on the left as big as the height allows, everything else beside it. */
     @media (orientation: landscape) {
@@ -598,6 +635,46 @@
       </div>
     </section>
 
+    <section id="scrArty" class="screen hidden">
+      <div class="topbar">
+        <div class="r" id="aRound">ARTILLERY</div>
+        <div class="t" id="aTime">0:20</div>
+        <div class="s"><b id="aScore">0</b> · <span id="aTeam">RED</span></div>
+      </div>
+      <div class="a-teams">
+        <span id="aName0">RED <b id="aHp0"></b></span>
+        <div class="a-bar"><i id="aFill0"></i></div>
+        <div class="a-bar right"><i id="aFill1"></i></div>
+        <span id="aName1"><b id="aHp1"></b> BLUE</span>
+      </div>
+      <div class="a-field" id="aField">
+        <canvas id="aCanvas"></canvas>
+        <div class="b-over hidden" id="aOver"><div class="o1" id="aO1"></div><div class="o2" id="aO2"></div><div class="o3" id="aO3"></div></div>
+        <div class="toast" id="aToast"></div>
+      </div>
+      <div class="a-pad" id="aPad">
+        <div class="ap-wait" id="aWait"></div>
+        <div class="ap-row">
+          <button class="ap-btn on" type="button" data-a="shot">SHOT<small id="aShotName"></small></button>
+          <button class="ap-btn" type="button" data-a="special">SPECIAL<small>0%</small></button>
+          <button class="ap-btn" type="button" data-a="heal">HEAL<small>+40 HP</small></button>
+          <button class="ap-btn" type="button" data-a="double">x2<small>DOUBLE</small></button>
+        </div>
+        <div class="ap-row move">
+          <button class="ap-btn" type="button" data-a="left" aria-label="Walk left">◀</button>
+          <button class="ap-btn" type="button" data-a="right" aria-label="Walk right">▶</button>
+          <button class="ap-btn" type="button" data-a="up" aria-label="Aim higher">▲</button>
+          <button class="ap-btn" type="button" data-a="down" aria-label="Aim lower">▼</button>
+          <button class="ap-btn fire" type="button" data-a="fire">FIRE<small style="color:#ffd8c8">HOLD</small></button>
+        </div>
+        <div class="ap-meters">
+          <span class="ap-angle">45°</span>
+          <div class="ap-power" title="Power (the white mark is your last shot)"><i></i><b class="hidden"></b></div>
+          <div class="ap-move" title="How far you can still walk this turn"><i></i></div>
+        </div>
+      </div>
+    </section>
+
     <section id="scrFinal" class="screen final hidden">
       <h1 class="logo sm" id="fTitle">VICTORY!</h1>
       <div class="fsub hidden" id="fSub"></div>
@@ -637,6 +714,8 @@
   <script src="/js/sketch.js"></script>
   <script src="/js/brawl-rules.js"></script>
   <script src="/js/brawl.js"></script>
+  <script src="/js/arty-rules.js"></script>
+  <script src="/js/artillery.js"></script>
   <script src="/js/play.js"></script>
 </body>
 </html>

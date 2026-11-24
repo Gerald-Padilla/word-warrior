@@ -19,6 +19,8 @@ const DRAW_ANIMALS = require('./draw-animals');
 const { langOf } = require('./draw-languages');
 const BRAWL = require('./brawl');
 const BRAWL_RULES = require('./public/js/brawl-rules');
+const ARTY = require('./artillery');
+const ARTY_RULES = require('./public/js/arty-rules');
 
 const PORT = Number(process.env.PORT) || 3000;
 // Render sets RENDER and RENDER_EXTERNAL_URL; there the only address phones can reach is the public one.
@@ -296,6 +298,7 @@ const BUILD = (() => {
   walk(path.join(__dirname, 'public'));
   hash.update(fs.readFileSync(__filename));
   hash.update(fs.readFileSync(path.join(__dirname, 'brawl.js'))); // the duel's snapshots are read by the pages
+  hash.update(fs.readFileSync(path.join(__dirname, 'artillery.js'))); // ...and artillery's shots
   return hash.digest('hex').slice(0, 12);
 })();
 app.get('/build.js', (req, res) => {
@@ -458,10 +461,11 @@ function createRoom(solo = false, daily = false) {
     royale: null, // battle royale: { start, nextAt, ramp, total, left }
     draw: null, // draw battle: whose turn it is, the word, the drawing so far (see beginDraw)
     brawl: null, // duel: the arena fight (see brawl.js)
+    arty: null, // artillery: the battlefield and whose turn it is (see artillery.js)
     iceUntil: 0, // special words: everything falls slower until then
     summary: null, // finished: { stats, awards }
     chat: [], // lobby chat: { id, by, name, color, text, at }, oldest first
-    mode: 'ffa', // or 'teams', 'royale', 'draw', 'brawl' (duel)
+    mode: 'ffa', // or 'teams', 'royale', 'draw', 'brawl' (duel), 'artillery'
     hostToken: token(),
     hostSocketId: null,
     players: new Map(),
@@ -499,6 +503,11 @@ function roundsFor(room) {
     return Array.from({ length: DRAW_ROUNDS[o.length] || DRAW_ROUNDS.full }, (_, i) => ({
       key: 'draw', name: `ROUND ${i + 1}`, title: 'Draw Battle', monster: 'slime', duration: 0, multiplier: 1, time: DRAW_TIME[o.level] || DRAW_TIME.normal,
     }));
+  }
+  // Artillery: one battle, turn after turn, until a team is wiped out or the turns run out.
+  if (room.mode === 'artillery') {
+    return [{ key: 'artillery', name: 'ARTILLERY', title: 'Artillery', monster: 'bat', multiplier: 1, duration: 0, level: o.level,
+      turns: ARTY_RULES.TURNS[o.length] || ARTY_RULES.TURNS.full, time: (ARTY_RULES.LEVELS[o.level] || ARTY_RULES.LEVELS.normal).turnMs }];
   }
   // Duel: one timed fight in the arena (4 minutes, or 2 for one round).
   if (room.mode === 'brawl') {
@@ -549,11 +558,11 @@ function publicOptions(room) {
 function stateOf(room) {
   return {
     state: room.state, round: room.round, phaseEndsAt: room.phaseEndsAt,
-    rounds: room.rounds.map(({ key, name, title, monster, duration, multiplier, at, damage, time }) => ({ key, name, title, monster, duration, multiplier, at, damage, time })),
+    rounds: room.rounds.map(({ key, name, title, monster, duration, multiplier, at, damage, time, turns }) => ({ key, name, title, monster, duration, multiplier, at, damage, time, turns })),
     players: [...room.players.values()].map(publicPlayer), records: room.records,
     mode: room.mode, teams: room.teams, winner: room.winner, ko: room.ko, effects: room.effects,
     options: publicOptions(room), boss: room.boss, iceUntil: room.iceUntil, summary: room.summary, daily: room.daily,
-    royale: royaleOf(room), draw: drawOf(room), brawl: brawlOf(room),
+    royale: royaleOf(room), draw: drawOf(room), brawl: brawlOf(room), arty: room.arty ? ARTY.stateOf(room.arty) : null,
   };
 }
 
@@ -566,6 +575,7 @@ function snapshot(room, player = null) {
   const D = room.draw;
   if (D) Object.assign(snap, { strokes: D.strokes, feed: D.feed, secret: player ? drawSecret(room, player) : null });
   if (room.brawl) snap.brawlShots = BRAWL.liveShots(room.brawl);
+  if (room.arty) snap.craters = room.arty.craters;
   return snap;
 }
 
@@ -664,6 +674,8 @@ function startGame(room) {
   room.royale = null;
   room.draw = null;
   room.brawl = null;
+  room.arty = null;
+  if (room.mode === 'artillery') balanceTeams(room, false);
   // Duel: the arena is picked now, so the countdown can show it.
   room.brawlLayout = room.mode === 'brawl' ? Math.floor(Math.random() * BRAWL_RULES.LAYOUTS.length) : null;
   if (room.mode === 'teams') {
@@ -694,7 +706,7 @@ function beginPlaying(room) {
   room.hits = [[], []]; // team battle: damage each team took this round, latest last
   room.stream = newStream(Date.now() + 200);
   // A draw battle has no falling words (and its rounds have no word pool of their own).
-  room.stream.pool = room.mode === 'draw' || room.mode === 'brawl' ? [] : poolFor(room, cfg);
+  room.stream.pool = ['draw', 'brawl', 'artillery'].includes(room.mode) ? [] : poolFor(room, cfg);
   if (room.daily) {
     // Same words, places and timings for everyone today: a fixed word order and a fresh seed each round.
     const seed = hashStr(`${room.daily}:${room.round}`);
@@ -716,10 +728,11 @@ function beginPlaying(room) {
   if (room.mode === 'royale') beginRoyale(room, Date.now());
   else if (room.mode === 'draw') beginDraw(room, Date.now());
   else if (room.mode === 'brawl') beginBrawl(room, Date.now(), cfg);
+  else if (room.mode === 'artillery') beginArty(room, Date.now());
   else setPhase(room, 'playing', cfg.duration, () => endRound(room));
   clearInterval(room.ticker);
   // A duel steps every BRAWL_RULES.TICK_MS; checking twice as often keeps its snapshots evenly spaced.
-  room.ticker = setInterval(() => tick(room), room.mode === 'brawl' ? BRAWL_RULES.TICK_MS / 2 : 100);
+  room.ticker = setInterval(() => tick(room), room.mode === 'brawl' ? BRAWL_RULES.TICK_MS / 2 : room.mode === 'artillery' ? ARTY_TICK_MS : 100);
 }
 
 function endRound(room) {
@@ -781,6 +794,17 @@ function summarize(room) {
       give('first', 'FIRST!', 'Guessed first most often', (p) => p.stats.firsts, (v) => plural(v, 'time'));
       give('quick', 'QUICK EYE', 'Fastest correct guess', (p) => (p.stats.quickest ? 1e6 - p.stats.quickest : 0),
         (v) => `${((1e6 - v) / 1000).toFixed(1)} seconds`);
+    }
+    return { stats, awards };
+  }
+  // Artillery: KOs, damage, the biggest hit and the longest one.
+  if (room.mode === 'artillery') {
+    for (const p of list) stats[p.id] = { wpm: 0, acc: 0, best: 0, words: p.kills, kos: p.kills, deaths: p.deaths || 0, dmg: p.stats.dealt || 0, hit: p.stats.bestHit || 0, far: p.stats.far || 0 };
+    if (room.options.awards) {
+      give('kos', 'KO KING', 'Most heroes knocked out', (p) => p.kills, (v) => `${v} KO${v === 1 ? '' : 's'}`, 1, 0);
+      give('hitter', 'HEAVY HITTER', 'Most damage dealt', (p) => p.stats.dealt || 0, (v) => `${v} damage`, 1, 0);
+      give('bullseye', 'BULLSEYE', 'Biggest single hit', (p) => p.stats.bestHit || 0, (v) => `${v} damage`, 1, 0);
+      give('far', 'LONG SHOT', 'Hit an enemy from the farthest away', (p) => p.stats.far || 0, (v) => `${Math.round(v / 10)} m`, 1, 0);
     }
     return { stats, awards };
   }
@@ -849,6 +873,7 @@ function backToLobby(room) {
   room.royale = null;
   room.draw = null;
   room.brawl = null;
+  room.arty = null;
   room.winner = null;
   room.ko = false;
   room.effects = [{}, {}];
@@ -877,6 +902,10 @@ function tick(room) {
   }
   if (room.mode === 'brawl') {
     brawlTick(room, now);
+    return;
+  }
+  if (room.mode === 'artillery') {
+    artyTick(room, now);
     return;
   }
   const cfg = room.rounds[room.round];
@@ -1068,7 +1097,7 @@ function boost(room, player, w) {
 function sendCharge(room, player) {
   if (!player.socketId) return;
   io.to(player.socketId).emit('skill:charge', {
-    on: room.options.skills && room.mode !== 'draw' && room.mode !== 'brawl', charge: player.charge, max: SKILL_WORDS, boost: player.empower ? player.empower.left : 0,
+    on: room.options.skills && !['draw', 'brawl', 'artillery'].includes(room.mode), charge: player.charge, max: SKILL_WORDS, boost: player.empower ? player.empower.left : 0,
   });
 }
 
@@ -1639,6 +1668,110 @@ function guessedIt(room, player, now) {
   return { ok: true, correct: true, word: D.word, points };
 }
 
+// ---- Artillery ----------------------------------------------------------------
+// Turn by turn: the server runs each turn's clock and the walking; artillery.js does the rest. A shot is
+// worked out in full when it's fired and sent to every screen ('arty:shot') to play out; the next turn
+// starts once it has (the room's state says whose turn it is). Team HP shows in the team bars.
+const ARTY_TICK_MS = 50;
+const ARTY_FIRST_MS = 1500; // from the fight starting to the first turn
+const ARTY_PASS_MS = 1200; // a turn that ran out of time (or whose hero left), before the next
+const ARTY_AWAY_MS = 3000; // a hero whose phone dropped out loses the turn after this long
+const ARTY_POS_MS = 60; // how often the active hero's aim and position go out
+
+function beginArty(room, now) {
+  const o = room.options;
+  room.arty = ARTY.createArty({ players: [...room.players.values()], length: o.length, level: o.level, specials: o.skills });
+  room.arty.endsAt = now + ARTY_FIRST_MS;
+  room.artyWalk = null;
+  room.artyLast = now;
+  syncArty(room);
+  setPhase(room, 'playing', 0, null);
+}
+
+function artyTick(room, now) {
+  const G = room.arty;
+  if (!G || room.state !== 'playing') return;
+  const dt = Math.min(0.2, (now - room.artyLast) / 1000);
+  room.artyLast = now;
+  if (G.phase === 'start' && now >= G.endsAt) return artyNext(room, now);
+  if (G.phase === 'aim') {
+    const w = room.artyWalk;
+    if (w && w.id === G.active && w.dir) {
+      const r = ARTY.walk(G, w.id, w.dir, dt);
+      if (r === 'fell') {
+        // Walked off the edge: a KO, and the turn's over.
+        io.to(channel(room)).emit('arty:fell', { id: w.id });
+        return artyPass(room, now, false);
+      }
+      artyPos(room, now);
+    }
+    const p = room.players.get(G.active);
+    if (now >= G.endsAt || !p || (!p.connected && now - G.turnAt > ARTY_AWAY_MS)) artyPass(room, now);
+  } else if ((G.phase === 'fly' || G.phase === 'pass') && now >= G.endsAt) artyNext(room, now);
+}
+
+// The turn's over without a shot: out of time, or the hero left (or fell).
+function artyPass(room, now, timeUp = true) {
+  const G = room.arty;
+  if (timeUp && G.active) io.to(channel(room)).emit('arty:pass', { id: G.active });
+  G.phase = 'pass';
+  G.endsAt = now + ARTY_PASS_MS;
+  room.artyWalk = null;
+  broadcastState(room);
+}
+
+function artyNext(room, now) {
+  const G = room.arty;
+  syncArty(room);
+  const verdict = ARTY.verdict(G);
+  if (verdict !== null) return artyOver(room, verdict);
+  const H = ARTY.startTurn(G, now);
+  if (!H) return artyOver(room, -1);
+  G.turnAt = now;
+  room.artyWalk = null;
+  broadcastState(room);
+}
+
+function artyOver(room, winner) {
+  const G = room.arty;
+  clearInterval(room.ticker);
+  room.ticker = null;
+  ARTY.finish(G, winner);
+  room.winner = winner;
+  room.ko = winner >= 0 && !ARTY.aliveIn(G, 1 - winner).length;
+  syncArty(room);
+  finishGame(room);
+}
+
+// The active hero's aim, walk and power, to every screen, now and then.
+function artyPos(room, now) {
+  if (now - (room.artyPosAt || 0) < ARTY_POS_MS) return;
+  room.artyPosAt = now;
+  const G = room.arty;
+  const H = G && G.heroes.get(G.active);
+  if (!H) return;
+  io.to(channel(room)).emit('arty:pos', { id: H.id, x: Math.round(H.x), y: H.y, face: H.face, angle: H.angle, stamina: Math.round(H.stamina), power: H.power });
+}
+
+// Scores, KOs and the awards' numbers onto the heroes; each team's HP into the team bars.
+function syncArty(room) {
+  const G = room.arty;
+  if (!G) return;
+  const teams = [{ hp: 0, max: 0 }, { hp: 0, max: 0 }];
+  for (const H of G.heroes.values()) {
+    teams[H.team].hp += Math.max(0, H.hp);
+    teams[H.team].max += H.max;
+    const p = room.players.get(H.id);
+    if (!p) continue;
+    p.score = H.score;
+    p.kills = H.kos;
+    p.deaths = H.deaths;
+    p.roundScores[0] = H.score;
+    Object.assign(p.stats, { dealt: H.dealt, bestHit: H.best, far: H.far });
+  }
+  room.teams = teams;
+}
+
 // ---- Duel (brawl) --------------------------------------------------------------
 // A real-time arena fight: see brawl.js. Phones steer their heroes; the server runs the fight every
 // BRAWL_RULES.TICK_MS and sends every screen a snapshot every few steps, with what happened since
@@ -1921,14 +2054,14 @@ io.on('connection', (socket) => {
   socket.on('host:start', () => {
     const { room, isHost } = ctx();
     if (!isHost || !['lobby', 'finished'].includes(room.state) || room.players.size === 0) return;
-    if ((room.mode === 'teams' || room.mode === 'draw') && room.players.size < 2) return;
+    if (['teams', 'draw', 'artillery'].includes(room.mode) && room.players.size < 2) return;
     startGame(room);
   });
 
   socket.on('host:mode', (data) => {
     const { room, isHost } = ctx();
     if (!isHost || room.state !== 'lobby') return;
-    room.mode = ['teams', 'royale', 'draw', 'brawl'].includes(data?.mode) ? data.mode : 'ffa';
+    room.mode = ['teams', 'royale', 'draw', 'brawl', 'artillery'].includes(data?.mode) ? data.mode : 'ffa';
     room.rounds = roundsFor(room);
     broadcastState(room);
   });
@@ -1975,7 +2108,11 @@ io.on('connection', (socket) => {
     else if (room.state === 'intermission') nextRound(room);
     else if (room.state === 'playing' && room.royale) royaleStep(room, Date.now()); // on to the next stage, or faster
     else if (room.state === 'playing' && room.draw) skipDraw(room, Date.now());
-    else if (room.state === 'playing') endRound(room);
+    else if (room.state === 'playing' && room.arty) {
+      // Artillery: over now, as if the turns had run out (the team with more HP wins).
+      room.arty.turn = Math.max(room.arty.turn, room.arty.turns);
+      artyOver(room, ARTY.verdict(room.arty) ?? -1);
+    } else if (room.state === 'playing') endRound(room);
   });
 
   socket.on('host:lobby', () => {
@@ -2000,6 +2137,12 @@ io.on('connection', (socket) => {
     broadcastPlayers(room);
     checkRoyaleEnd(room);
     if (room.brawl) BRAWL.removeHero(room.brawl, p.id);
+    if (room.arty) {
+      const wasUp = room.arty.active === p.id && room.arty.phase === 'aim';
+      ARTY.removeHero(room.arty, p.id);
+      if (wasUp) artyPass(room, Date.now());
+      else broadcastState(room);
+    }
     // Draw battle: out of the turn order; if it was their turn, that turn is over.
     const D = room.draw;
     if (D && room.state === 'playing') {
@@ -2061,6 +2204,11 @@ io.on('connection', (socket) => {
     room.players.set(p.id, p);
     attachPlayer(room, p);
     if (room.brawl && room.state === 'playing') BRAWL.addHero(room.brawl, p, Date.now());
+    if (room.arty && room.state === 'playing') {
+      ARTY.addHero(room.arty, p, p.team);
+      syncArty(room);
+      broadcastState(room);
+    }
     // A draw battle under way: guess from now on, and draw at the end of this round.
     if (room.draw && room.state === 'playing') {
       room.draw.order.push(p.id);
@@ -2121,7 +2269,7 @@ io.on('connection', (socket) => {
 
   socket.on('player:claim', (data, cb) => {
     const { room, player } = ctx();
-    if (!player || room.state !== 'playing' || room.ko || room.mode === 'draw' || room.mode === 'brawl') return reply(cb, { ok: false, reason: 'not-playing' });
+    if (!player || room.state !== 'playing' || room.ko || ['draw', 'brawl', 'artillery'].includes(room.mode)) return reply(cb, { ok: false, reason: 'not-playing' });
     // Battle royale: only your own words, and only while you're still in.
     const f = fieldOf(room, player);
     if (!f || player.out) return reply(cb, { ok: false, reason: 'not-playing' });
@@ -2180,13 +2328,56 @@ io.on('connection', (socket) => {
 
   socket.on('player:skill', (_data, cb) => {
     const { room, player } = ctx();
-    const live = player && room.options.skills && room.mode !== 'draw' && room.mode !== 'brawl' && room.state === 'playing' && !room.ko && !(room.boss && room.boss.down)
+    const live = player && room.options.skills && !['draw', 'brawl', 'artillery'].includes(room.mode) && room.state === 'playing' && !room.ko && !(room.boss && room.boss.down)
       && fieldOf(room, player) && !player.out;
     if (!live) return reply(cb, { ok: false, reason: 'not-now' });
     if (player.charge < SKILL_WORDS) return reply(cb, { ok: false, reason: 'charging' });
     player.charge = 0;
     useSkill(room, player, Date.now());
     sendCharge(room, player);
+    reply(cb, { ok: true });
+  });
+
+  // Artillery ---------------------------------------------------------------
+  // Only the hero whose turn it is: walk (held: dir -1, 0 or 1), aim, charge (for the screens to show), use
+  // an item, fire.
+  const artyCtx = () => {
+    const { room, player } = ctx();
+    const G = room && room.arty;
+    if (!player || !G || room.state !== 'playing' || G.phase !== 'aim' || G.active !== player.id) return {};
+    return { room, player, G };
+  };
+  socket.on('arty:walk', (data) => {
+    const { room, player } = artyCtx();
+    if (!room) return;
+    const dir = Number(data?.dir);
+    room.artyWalk = { id: player.id, dir: dir > 0 ? 1 : dir < 0 ? -1 : 0 };
+  });
+  socket.on('arty:aim', (data) => {
+    const { room, player, G } = artyCtx();
+    if (room && ARTY.aim(G, player.id, data?.angle, Number(data?.face))) artyPos(room, Date.now());
+  });
+  socket.on('arty:charge', (data) => {
+    const { room, player, G } = artyCtx();
+    if (!room) return;
+    G.heroes.get(player.id).power = Math.max(0, Math.min(100, Number(data?.power) || 0));
+    artyPos(room, Date.now());
+  });
+  socket.on('arty:item', (data, cb) => {
+    const { room, player, G } = artyCtx();
+    if (!room || !ARTY.useItem(G, player.id, String(data?.item))) return reply(cb, { ok: false });
+    io.to(channel(room)).emit('arty:item', { id: player.id, item: data.item });
+    broadcastState(room);
+    reply(cb, { ok: true });
+  });
+  socket.on('arty:fire', (data, cb) => {
+    const { room, player, G } = artyCtx();
+    if (!room) return reply(cb, { ok: false });
+    room.artyWalk = null;
+    const shot = ARTY.fire(G, player.id, data, Date.now());
+    if (!shot) return reply(cb, { ok: false });
+    io.to(channel(room)).emit('arty:shot', shot);
+    broadcastState(room);
     reply(cb, { ok: true });
   });
 

@@ -208,6 +208,12 @@
       arp: [[0, 1, 2, 3, 2, 1, 0, 1, 2, 3, 2, 1, 3, 2, 1, 0]],
       bass: [0, 0, -1, 0, 0, -1, 1, -1, 0, 0, -1, 0, 1, -1, 2, -1], kick: [0, 4, 8, 12], snare: [4, 12], hat: [2, 6, 10, 14],
     },
+    // Artillery: a steady march, for taking aim.
+    artillery: {
+      bpm: 112, vol: 0.5, lead: 'square', chords: [[55, 'maj'], [60, 'maj'], [62, 'min'], [55, 'maj']],
+      arp: [[0, -1, 1, -1, 2, -1, 1, -1, 0, -1, 1, 2, 3, -1, 2, -1]], bass: [0, -1, -1, 0, 0, -1, -1, -1, 0, -1, -1, 0, 1, -1, 2, -1],
+      kick: [0, 8], snare: [4, 12, 14], hat: [2, 6, 10],
+    },
     // Duel: a driving minor-key fight theme.
     brawl: {
       bpm: 140, vol: 0.55, lead: 'square', chords: [[57, 'min'], [53, 'maj'], [55, 'maj'], [52, 'maj']],

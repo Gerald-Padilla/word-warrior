@@ -175,9 +175,12 @@
       this.floor = this.buildFloor();
     }
 
-    setReserve(top, right) {
+    // Space the big screen's bars take: on top, and on the right (the standings). alignTop: the arena sits
+    // right under the top bar (a tall screen, with the standings below it) instead of in the middle.
+    setReserve(top, right, alignTop = false) {
       this.reserveTop = top;
       this.reserveRight = right;
+      this.alignTop = alignTop;
       this.resize();
     }
 
@@ -645,7 +648,7 @@
         const s = Math.min((W - right - pad * 2) / ARENA.W, (H - top - pad * 2) / ARENA.H);
         this.s = s;
         this.ox = Math.max(pad, (W - right - ARENA.W * s) / 2);
-        this.oy = top + Math.max(pad, (H - top - ARENA.H * s) / 2);
+        this.oy = top + (this.alignTop ? pad : Math.max(pad, (H - top - ARENA.H * s) / 2));
         this.camX = 0;
         this.camY = 0;
         return;

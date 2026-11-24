@@ -55,7 +55,8 @@ Above the options in the lobby, the host picks two things (remembered on that co
   less time, arrive 20% closer together, and one more fits on screen. In a team battle it sets how long attacks
   take to fly, and in a battle royale the pace of every stage. Points per word don't change, but harder games
   have more words to score. In a draw battle, difficulty sets the drawing time (100, 80 or 60 seconds), and
-  **GAME** sets how many times everyone draws (twice, or once). In a duel, **GAME** sets the fight's length
+  **GAME** sets how many times everyone draws (twice, or once). In artillery, **GAME** sets the number of turns (30 or 16) and difficulty sets the wind and the time to aim
+  (25, 20 or 15 seconds). In a duel, **GAME** sets the fight's length
   (4 minutes or 2) and difficulty sets the monsters.
 
 The lobby shows the rounds the game will play, and every phone shows the host's pick in its lobby. A one-round
@@ -367,6 +368,83 @@ The kits were evened out over simulated four-minute duels with all twelve classe
 the nearest foe, keep to your range): every class scored between 92% and 110% of the average. People play
 differently from bots, so treat the numbers as a starting point. They're all in `public/js/brawl-rules.js`.
 
+## Artillery
+
+A turn-based team battle, with no typing. Pick **ARTILLERY** in the host lobby (it needs at least 2 heroes).
+Players split into Red Dragons and Blue Griffins like a team battle: **SWITCH TEAM** on the phone, or on the
+big screen click a hero to move them, or **SHUFFLE TEAMS**.
+
+- **The battlefield.** A side-on landscape, one of five, a little different every game. Teams start on opposite
+  sides.
+
+  | Battlefield | What's in it |
+  |---|---|
+  | **Rolling Hills** | Gentle hills |
+  | **Twin Towers** | A stone tower near each side to hide behind or shoot from |
+  | **Sky Islands** | Floating islands over a bottomless drop |
+  | **Red Canyon** | High ground on both sides and a deep valley between |
+  | **The Great Peak** | A mountain in the middle: lob over it, or dig through |
+
+- **Turns.** The teams take turns, each team's heroes in rotation. On your turn your phone buzzes and its
+  controls light up; everyone else watches. You have 20 seconds (25 on easy, 15 on hard).
+  - **Walk:** ◀ ▶ walk a little (the blue bar) and turn you around. You can climb small steps but not walls,
+    and you can walk off a ledge.
+  - **Aim:** ▲ ▼ set the angle, from a little below level to straight up.
+  - **Fire:** hold **FIRE** to charge the power (about 2 seconds to full), and let go to shoot. A white mark on
+    the power bar shows your last shot's power.
+  - **Keyboard:** the arrow keys walk and aim, Space charges and fires, 1 and 2 pick the shot, H heals and
+    X doubles.
+- **Wind.** It changes every turn (stronger on hard) and pushes every shot sideways; the arrow at the top shows
+  which way and how hard. Arrows barely feel it, and soul bolts not at all.
+- **Shots.** Every class fires its own shot (table below). A blast hurts everyone near it, teammates and
+  yourself included, and digs a crater. A direct hit does extra damage.
+- **The ground.** Craters stay for the rest of the battle. A hero with nothing under their feet drops to the
+  ground below. One who falls off the bottom of the map is out, and if an enemy dug the hole, the KO is theirs.
+- **Special shots** (when **SKILLS** is on). Every class has one. It charges as you deal damage and take it,
+  and a little every turn; pick **SPECIAL** when it says READY.
+- **Items.** Every hero has one **HEAL** (+40 HP) and one **DOUBLE** (fire your shot twice this turn) per
+  battle. Using one doesn't end your turn.
+- **Winning.** A team that's wiped out loses at once. Otherwise, when the turns run out (30 in a full game,
+  16 in one round), the team with more HP left wins. **SKIP** ends the battle the same way.
+- **Points.** Damage to enemies scores 1 point per HP, a KO scores +100, and every hero on the winning team
+  gets +150.
+- **Big screen.**
+  - The whole battlefield, with each team's HP in bars at the top.
+  - Whose turn it is, with the clock running down, and the wind.
+  - The active hero's aim and power as they charge, and every shot as it flies.
+- **Phone.**
+  - Both teams' HP and the clock.
+  - The battlefield following the action (drag it to look around), with a minimap.
+  - The controls. Held sideways, the controls sit in a column on the right.
+- **Details.**
+  - Every hero has 120 HP.
+  - A hero who joins mid-battle goes on the smaller team, on their own side of the field.
+  - A hero whose phone drops out loses their turn after 3 seconds.
+- Streaks, special words, the boss, class perks and **MY WORDS** are off (hidden in the lobby).
+- **Awards:**
+  - **KO King:** most KOs
+  - **Heavy Hitter:** most damage
+  - **Bullseye:** biggest single hit
+  - **Long Shot:** hit an enemy from the farthest away
+- Artillery scores aren't recorded in the Hall of Fame.
+
+### Shots
+
+| Class | Shot | Special shot |
+|-------|------|--------------|
+| Knight | **Sword Beam:** a steady all-rounder | **Holy Blade:** a huge blade of light, with a big blast and a big hit |
+| Barbarian | **Spinning Axe:** heavy (it drops faster), hits hard, digs deep | **Earthquake:** a giant crater that drops everyone around it |
+| Wizard | **Fireball:** a wide blast | **Meteor:** a flaming rock with a huge blast |
+| Elf Archer | **Piercing Arrow:** light, barely feels the wind, deadly on a direct hit | **Arrow Rain:** five arrows at once, fanned out |
+| Rogue | **Dagger Volley:** two daggers, one after the other | **Shadow Step:** a dagger that takes you with it: you land where it hits |
+| Cleric | **Holy Light:** heals teammates near the blast by 15 | **Sanctuary:** heals teammates near the blast by 40 |
+| Ninja | **Shuriken:** three at once, fanned out | **Shuriken Storm:** six at once |
+| Necromancer | **Soul Bolt:** ignores the wind | **Soul Drain:** a heavy bolt that heals you by half its damage |
+| Druid | **Thorn Vine:** drills into the ground before it blows up | **Overgrowth:** raises a mound of earth where it lands, for cover or a bridge |
+| Pirate | **Cannonball:** heavy, with a wide blast | **Cannon Barrage:** three cannonballs, one after another |
+| Bard | **Power Chord:** bounces once, blowing up both times | **Encore:** bounces three times |
+| Valkyrie | **Storm Spear:** lightning also strikes anyone just beside where it lands | **Thunderclap:** lightning strikes everyone near where it lands |
+
 ## PC, tablet and phone
 
 Both pages adjust to the screen they're on.
@@ -389,6 +467,10 @@ Both pages adjust to the screen they're on.
 - On an upright screen, the battlefield sizes its words to the width, so long words still fit.
 - In a draw battle, the board goes across the top with the scores and guesses side by side under it
   (upright), or on the left with them stacked beside it (sideways).
+- The mode buttons show just their names; the picked mode's description is on a line under them.
+- In a duel on an upright screen, the arena goes across the top with the standings under it.
+- In artillery on an upright screen, the view follows the action (as on the players' phones) with a minimap,
+  instead of shrinking the whole battlefield into a strip.
 
 **Heroes:** twelve classes, each with its own attack. Customize each with 8 colors, 4 skin tones, 8 hair/beard
 colors (for the classes that show hair), 6 trims (the gold accents) and a companion pet (cat, owl, slime, baby
@@ -457,7 +539,7 @@ Every finished game is recorded on one of three boards:
 - **Solo**: best solo quests.
 - **Daily**: today's daily quest.
 - **Battle**: best individual scores from free-for-all battles, with the place and player count of that battle
-  (team battles, battle royales, draw battles and duels aren't recorded).
+  (team battles, battle royales, draw battles, duels and artillery battles aren't recorded).
 
 They're kept separate because in a battle the words are shared between everyone, so scores aren't comparable.
 Each board keeps the top 100. Ties go to whoever set the score first. Games with 0 points and test bots aren't recorded.
@@ -518,6 +600,8 @@ npm run bots -- ABCD 6
 Each bot types one word at a time at its own speed, so in a battle royale the slower bots get knocked out first.
 In a draw battle, bots scribble on their turn and guess words, verbs, animals, characters, titles, food and people from the lists that fit the blanks.
 In a duel, bots chase the nearest foe, keep to their class's range, grab power-ups close by and use their skill.
+In artillery, a bot on its turn tries angles and powers against the ground, aims at the nearest enemy and fires, a little off
+like a person (and uses its special shot when it's ready).
 
 ## Tuning
 
@@ -535,7 +619,9 @@ next to the countdown and break lengths (`SOLO_INTERMISSION_MS` for solo). Team 
 streak steps (`STREAK_STEPS`), special words (`SPECIAL_CHANCE`, `GOLD_FACTOR`, `ICE_MS`, `BOMB_SHARE`) and class
 perks (`PERKS`), skills (`SKILLS`, `SKILL_WORDS`). The auto-typer limits are the `KEY_*` and `FLAG_AFTER`
 settings. Word lists are in `words.js`; if you change them a lot, the perk bonuses may need re-measuring.
-The music tracks are the `TRACKS` table in `public/js/common.js`. Everything about a duel is in
+The music tracks are the `TRACKS` table in `public/js/common.js`. Artillery's numbers (gravity, wind, power, HP,
+walking, every class's shots and specials, the battlefields, turns and points) are in `public/js/arty-rules.js`.
+Everything about a duel is in
 `public/js/brawl-rules.js`: the class kits (HP, speed, attack, perk and skill), the perks' and skills' numbers
 (`PERK`, `SKILL`), the monsters and when they come (`MONSTERS`, `MOB_WAVES`), power-ups and kegs, the arena layouts
 (`LAYOUTS`), the fight's length, respawn time and points.
@@ -546,6 +632,9 @@ The music tracks are the `TRACKS` table in `public/js/common.js`. Everything abo
 - `brawl.js`: the duel's fight on the server: movement, shots, monsters, power-ups, skills and KOs
 - `public/js/brawl-rules.js`: the duel's rules, shared by the server and the screens (class kits, monsters, power-ups, layouts, collisions)
 - `public/js/brawl.js`: the duel's arena on screen (big screen and phones) and the phone's thumb sticks
+- `artillery.js`: artillery on the server: the turns, walking, and working out every shot
+- `public/js/arty-rules.js`: artillery's rules, shared by the server and the screens (the ground, flight, shots)
+- `public/js/artillery.js`: the artillery battlefield on screen (big screen and phones) and the phone's turn controls
 - `data/highscores.json`: saved Hall of Fame (created after the first finished game)
 - `words.js`: easy / medium / hard word pools
 - `draw-words.js`: draw battle everyday things (easy / medium / hard)

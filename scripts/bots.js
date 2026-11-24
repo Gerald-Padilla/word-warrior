@@ -9,6 +9,7 @@ const DRAW_PEOPLE = require('../draw-people');
 const DRAW_VERBS = require('../draw-verbs');
 const DRAW_ANIMALS = require('../draw-animals');
 const BR = require('../public/js/brawl-rules');
+const AR = require('../public/js/arty-rules');
 
 // Draw battle: bots can't see the drawing, so they guess words (verbs, animals, characters, titles, food and people too,
 // by the name before any "|") from every category's lists that fit the blanks and any letters filled in
@@ -151,6 +152,52 @@ for (let i = 0; i < count; i++) {
     socket.emit('brawl:in', { mx: mx / m, my: my / m, ax: 0, ay: 0, fire });
     if (mine[6] >= BR.CHARGE_MAX && foe && Math.random() < 0.2) socket.emit('brawl:skill', {}, () => {});
   }, 150);
+
+  // Artillery: keep a copy of the ground; on our turn, try angles and powers against it, aim at the
+  // nearest enemy (walking a step first now and then), charge up and fire, a little off like a person.
+  let field = null; // { key, terrain }
+  let planned = 0; // the turn we've already fired on
+  const err = 6 + Math.random() * 12;
+  socket.on('arty:shot', (shot) => {
+    if (!field) return;
+    for (const sh of shot.shells) for (const b of sh.booms) {
+      if (b.grow) field.terrain.grow(b.x, b.y, b.grow);
+      else if (b.crater) field.terrain.carve(b.x, b.y, b.crater);
+    }
+  });
+  socket.on('room:state', (s) => {
+    const A = s.arty;
+    if (!A || s.state !== 'playing') return;
+    const key = `${A.seed}:${A.style}`;
+    if (!field || field.key !== key) field = { key, terrain: new AR.Terrain(A.seed, A.style) };
+    if (A.phase !== 'aim' || A.active !== me || planned === A.turn) return;
+    planned = A.turn;
+    const heroes = A.heroes.map(([id, team, x, y, hp, alive, , , special]) => ({ id, team, x, y, hp, alive, special }));
+    const H = heroes.find((h) => h.id === me);
+    const foes = heroes.filter((h) => h.alive && h.team !== H.team).sort((a, b) => Math.abs(a.x - H.x) - Math.abs(b.x - H.x));
+    if (!H || !foes.length) return;
+    const T = foes[0];
+    const kit = AR.SHOTS[CLASSES[i % CLASSES.length]];
+    const special = A.specials && H.special >= AR.SPECIAL_MAX;
+    const def = special ? kit.special.shot : kit.shot;
+    const face = T.x >= H.x ? 1 : -1;
+    let best = null;
+    const live = heroes.filter((h) => h.alive);
+    for (let angle = 20; angle <= 80; angle += 4) {
+      for (let power = 25; power <= 100; power += 3) {
+        const { end } = AR.fly(field.terrain, live, me, AR.launch(H.x, H.y, face, angle, power), def, A.wind);
+        if (end.hit === 'gone') continue;
+        const miss = end.hit === 'hero' && end.hero === T.id ? 0 : Math.hypot(end.x - T.x, end.y - T.y + AR.HERO_MID);
+        if (!best || miss < best.miss) best = { angle, power, miss };
+      }
+    }
+    const shot = best || { angle: 45, power: 70 };
+    const power = Math.max(10, Math.min(100, Math.round(shot.power + (Math.random() - 0.5) * err)));
+    const think = 1200 + Math.random() * 2500;
+    setTimeout(() => socket.emit('arty:aim', { angle: shot.angle, face }), think * 0.5);
+    for (let k = 1; k <= 4; k++) setTimeout(() => socket.emit('arty:charge', { power: Math.round((power * k) / 4) }), think + k * 250);
+    setTimeout(() => socket.emit('arty:fire', { angle: shot.angle, face, power, special }, () => {}), think + 1100);
+  });
 
   socket.on('room:state', (s) => {
     trackTeam(s.players);

@@ -19,6 +19,10 @@
   const BR = window.BrawlRules;
   const bView = new BrawlView($('#bCanvas'), { now, phone: true });
   const bPad = new BrawlPad($('#bField'), { view: bView, onInput: (m) => socket.emit('brawl:in', m), onSkill: () => brawlSkill() });
+  // Artillery: the battlefield and the turn controls.
+  const AR = window.Arty;
+  const aView = new ArtyView($('#aCanvas'), { now, phone: true });
+  const aPad = new ArtyPad($('#aPad'), { view: aView, send: (ev, data, cb) => socket.emit(ev, data, cb || (() => {})) });
 
   let code = (new URLSearchParams(location.search).get('room') || '').toUpperCase().slice(0, 4);
   let battleCode = code; // battle room to go back to after a solo quest
@@ -42,6 +46,7 @@
   let boss = null; // boss round: { hp, max, down }
   let royale = null; // battle royale: { start, nextAt, ramp, total, left, hp, damage }
   let brawl = null; // duel: { layout, start, endsAt, bossAt }
+  let arty = null; // artillery: whose turn, the wind, every hero
   let myFx = {}; // duel: power-ups you have going, name -> until (server ms)
   let lastKo = null; // duel: how you were last knocked out
   let fightAt = 0; // duel: when the fight started here (for FIGHT! and the help line)
@@ -65,6 +70,9 @@
   const royaleOn = () => mode === 'royale' && !solo;
   const knockedOut = () => royaleOn() && Boolean(me()?.out);
   const brawlOn = () => mode === 'brawl' && !solo;
+  const artyOn = () => mode === 'artillery' && !solo;
+  // Modes played in two teams: team battle and artillery (the lobby's team badge, SWITCH TEAM, the results).
+  const teamMode = () => (mode === 'teams' || mode === 'artillery') && !solo;
 
   // ---- viewport: keep the typing bar above the on-screen keyboard ----
   // A PC window or a tablet gets the phone layout scaled up (--ui), so nothing ends up tiny on a big
@@ -206,7 +214,12 @@
     $('#clsAttack').textContent = `ATTACK: ${cls.attack}`;
     $('#clsBlurb').textContent = cls.blurb;
     const kit = BR.KITS[look.cls] || BR.KITS.knight;
-    if (you && brawlOn()) {
+    if (you && artyOn()) {
+      const shots = AR.SHOTS[look.cls] || AR.SHOTS.knight;
+      $('#clsAttack').textContent = `SHOT: ${shots.name}`;
+      $('#clsPerk').textContent = `SPECIAL SHOT: ${shots.special.name}: ${shots.special.text}`;
+      $('#clsSkill').textContent = 'Every hero also has one HEAL and one DOUBLE shot a game.';
+    } else if (you && brawlOn()) {
       const pet = BR.PETS[look.pet];
       $('#clsAttack').textContent = `ATTACK: ${cls.attack} · ${kit.hp} HP${pet ? ` · PET: ${pet.attack}` : ''}`;
       $('#clsPerk').textContent = `DUEL PERK: ${kit.perk.name}: ${kit.perk.text}`;
@@ -408,6 +421,7 @@
     bView.selfId = you;
     applyState(res.snapshot);
     if (res.snapshot.brawlShots) bView.addShots(res.snapshot.brawlShots);
+    aView.selfId = you;
     // Draw battle under way: the drawing and guesses so far, and anything only you may know.
     if (res.snapshot.strokes) {
       pad.set(res.snapshot.strokes);
@@ -426,7 +440,7 @@
     setPlayers(list);
     if (you && !list.some((p) => p.id === you)) return;
     const after = me()?.team;
-    if (teamBattle() && before !== undefined && after !== before && after !== switchingTo) {
+    if (teamMode() && before !== undefined && after !== before && after !== switchingTo) {
       // The host moved you.
       $('#lobbyNote').textContent = `The host moved you to ${TEAMS[after].name}!`;
       $('#lobbyNote').classList.remove('hidden');
@@ -750,6 +764,7 @@
   function setPlayers(list) {
     players = list;
     bView.setPlayers(list);
+    aView.setPlayers(list);
     arena.setRoyale(royaleOn(), royale ? royale.hp : 100);
     arena.setPlayers(list);
     // Team battle: your army is drawn on the near side, the enemy across from it.
@@ -1145,6 +1160,10 @@
     ko = Boolean(s.ko);
     effects = s.effects || [{}, {}];
     arena.setEffects(effects);
+    arty = s.arty || null;
+    aView.selfId = you;
+    aView.setState(arty, s.craters || null);
+    aPad.sync(arty, you);
     const prevBrawl = brawl;
     brawl = s.brawl || null;
     if (brawl) bView.setLayout(brawl.layout);
@@ -1196,6 +1215,8 @@
   function showForState(prev) {
     const st = state.state;
     const arenaUp = brawlOn() && (st === 'countdown' || st === 'playing');
+    const fieldUp = artyOn() && (st === 'countdown' || st === 'playing');
+    aView.active = fieldUp;
     bView.active = arenaUp;
     bView.selfId = you;
     bPad.setEnabled(arenaUp && st === 'playing');
@@ -1214,8 +1235,14 @@
       renderFinal();
       showScreen('scrFinal');
       const won = solo || records[you]?.rank === 1
-        || (teamBattle() ? winner === myTeam() : rankPlayers(players)[0]?.id === you);
+        || (teamMode() ? winner === myTeam() : rankPlayers(players)[0]?.id === you);
       if (prev && prev !== 'finished' && won) Sfx.play('win');
+    } else if (fieldUp) {
+      // Artillery: the battlefield, with the turn controls under it.
+      $('#typeIn').blur();
+      showScreen('scrArty');
+      if (st === 'countdown' && prev !== 'countdown') Sfx.play('round');
+      renderArty();
     } else if (arenaUp) {
       // Duel: the arena, with your thumbs on it.
       $('#typeIn').blur();
@@ -1450,6 +1477,10 @@
   }
 
   function tick() {
+    if (artyOn() && (state.state === 'playing' || state.state === 'countdown')) {
+      renderArty();
+      return;
+    }
     if (brawlOn() && (state.state === 'playing' || state.state === 'countdown')) {
       const left = state.state === 'playing' ? Math.max(0, state.phaseEndsAt - now()) : (rounds[0] ? rounds[0].duration : 0);
       $('#bTime').textContent = clockText(left);
@@ -1753,7 +1784,7 @@
       $('#lobbyName').textContent = mine.name;
       $('#lobbyClass').textContent = `${classByKey(mine.cls).name} · ${classByKey(mine.cls).attack}`;
     }
-    const tb = teamBattle();
+    const tb = teamMode();
     const side = mine ? TEAMS[mine.team] : null;
     $('#lobbyTeam').classList.toggle('hidden', !tb || !side);
     if (tb && side) {
@@ -1761,8 +1792,8 @@
       $('#lobbyTeam').style.background = side.color;
     }
     $('#btnTeam').classList.toggle('hidden', !tb);
-    $('#lobbyMode').textContent = tb
-      ? "TEAM BATTLE: type your side's words to hit the other team!"
+    $('#lobbyMode').textContent = artyOn() ? 'ARTILLERY: your team against theirs, taking turns. Set your angle, charge your power, mind the wind!'
+      : tb ? "TEAM BATTLE: type your side's words to hit the other team!"
       : royaleOn() ? 'BATTLE ROYALE: your own monsters and 100 HP. Words that reach you hurt. Last hero standing wins!'
         : drawOn() ? 'DRAW BATTLE: take turns drawing on your phone while everyone else guesses. The sooner you guess, the more points!'
           : brawlOn() ? 'DUEL: your phone steers your hero around the arena. Left thumb moves, right thumb attacks. KO heroes, slay monsters, grab power-ups!'
@@ -1777,7 +1808,8 @@
     const drawing = drawOn();
     opts.append(el('span', {
       class: 'pick',
-      text: brawlOn() ? `${clockText(rounds[0] ? rounds[0].duration : 240000)} ARENA FIGHT`
+      text: artyOn() ? `${rounds[0]?.turns || AR.TURNS.full} TURNS · ${Math.round((rounds[0]?.time || 20000) / 1000)}s TO AIM`
+        : brawlOn() ? `${clockText(rounds[0] ? rounds[0].duration : 240000)} ARENA FIGHT`
         : drawing ? (rounds.length === 1 ? 'EVERYONE DRAWS ONCE' : `EVERYONE DRAWS ${rounds.length} TIMES`)
         : royaleOn() ? 'NO ROUNDS: EASY > MEDIUM > HARD' : one ? `ONE ROUND · ${rounds[0]?.title || ''}` : `${rounds.length} ROUNDS`,
     }));
@@ -1788,6 +1820,11 @@
     for (const [k, label] of Object.entries(names)) {
       if (drawing && k !== 'awards') continue; // no typing switches, perks or skills in a draw battle
       if (brawlOn() && (k === 'streaks' || k === 'specials')) continue; // no words in a duel
+      if (artyOn()) {
+        if (k === 'skills' && options.skills) opts.append(el('span', { text: 'SPECIAL SHOTS' }));
+        if (k === 'awards' && options.awards) opts.append(el('span', { text: label }));
+        continue;
+      }
       if (brawlOn() && k === 'boss') {
         if (options.boss && options.length !== 'one') opts.append(el('span', { text: 'DRAGON KING' }));
         continue;
@@ -1799,10 +1836,13 @@
     const kit = mine && (BR.KITS[mine.cls] || BR.KITS.knight);
     const duel = brawlOn() && kit;
     if (duel) $('#lobbyClass').textContent = `${classByKey(mine.cls).name} · ${kit.hp} HP · ${classByKey(mine.cls).attack}`;
-    const perk = options.perks && mine && !drawing ? (duel ? `${kit.perk.name}: ${kit.perk.text}` : classByKey(mine.cls).perk) : '';
-    $('#lobbyPerk').textContent = perk ? `PERK: ${perk}` : '';
+    const shots = artyOn() && mine && (AR.SHOTS[mine.cls] || AR.SHOTS.knight);
+    if (shots) $('#lobbyClass').textContent = `${classByKey(mine.cls).name} · SHOT: ${shots.name}`;
+    const perk = shots ? (options.skills ? `SPECIAL: ${shots.special.name}: ${shots.special.text}` : '')
+      : options.perks && mine && !drawing ? (duel ? `${kit.perk.name}: ${kit.perk.text}` : classByKey(mine.cls).perk) : '';
+    $('#lobbyPerk').textContent = !perk ? '' : shots ? perk : `PERK: ${perk}`;
     $('#lobbyPerk').classList.toggle('hidden', !perk);
-    const skl = options.skills && mine && !drawing ? (duel ? `${kit.skill.name}: ${kit.skill.text}` : classByKey(mine.cls).skill) : '';
+    const skl = options.skills && mine && !drawing && !shots ? (duel ? `${kit.skill.name}: ${kit.skill.text}` : classByKey(mine.cls).skill) : '';
     $('#lobbySkill').textContent = !skl ? '' : duel ? `SKILL: ${skl} (charges as you fight; tap SKILL or press E)`
       : `SKILL: ${skl} (every 8 words; tap it or press Space)`;
     $('#lobbySkill').classList.toggle('hidden', !skl);
@@ -1817,10 +1857,20 @@
 
   // Duel: how to play, for this device (thumbs, or a keyboard and mouse), with your skill and your pet.
   function renderHowTo(mine, kit) {
-    $('#lobbyHow').classList.toggle('hidden', !brawlOn() || !mine);
-    if (!brawlOn() || !mine) return;
+    $('#lobbyHow').classList.toggle('hidden', !(brawlOn() || artyOn()) || !mine);
+    if (!(brawlOn() || artyOn()) || !mine) return;
     const pet = BR.PETS[mine.pet];
-    const rows = [
+    const shots = AR.SHOTS[mine.cls] || AR.SHOTS.knight;
+    const rows = artyOn() ? [
+      ['TURNS', 'Your team and theirs take turns. When it\'s yours, your phone buzzes and the controls light up.'],
+      ['MOVE', pcControls ? 'Left and right arrow keys walk a little (the blue bar).' : '◀ ▶ walk a little each turn (the blue bar). Walking turns you round.'],
+      ['AIM', pcControls ? 'Up and down arrow keys set the angle.' : '▲ ▼ set the angle. Drag the battlefield to look around.'],
+      ['FIRE', pcControls ? 'Hold Space to charge the power, let go to shoot.' : 'Hold FIRE to charge the power, let go to shoot. The white mark is your last shot.'],
+      ['WIND', 'Changes every turn and bends your shot: check the arrow at the top.'],
+      options.skills ? ['SPECIAL', `${shots.special.name}: ${shots.special.text}. It charges as you hit and get hit${pcControls ? ' (key 2)' : ''}.`] : null,
+      ['ITEMS', `HEAL (+40 HP) and DOUBLE (fire twice): once each a game${pcControls ? ' (keys H and X)' : ''}.`],
+      ['WIN', 'Wipe out the other team, or have more HP when the turns run out. Falling off the bottom is a KO!'],
+    ].filter(Boolean) : [
       ['MOVE', pcControls ? 'WASD or the arrow keys.' : 'Drag your left thumb anywhere on the left half of the screen.'],
       ['ATTACK', pcControls ? 'Hold the mouse button to attack toward the pointer, or Space to hit the nearest foe.'
         : 'Hold your right thumb on the right half to hit the nearest foe. Drag it to aim.'],
@@ -1844,7 +1894,7 @@
     const mine = ranked[idx];
     if (!mine) return;
     const rec = records[you];
-    const tb = teamBattle() && teams && winner !== null;
+    const tb = teamMode() && teams && winner !== null;
     $('#scrFinal').classList.toggle('battle', !solo);
     $('#fHero').src = heroDataURL(mine);
     $('#fScore').textContent = mine.score;
@@ -1852,8 +1902,8 @@
     $('#fRounds').textContent = rounds.map((r, i) => `${r.name} +${mine.roundScores[i] || 0}`).join('  ·  ');
     $('#fSoloActions').classList.toggle('hidden', !solo);
     $('#fWait').classList.toggle('hidden', solo);
-    $('#fScoreLbl').textContent = tb ? 'DAMAGE + BLOCKS' : 'SCORE';
-    $('#fKillsLbl').textContent = teamBattle() ? 'WORDS TYPED' : drawOn() ? 'DRAWINGS GUESSED' : brawlOn() ? 'KNOCKOUTS' : 'MONSTERS SLAIN';
+    $('#fScoreLbl').textContent = tb && !artyOn() ? 'DAMAGE + BLOCKS' : 'SCORE';
+    $('#fKillsLbl').textContent = teamBattle() ? 'WORDS TYPED' : drawOn() ? 'DRAWINGS GUESSED' : brawlOn() || artyOn() ? 'KNOCKOUTS' : 'MONSTERS SLAIN';
     $('#fTitle').style.color = '';
     $('#fPlace').style.color = '';
     // Your typing stats (none in a draw battle), and any awards you won.
@@ -1981,6 +2031,62 @@
       }
     }
     box.classList.toggle('hidden', !box.children.length);
+  }
+
+  // ---- artillery ---------------------------------------------------------
+  socket.on('arty:pos', (p) => aView.onPos(p));
+  socket.on('arty:shot', (shot) => aView.onShot(shot));
+  socket.on('arty:fell', ({ id }) => aView.fell(id));
+  socket.on('arty:pass', ({ id }) => {
+    aView.callout('TIME UP!', '#ff5a4d', id === you ? 'You ran out of time' : `${nameOf(id)} lost the turn`);
+    if (id === you && navigator.vibrate) navigator.vibrate(120);
+  });
+  socket.on('arty:item', ({ id, item }) => aView.callout(item === 'heal' ? 'HEAL!' : 'DOUBLE SHOT!', '#8be36b', nameOf(id)));
+
+  // The turn's clock, both teams' HP, your score and team, the countdown, and what you're waiting for.
+  function renderArty() {
+    const A = arty;
+    const mine = me();
+    const team = mine ? TEAMS[mine.team] : TEAMS[0];
+    $('#aScore').textContent = mine ? mine.score : 0;
+    $('#aTeam').textContent = team.short;
+    $('#aTeam').style.color = team.color;
+    const aiming = A && A.phase === 'aim';
+    const left = aiming ? Math.max(0, A.endsAt - now()) : 0;
+    $('#aTime').textContent = aiming ? `0:${String(Math.ceil(left / 1000)).padStart(2, '0')}` : A ? `${A.turn}/${A.turns}` : '';
+    $('#aTime').classList.toggle('low', aiming && left <= 5000);
+    (teams || [{ hp: 0, max: 1 }, { hp: 0, max: 1 }]).forEach((t, i) => {
+      $(`#aHp${i}`).textContent = t.hp;
+      $(`#aFill${i}`).style.width = `${t.max ? (100 * t.hp) / t.max : 0}%`;
+      $(`#aFill${i}`).style.background = TEAMS[i].color;
+      $(`#aName${i}`).style.color = TEAMS[i].color;
+    });
+    if (mine) $('#aShotName').textContent = (AR.SHOTS[mine.cls] || AR.SHOTS.knight).name;
+    // Over the field: the countdown, or that you're out.
+    const st = state.state;
+    const h = aView.heroes.get(you);
+    let lines = null;
+    if (st === 'countdown') {
+      const n = Math.ceil(Math.max(0, state.phaseEndsAt - now()) / 1000);
+      lines = ['ARTILLERY', n > 3 ? 'READY?' : String(Math.max(1, n)), `You're on ${team.name}. Set your angle, hold FIRE to charge, mind the wind!`];
+    } else if (h && !h.alive && !aView.replay) lines = ['KNOCKED OUT', 'WATCHING', 'Cheer your team on!'];
+    $('#aOver').classList.toggle('hidden', !lines);
+    if (lines) [1, 2, 3].forEach((i) => { $(`#aO${i}`).textContent = lines[i - 1]; });
+    // What's happening.
+    let wait = '';
+    if (A && A.active) {
+      const p = players.find((x) => x.id === A.active);
+      const who = A.active === you ? 'YOUR TURN' : `${p ? p.name : 'Someone'} (${TEAMS[A.team].short})`;
+      wait = A.phase === 'aim' ? (A.active === you ? 'YOUR TURN! AIM AND FIRE' : `${who} IS AIMING...`)
+        : A.phase === 'fly' ? 'INCOMING!' : A.phase === 'pass' ? 'NEXT TURN...' : '';
+      if (A.phase === 'aim' && A.active !== you && A.team === (mine ? mine.team : -1)) wait += ' (YOUR TEAM)';
+    } else if (st === 'countdown' || (A && A.phase === 'start')) wait = 'GET READY...';
+    $('#aWait').textContent = wait;
+    if (aiming && A.active === you && left > 0 && left <= 5000) {
+      const sec = Math.ceil(left / 1000);
+      if (sec !== lastTick) Sfx.play('tick');
+      lastTick = sec;
+    }
   }
 
   // ---- duel --------------------------------------------------------------

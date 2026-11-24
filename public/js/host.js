@@ -9,6 +9,8 @@
   const now = () => Date.now() + offset;
   const arena = new Arena($('#arena'), { mode: 'host', now });
   const brawlView = new BrawlView($('#brawlCanvas'), { now });
+  const artyView = new ArtyView($('#artyCanvas'), { now });
+  const AR = window.Arty;
   const BR = window.BrawlRules;
 
   let code = null;
@@ -27,6 +29,7 @@
   let royale = null; // battle royale: { start, nextAt, ramp, total, left, hp, damage }
   let draw = null; // draw battle: the turn (see drawOf on the server)
   let brawl = null; // duel: { layout, start, endsAt, bossAt }
+  let arty = null; // artillery: whose turn, the wind, every hero (see stateOf in artillery.js)
   let brawlBoss = false; // duel: the Dragon King is in the arena (his music plays)
   let pushedOptions = false;
   let lastCount = 0;
@@ -403,6 +406,15 @@
       Music.play(musicFor(state.state, rounds[state.round]));
     }
   };
+  // Artillery: the active hero's aim, shots to play out, items, turns that ran out.
+  socket.on('arty:pos', (p) => artyView.onPos(p));
+  socket.on('arty:shot', (shot) => artyView.onShot(shot));
+  socket.on('arty:fell', ({ id }) => artyView.fell(id));
+  socket.on('arty:pass', ({ id }) => artyView.callout('TIME UP!', '#ff5a4d', `${nameOf(id)} lost the turn`));
+  socket.on('arty:item', ({ id, item }) => {
+    artyView.callout(item === 'heal' ? 'HEAL!' : 'DOUBLE SHOT!', '#8be36b', nameOf(id));
+    Sfx.play(item === 'heal' ? 'award' : 'streak');
+  });
   socket.on('room:closed', () => {
     store.set('ww_host', null);
     location.reload();
@@ -473,6 +485,7 @@
     players = list;
     arena.setPlayers(list);
     brawlView.setPlayers(list);
+    artyView.setPlayers(list);
     if (list.length > lastCount && state.state === 'lobby') Sfx.play('join');
     lastCount = list.length;
     renderRoster();
@@ -493,7 +506,7 @@
   // Lobby tile. Team battle: click moves the hero to the other team. Free for all: click removes them.
   // The X always removes.
   function heroTile(p) {
-    const teamsOn = mode === 'teams';
+    const teamsOn = mode === 'teams' || mode === 'artillery';
     const remove = (e) => {
       e.stopPropagation();
       if (confirm(`Remove ${p.name} from the battle?`)) socket.emit('host:kick', { id: p.id });
@@ -514,7 +527,7 @@
 
   function renderRoster() {
     const roster = $('#roster');
-    const teamsOn = mode === 'teams';
+    const teamsOn = mode === 'teams' || mode === 'artillery';
     roster.innerHTML = '';
     roster.classList.toggle('split', teamsOn && players.length > 0);
     $('#count').textContent = players.length;
@@ -532,9 +545,10 @@
       for (const p of players) roster.append(heroTile(p));
     }
     const enough = players.length >= (teamsOn || mode === 'draw' ? 2 : 1);
+    const teamWord = mode === 'artillery' ? 'An artillery battle' : 'A team battle';
     $('#btnStart').disabled = !enough;
     show('#btnShuffle', teamsOn && players.length > 1);
-    if (teamsOn && players.length && !enough) $('#startHint').textContent = 'A team battle needs at least 2 heroes.';
+    if (teamsOn && players.length && !enough) $('#startHint').textContent = `${teamWord} needs at least 2 heroes.`;
     else if (mode === 'draw' && players.length && !enough) $('#startHint').textContent = 'A draw battle needs at least 2 heroes: one draws, the rest guess.';
     else if (mode === 'draw' && enough) {
       $('#startHint').textContent = `${players.length} heroes ready. Each one draws ${rounds.length === 1 ? 'once' : `${rounds.length} times`}; the rest guess on their phones.`;
@@ -717,6 +731,8 @@
     effects = s.effects || [{}, {}];
     arena.setEffects(effects);
     // Duel: a new fight starts with an empty arena.
+    arty = s.arty || null;
+    artyView.setState(arty, s.craters || null);
     const prevBrawl = brawl;
     brawl = s.brawl || null;
     if (brawl) brawlView.setLayout(brawl.layout);
@@ -736,18 +752,27 @@
     const teamsOn = mode === 'teams';
     const drawOn = mode === 'draw';
     const brawlOn = mode === 'brawl';
+    const artyOn = mode === 'artillery';
     const arenaUp = brawlOn && fighting;
+    const fieldUp = artyOn && fighting;
     show('#brawlCanvas', arenaUp);
-    show('#arena', !arenaUp);
+    show('#artyCanvas', fieldUp);
+    show('#arena', !arenaUp && !fieldUp);
     brawlView.active = arenaUp;
+    artyView.active = fieldUp;
 
-    for (const b of document.querySelectorAll('.mode-btn')) b.classList.toggle('on', b.dataset.mode === mode);
+    for (const b of document.querySelectorAll('.mode-btn')) {
+      b.classList.toggle('on', b.dataset.mode === mode);
+      b.title = b.querySelector('small').textContent;
+      if (b.dataset.mode === mode) $('#modeInfo').textContent = b.querySelector('small').textContent;
+    }
     arena.setTeamMode(teamsOn);
     if (st !== 'lobby' && st !== 'finished') show('#hof', false);
     show('#lobby', st === 'lobby');
     show('#hud', fighting || st === 'intermission');
     show('#teamBar', Boolean(teams) && (fighting || st === 'intermission'));
-    show('#board', fighting && !teamsOn && !drawOn);
+    $('#teamBar').classList.toggle('no-fx', mode === 'artillery');
+    show('#board', fighting && !teamsOn && !drawOn && !artyOn);
     show('#drawStage', drawOn && st === 'playing' && Boolean(draw));
     show('#banner', st === 'countdown');
     show('#inter', st === 'intermission');
@@ -769,6 +794,12 @@
       $('#bTitle').textContent = `${manyCats() ? `Drawing from: ${options.drawCatNames.join(', ')}. ` : ''}Take turns drawing on your phone. `
         + `Everyone else guesses! ${Math.round((r.time || 80000) / 1000)} seconds a drawing.`;
       renderDraw();
+    } else if (r && artyOn) {
+      $('#bRound').textContent = 'ARTILLERY';
+      $('#bDiff').textContent = `${r.turns} TURNS · ${Math.round(r.time / 1000)}s TO AIM`;
+      $('#bDiff').className = 'b-diff d-hard';
+      $('#bTitle').textContent = 'Teams take turns. Set the angle, hold FIRE to charge the power, mind the wind. Last team standing wins!';
+      artyHud();
     } else if (r && brawlOn) {
       const map = BR.LAYOUTS[brawl ? brawl.layout : 0];
       $('#hudRound').textContent = `DUEL${brawl ? ` · ${map.name}` : ''}${paceNote(' · ')}`;
@@ -831,10 +862,25 @@
     const barH = teams && hudH ? $('#teamBar').offsetHeight : 0;
     arena.setReserveTop(hudH + barH);
     arena.setReserveRight(fighting && mode !== 'teams' && mode !== 'draw' ? $('#board').offsetWidth + 40 : 0);
-    if (mode === 'brawl') brawlView.setReserve(hudH, fighting ? $('#board').offsetWidth + 28 : 0);
+    // Duel on a tall, narrow screen (the big screen opened on a phone): the arena across the top, the
+    // standings under it. Otherwise the standings sit on the right.
+    const narrow = window.innerWidth < 700 && window.innerHeight > window.innerWidth;
+    const below = mode === 'brawl' && fighting && narrow;
+    const board = $('#board');
+    if (below) {
+      const arenaH = Math.round(((window.innerWidth - 20) * BR.ARENA.H) / BR.ARENA.W);
+      brawlView.setReserve(hudH, 0, true);
+      Object.assign(board.style, { left: '8px', right: '8px', width: 'auto', top: `${hudH + arenaH + 24}px`, maxHeight: `calc(100vh - ${hudH + arenaH + 32}px)` });
+    } else {
+      Object.assign(board.style, { left: '', right: '', width: '' });
+      if (mode === 'brawl') brawlView.setReserve(hudH, fighting ? board.offsetWidth + 28 : 0);
+    }
+    artyView.reserveTop = hudH + barH;
     $('#inter').style.paddingTop = `${hudH + barH + 20}px`;
-    $('#board').style.top = `${hudH + gap + 2}px`;
-    $('#board').style.maxHeight = `calc(100vh - ${hudH + gap + 2}px - 24vh)`;
+    if (!below) {
+      $('#board').style.top = `${hudH + gap + 2}px`;
+      $('#board').style.maxHeight = `calc(100vh - ${hudH + gap + 2}px - 24vh)`;
+    }
   }
   window.addEventListener('resize', () => {
     relayout();
@@ -848,9 +894,19 @@
   // Duel: how to play, on the big screen for everyone in the room to read before the fight.
   function renderHowTo() {
     const box = $('#howTo');
-    show('#howTo', mode === 'brawl');
-    if (mode !== 'brawl' || box.childElementCount) return;
-    const tips = [
+    const on = mode === 'brawl' || mode === 'artillery';
+    show('#howTo', on);
+    if (!on || box.dataset.mode === mode) return;
+    box.dataset.mode = mode;
+    box.innerHTML = '';
+    const tips = mode === 'artillery' ? [
+      ['MOVE', 'On your turn, ◀ ▶ walk a little (PC: arrow keys)'],
+      ['AIM', '▲ ▼ set the angle; walking turns you round'],
+      ['FIRE', 'Hold FIRE to charge the power, let go to shoot (PC: Space)'],
+      ['WIND', 'It changes every turn and bends your shot: check the arrow'],
+      ['SPECIAL', 'Charges as you hit and get hit. HEAL and DOUBLE: once each'],
+      ['WIN', 'Wipe out the other team, or have more HP when the turns run out'],
+    ] : [
       ['MOVE', 'Left thumb: drag on the left half (PC: WASD)'],
       ['ATTACK', 'Right thumb: hold to attack, drag to aim (PC: mouse)'],
       ['SKILL', 'Tap SKILL when it glows (PC: E)'],
@@ -877,6 +933,17 @@
       ]));
       box.append(el('div', { class: 'round-chip easy' }, [
         `PICK ${aNoun()}: EASY · MEDIUM · HARD`, el('small', { text: `${drawCatsLabel(options.drawCatNames)} · 100 · 150 · 200 points` }),
+      ]));
+      return;
+    }
+    if (mode === 'artillery') {
+      const r = rounds[0] || {};
+      const lv = AR.LEVELS[options.level] || AR.LEVELS.normal;
+      box.append(el('div', { class: 'round-chip hard' }, [
+        `${r.turns || AR.TURNS.full} TURNS`, el('small', { text: `${Math.round(lv.turnMs / 1000)} seconds to aim · teams take turns` }),
+      ]));
+      box.append(el('div', { class: 'round-chip medium' }, [
+        'LAST TEAM STANDING', el('small', { text: `Wind up to ${lv.wind} · or the most HP when the turns run out` }),
       ]));
       return;
     }
@@ -970,9 +1037,15 @@
     // also leaves room for the word categories.
     // A duel has no words: no streaks, special words or word list (perks and skills are its own).
     const offInDuel = ['streaks', 'specials'];
+    const offInArty = ['streaks', 'specials', 'boss', 'perks'];
     for (const k of ['streaks', 'specials', 'boss', 'perks', 'skills']) {
       const b = $(`.opt[data-opt="${k}"]`);
-      b.classList.toggle('hidden', mode === 'draw' || (mode === 'brawl' && offInDuel.includes(k)));
+      b.classList.toggle('hidden', mode === 'draw' || (mode === 'brawl' && offInDuel.includes(k)) || (mode === 'artillery' && offInArty.includes(k)));
+      if (mode === 'artillery' && k === 'skills') {
+        b.title = 'Special shots: each class has one; it charges as you hit and get hit.';
+        b.classList.remove('na');
+        continue;
+      }
       if (mode === 'brawl' && !offInDuel.includes(k)) {
         const duelTip = { boss: 'The Dragon King storms the arena for the last minute of a full duel.',
           perks: 'Each class has its own duel perk (shown on the phones).', skills: 'Each class has its own duel skill; it charges as you fight.' };
@@ -991,15 +1064,17 @@
       b.title = 'Not in a draw battle: everyone just draws and guesses.';
     }
     // A battle royale is one battle that keeps going, so it has no game length to pick.
-    $('#btnWords').classList.toggle('hidden', mode === 'brawl');
+    $('#btnWords').classList.toggle('hidden', mode === 'brawl' || mode === 'artillery');
     const seg = $('#segLength');
     seg.classList.toggle('na', mode === 'royale');
     seg.title = mode === 'royale' ? 'A battle royale has no rounds: it goes on until one hero is left.'
       : mode === 'brawl' ? 'A full duel is a 4-minute fight (with the Dragon King at the end); one round is 2 minutes.'
+        : mode === 'artillery' ? `A full battle is ${AR.TURNS.full} turns; one round is ${AR.TURNS.one}. A team wiped out loses at once.`
       : mode === 'draw' ? 'A full game: everyone draws twice. One round: everyone draws once.'
         : 'A full game climbs from easy to hard; one round plays just the round that matches the difficulty';
     $('#segLevel').title = mode === 'draw' ? 'How long each drawing lasts: easy 100 seconds, normal 80, hard 60'
       : mode === 'brawl' ? 'Easy: fewer monsters, softer hits. Hard: more of them, hitting harder'
+        : mode === 'artillery' ? 'Easy: light wind, 25 seconds to aim. Hard: strong wind, 15 seconds'
       : 'Easy: words fall slower and come less often. Hard: faster and more at once';
     $('#wordCount').textContent = options.wordCount || 0;
     $('#musicState').textContent = Music.on ? 'ON' : 'OFF';
@@ -1135,7 +1210,7 @@
         rec ? el('div', { class: 'rec blink', text: rec.rank === 1 ? 'NEW HIGH SCORE!' : `HALL OF FAME #${rec.rank}` }) : null,
         el('div', { class: 'sc', text: `${p.score} PTS` }),
         el('div', { class: 'ko', text: ry ? (p.out ? `${p.kills} SLAIN · OUT` : `${p.kills} SLAIN · ${p.hp} HP LEFT`)
-          : mode === 'draw' ? `${p.kills} GUESSED` : mode === 'brawl' ? `${p.kills} KO · ${p.slain || 0} SLAIN`
+          : mode === 'draw' ? `${p.kills} GUESSED` : mode === 'brawl' ? `${p.kills} KO · ${p.slain || 0} SLAIN` : mode === 'artillery' ? `${p.kills} KO`
             : `${p.kills} ${tb ? 'WORDS' : 'MONSTERS SLAIN'}` }),
         el('div', { class: 'block', text: idx + 1 }),
       ]);
@@ -1216,6 +1291,10 @@
       drawHud();
       return;
     }
+    if (mode === 'artillery' && r && (state.state === 'playing' || state.state === 'countdown')) {
+      artyHud();
+      return;
+    }
     // The last ten seconds of a round: red edges, a ticking clock, faster music.
     const tense = state.state === 'playing' && Boolean(r) && left > 0 && left <= 10000 && !(boss && boss.down);
     show('#tension', tense);
@@ -1263,6 +1342,32 @@
     const tense = Boolean(playing && royale.total >= 2 && royale.left === 2);
     show('#tension', tense);
     Music.setFast(tense);
+  }
+
+  // Artillery HUD: the battlefield, the turn and whose it is, and the clock running down on it. The last
+  // five seconds of a turn tick.
+  function artyHud() {
+    const A = arty;
+    const st = A ? AR.STYLES[A.style] : null;
+    $('#hudRound').textContent = `ARTILLERY${st ? ` · ${st.name}` : ''}`;
+    const aiming = A && A.phase === 'aim';
+    const left = aiming ? Math.max(0, A.endsAt - now()) : 0;
+    $('#timeFill').style.width = `${aiming ? Math.min(100, (100 * left) / A.turnMs) : A && A.phase === 'fly' ? 0 : 100}%`;
+    $('#timeFill').classList.toggle('low', aiming && left < 5000);
+    $('#timeText').textContent = aiming ? `0:${String(Math.ceil(left / 1000)).padStart(2, '0')}` : '';
+    let line = 'Get ready!';
+    if (A && A.active) {
+      const p = players.find((x) => x.id === A.active);
+      const team = TEAMS[A.team];
+      const who = `${p ? p.name : 'Someone'} (${team.short})`;
+      line = A.phase === 'aim' ? `${who} is aiming` : A.phase === 'fly' ? `${who} fired!` : A.phase === 'pass' ? `${who} ran out of time` : '';
+      line = `TURN ${A.turn} OF ${A.turns} · ${line} · WIND ${A.wind > 0 ? '▶' : A.wind < 0 ? '◀' : ''}${Math.abs(A.wind)}`;
+    }
+    $('#hudTitle').textContent = line;
+    const sec = Math.ceil(left / 1000);
+    if (aiming && left > 0 && left <= 5000 && sec !== lastTick) Sfx.play('tick');
+    lastTick = aiming && left <= 5000 ? sec : null;
+    show('#tension', false);
   }
 
   // Draw battle HUD: the clock for this part of the turn, and who's drawing. The last ten seconds of a
