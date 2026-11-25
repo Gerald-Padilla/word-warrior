@@ -78,6 +78,7 @@ that computer for the next game.
 | **AWARDS** | After the podium: Speed Demon (fastest WPM), Sharpshooter (fewest typos), Streak Master, Clutch Saver (words saved at the last second), Monster Slayer, Treasure Hunter (most special words) and Dragon Slayer. Everyone's phone shows their own WPM, accuracy and best streak. |
 | **EMOTES** | Players tap 👍 😂 😮 🔥 👏 😭 on their phones in the lobby, between rounds and on the results screen; the emoji pops up over their hero on the big screen. |
 | **CHAT** | Players chat from their phones while they wait in the lobby (and during an artillery battle: see below). Messages show in a panel beside the heroes on the big screen and in a bubble on the sender's tile. Messages are up to 80 characters, one every 1.5 seconds; common English and Tagalog swear words are masked with asterisks (a basic filter, not a moderator). **CLEAR** on the big screen wipes the chat for everyone, and the hero's **X** still removes a player. |
+| **FREE FOR ALL** | Artillery only: no teams, every hero for themselves (see Artillery below). |
 | **MY WORDS** | Paste your own words (team names, product names, in-jokes). They're sorted by length into the rounds and come up often. Tick *Only use my words* to drop the built-in words for any round you've given at least 6 words. |
 | **MUSIC** | A chiptune soundtrack on the big screen: calm in the lobby and breaks, a track per round, a boss theme. |
 
@@ -375,9 +376,15 @@ differently from bots, so treat the numbers as a starting point. They're all in 
 
 ## Artillery
 
-A turn-based team battle, with no typing. Pick **ARTILLERY** in the host lobby (it needs at least 2 heroes).
+A turn-based battle, with no typing. Pick **ARTILLERY** in the host lobby (it needs at least 2 heroes).
 Players split into Red Dragons and Blue Griffins like a team battle: **SWITCH TEAM** on the phone, or on the
-big screen click a hero to move them, or **SHUFFLE TEAMS**.
+big screen click a hero to move them, or **SHUFFLE TEAMS**. Or switch on **FREE FOR ALL** in the lobby for no
+teams at all:
+
+- **Free for all.** Every hero for themselves, spread out across the whole field, taking turns one after
+  another. Every other hero is a foe (a Cleric's heal only heals themselves). The last hero standing gets
+  +250 points and the **Last One Standing** award, and the results rank everyone by score, like a free for
+  all typing battle. The phones show how many heroes are left instead of the team bars.
 
 - **The battlefield.** A side-on landscape, one of ten, a little different every game. Teams start on opposite
   sides.
@@ -438,10 +445,18 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   | **Haste** | Walk and jump twice as far on your next turn |
   | **Twin Shot** | Your next shot fires twice (three times with DOUBLE) |
 
-- **Winning.** The battle goes on until a team is wiped out (or both are, a draw). To make sure it ends,
-  **sudden death** starts at turn 30 in a full game (16 in one round): every turn from then on, shots hit
-  10% harder (up to four times as hard). **SKIP** ends the battle at once, and the team with more HP wins
-  (as does a battle somehow still going after 200 turns).
+- **Ghosts.** A hero who's knocked out isn't out of the game: they haunt the battlefield as a ghost, floating
+  over it (◀ ▶ on their phone, or the arrow keys, any time). Two turns after they're out, and every three turns
+  after that, they can tap **DROP** (Space): their ghost bomb falls straight down from where they float once
+  the turn's shot has landed (or when the turn runs out). Everyone can see a ghost holding a bomb, with a line
+  down to where it will land, so the hero under it can move. A ghost bomb's hits and KOs score for the ghost,
+  and the **Poltergeist** award goes to the most ghost damage.
+- **Winning.** The battle goes on until a team is wiped out (or both are, a draw); free for all, until one hero
+  is left. To make sure it ends, **sudden death** starts at turn 30 in a full game (16 in one round): the
+  battlefield floods (with lava on Red Canyon and Crater Field). The water fills the lowest dip, then rises a
+  little every turn: a hero with their feet in it takes 15 damage a turn, and one under it drowns, so get to
+  high ground. Shots also hit 10% harder every turn (up to four times as hard). **SKIP** ends the battle at
+  once, and the team (or hero) with more HP wins (as does a battle somehow still going after 200 turns).
 - **Mounts.** Heroes ride their companion pet into battle (it trots along when they walk); a hero without
   one fights on foot. Hero and mount are one target, the same size for everyone. Each pet moves its own way:
 
@@ -460,7 +475,12 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   | No pet | A plain jump |
 
 - **Points.** Damage to enemies scores 1 point per HP, a KO scores +100, and every hero on the winning team
-  gets +150.
+  gets +150 (free for all: +250 for the last one standing).
+- **Big moments.** A knockout during a shot plays in slow motion, zoomed in, with a flash (the next turn waits
+  for it). Once a shot has landed, the screens call out how it went: **DOUBLE KO!** or **TRIPLE KO!**,
+  **BULLSEYE!** (a direct hit), **MULTI-HIT!** (three foes or more), **OWN GOAL!** (a teammate knocked out),
+  **FRIENDLY FIRE!**, **OOPS!** (only yourself), **SO CLOSE!** (a near miss), and **ON FIRE!** when a hero
+  hits a foe three turns in a row.
 - **Chat** (when **CHAT** is on). Turns leave time to talk: tap **CHAT** on the battlefield to type a message
   or tap a quick one (NICE SHOT!, OOPS!, ...). It pops up in a bubble over your hero, on the big screen and
   every phone, and in a list at the bottom of the field. Knocked out heroes can still chat.
@@ -476,7 +496,8 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   - The controls. Held sideways, the controls sit in a column on the right.
 - **Details.**
   - Every hero has 120 HP.
-  - A hero who joins mid-battle goes on the smaller team, on their own side of the field.
+  - A hero who joins mid-battle goes on the smaller team, on their own side of the field (free for all:
+    anywhere).
   - A hero whose phone drops out loses their turn after 3 seconds.
 - Streaks, special words, the boss, class perks and **MY WORDS** are off (hidden in the lobby).
 - **Awards:**
@@ -484,6 +505,8 @@ big screen click a hero to move them, or **SHUFFLE TEAMS**.
   - **Heavy Hitter:** most damage
   - **Bullseye:** biggest single hit
   - **Long Shot:** hit an enemy from the farthest away
+  - **Poltergeist:** most damage dealt as a ghost
+  - **Last One Standing** (free for all): outlasted every other hero
 - Artillery scores aren't recorded in the Hall of Fame.
 
 ### Shots

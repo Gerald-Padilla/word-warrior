@@ -409,6 +409,9 @@
   // Artillery: the active hero's aim, shots to play out, items, turns that ran out.
   socket.on('arty:pos', (p) => artyView.onPos(p));
   socket.on('arty:jump', (j) => artyView.onJump(j));
+  socket.on('arty:haunt', (g) => artyView.onHaunt(g));
+  socket.on('arty:drop', (g) => artyView.onDrop(g));
+  socket.on('arty:flood', (f) => artyView.onFlood(f));
   socket.on('arty:shot', (shot) => artyView.onShot(shot));
   socket.on('arty:fell', ({ id }) => artyView.fell(id));
   socket.on('arty:pass', ({ id }) => artyView.callout('TIME UP!', '#ff5a4d', `${nameOf(id)} lost the turn`));
@@ -506,8 +509,11 @@
 
   // Lobby tile. Team battle: click moves the hero to the other team. Free for all: click removes them.
   // The X always removes.
+  // Played in two teams: team battle, and artillery unless it's a free for all.
+  const teamsNow = () => mode === 'teams' || (mode === 'artillery' && !options.artyFfa);
+
   function heroTile(p) {
-    const teamsOn = mode === 'teams' || mode === 'artillery';
+    const teamsOn = teamsNow();
     const remove = (e) => {
       e.stopPropagation();
       if (confirm(`Remove ${p.name} from the battle?`)) socket.emit('host:kick', { id: p.id });
@@ -528,7 +534,7 @@
 
   function renderRoster() {
     const roster = $('#roster');
-    const teamsOn = mode === 'teams' || mode === 'artillery';
+    const teamsOn = teamsNow();
     roster.innerHTML = '';
     roster.classList.toggle('split', teamsOn && players.length > 0);
     $('#count').textContent = players.length;
@@ -545,11 +551,12 @@
     } else {
       for (const p of players) roster.append(heroTile(p));
     }
-    const enough = players.length >= (teamsOn || mode === 'draw' ? 2 : 1);
+    const enough = players.length >= (teamsOn || mode === 'draw' || mode === 'artillery' ? 2 : 1);
     const teamWord = mode === 'artillery' ? 'An artillery battle' : 'A team battle';
     $('#btnStart').disabled = !enough;
     show('#btnShuffle', teamsOn && players.length > 1);
-    if (teamsOn && players.length && !enough) $('#startHint').textContent = `${teamWord} needs at least 2 heroes.`;
+    if ((teamsOn || mode === 'artillery') && players.length && !enough) $('#startHint').textContent = `${teamWord} needs at least 2 heroes.`;
+    else if (mode === 'artillery' && enough && !teamsOn) $('#startHint').textContent = `${players.length} heroes, every one for themselves. Last one standing wins!`;
     else if (mode === 'draw' && players.length && !enough) $('#startHint').textContent = 'A draw battle needs at least 2 heroes: one draws, the rest guess.';
     else if (mode === 'draw' && enough) {
       $('#startHint').textContent = `${players.length} heroes ready. Each one draws ${rounds.length === 1 ? 'once' : `${rounds.length} times`}; the rest guess on their phones.`;
@@ -765,7 +772,10 @@
     for (const b of document.querySelectorAll('.mode-btn')) {
       b.classList.toggle('on', b.dataset.mode === mode);
       b.title = b.querySelector('small').textContent;
-      if (b.dataset.mode === mode) $('#modeInfo').textContent = b.querySelector('small').textContent;
+      if (b.dataset.mode === mode) {
+        $('#modeInfo').textContent = mode === 'artillery' && options.artyFfa ? 'Every hero for themselves, taking turns: last one standing wins'
+          : b.querySelector('small').textContent;
+      }
     }
     arena.setTeamMode(teamsOn);
     if (st !== 'lobby' && st !== 'finished') show('#hof', false);
@@ -796,10 +806,12 @@
         + `Everyone else guesses! ${Math.round((r.time || 80000) / 1000)} seconds a drawing.`;
       renderDraw();
     } else if (r && artyOn) {
-      $('#bRound').textContent = 'ARTILLERY';
-      $('#bDiff').textContent = `LAST TEAM STANDING · ${Math.round(r.time / 1000)}s TO AIM`;
+      const ffa = Boolean(options.artyFfa);
+      $('#bRound').textContent = ffa ? 'ARTILLERY · FREE FOR ALL' : 'ARTILLERY';
+      $('#bDiff').textContent = `LAST ${ffa ? 'HERO' : 'TEAM'} STANDING · ${Math.round(r.time / 1000)}s TO AIM`;
       $('#bDiff').className = 'b-diff d-hard';
-      $('#bTitle').textContent = 'Teams take turns. Set the angle, hold FIRE to charge the power, mind the wind. Last team standing wins!';
+      $('#bTitle').textContent = ffa ? 'Every hero for themselves, taking turns. Set the angle, hold FIRE to charge the power, mind the wind. Last one standing wins!'
+        : 'Teams take turns. Set the angle, hold FIRE to charge the power, mind the wind. Last team standing wins!';
       artyHud();
     } else if (r && brawlOn) {
       const map = BR.LAYOUTS[brawl ? brawl.layout : 0];
@@ -897,16 +909,17 @@
     const box = $('#howTo');
     const on = mode === 'brawl' || mode === 'artillery';
     show('#howTo', on);
-    if (!on || box.dataset.mode === mode) return;
-    box.dataset.mode = mode;
+    const key = `${mode}${mode === 'artillery' && options.artyFfa ? ':ffa' : ''}`;
+    if (!on || box.dataset.mode === key) return;
+    box.dataset.mode = key;
     box.innerHTML = '';
     const tips = mode === 'artillery' ? [
       ['MOVE', 'On your turn, ◀ ▶ walk a little and JUMP out of holes (PC: arrows, J). Each pet moves its own way'],
       ['AIM', '▲ ▼ set the angle. The wind changes every turn and bends your shot: check the arrow'],
       ['FIRE', 'Hold FIRE to charge the power, let go to shoot (PC: Space)'],
-      ['SHOTS', 'Two shots to pick from, and a special that charges as you fight. HEAL and DOUBLE: once each'],
-      ['POWER-UPS', 'Shoot the bubbles floating over the middle to take them'],
-      ['WIN', `Wipe out the other team. From turn ${(rounds[0] || {}).turns || AR.TURNS.full}, sudden death: shots hit harder every turn`],
+      ['SHOTS', 'Two shots, a special, HEAL and DOUBLE. Shoot the bubbles over the middle for power-ups'],
+      ['GHOSTS', 'Knocked out? Haunt the field: drop a ghost bomb every few turns'],
+      ['WIN', `${options.artyFfa ? 'Last hero standing wins' : 'Wipe out the other team'}. From turn ${(rounds[0] || {}).turns || AR.TURNS.full}, sudden death: the water rises`],
     ] : [
       ['MOVE', 'Left thumb: drag on the left half (PC: WASD)'],
       ['ATTACK', 'Right thumb: hold to attack, drag to aim (PC: mouse)'],
@@ -940,11 +953,13 @@
     if (mode === 'artillery') {
       const r = rounds[0] || {};
       const lv = AR.LEVELS[options.level] || AR.LEVELS.normal;
+      const ffa = Boolean(options.artyFfa);
       box.append(el('div', { class: 'round-chip hard' }, [
-        'LAST TEAM STANDING', el('small', { text: `${Math.round(lv.turnMs / 1000)} seconds to aim · teams take turns · wind up to ${lv.wind}` }),
+        ffa ? 'LAST HERO STANDING' : 'LAST TEAM STANDING',
+        el('small', { text: `${Math.round(lv.turnMs / 1000)} seconds to aim · ${ffa ? 'every hero for themselves' : 'teams take turns'} · wind up to ${lv.wind}` }),
       ]));
       box.append(el('div', { class: 'round-chip medium' }, [
-        `SUDDEN DEATH FROM TURN ${r.turns || AR.TURNS.full}`, el('small', { text: `Then shots hit ${Math.round(AR.SUDDEN_STEP * 100)}% harder every turn, until a team falls` }),
+        `SUDDEN DEATH FROM TURN ${r.turns || AR.TURNS.full}`, el('small', { text: `Then the water rises and shots hit harder every turn, until ${ffa ? 'one hero is left' : 'a team falls'}` }),
       ]));
       return;
     }
@@ -1033,6 +1048,7 @@
     for (const b of document.querySelectorAll('[data-level]')) b.classList.toggle('on', b.dataset.level === (options.level || 'normal'));
     for (const b of document.querySelectorAll('[data-cat]')) b.classList.toggle('on', (options.drawCats || ['things']).includes(b.dataset.cat));
     show('#drawCats', mode === 'draw');
+    $('.opt[data-opt="artyFfa"]').classList.toggle('hidden', mode !== 'artillery');
     const bossBtn = $('.opt[data-opt="boss"]');
     const noBoss = mode === 'teams' ? 'The boss finale is for free for all; a team battle is its own fight.'
       : mode === 'royale' ? 'A battle royale has no boss: the monsters just keep getting tougher.'
@@ -1365,8 +1381,7 @@
     let line = 'Get ready!';
     if (A && A.active) {
       const p = players.find((x) => x.id === A.active);
-      const team = TEAMS[A.team];
-      const who = `${p ? p.name : 'Someone'} (${team.short})`;
+      const who = A.ffa ? (p ? p.name : 'Someone') : `${p ? p.name : 'Someone'} (${TEAMS[A.team].short})`;
       line = A.phase === 'aim' ? `${who} is aiming` : A.phase === 'fly' ? `${who} fired!` : A.phase === 'pass' ? `${who} ran out of time` : '';
       const sd = A.boost > 1 ? ` · SUDDEN DEATH x${A.boost}` : ` · sudden death at ${A.turns}`;
       line = `TURN ${A.turn}${sd} · ${line} · WIND ${A.wind > 0 ? '▶' : A.wind < 0 ? '◀' : ''}${Math.abs(A.wind)}`;

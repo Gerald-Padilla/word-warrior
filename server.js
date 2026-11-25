@@ -203,9 +203,10 @@ const SKILL_LAUNCHES = 3; // team battle: a strike with nothing to block fires u
 const CLUTCH_PROGRESS = 0.85; // a word typed past this far down counts as a clutch save
 
 // Host options. Solo quests always play with the defaults.
-const OPTION_KEYS = ['streaks', 'specials', 'boss', 'perks', 'skills', 'awards', 'emotes', 'chat'];
+// artyFfa: artillery as a free for all (every hero for themselves) instead of two teams.
+const OPTION_KEYS = ['streaks', 'specials', 'boss', 'perks', 'skills', 'awards', 'emotes', 'chat', 'artyFfa'];
 const DEFAULT_OPTIONS = {
-  streaks: true, specials: true, boss: true, perks: true, skills: true, awards: true, emotes: true, chat: true, onlyMine: false,
+  streaks: true, specials: true, boss: true, perks: true, skills: true, awards: true, emotes: true, chat: true, artyFfa: false, onlyMine: false,
   length: 'full', level: 'normal', drawCats: ['things'],
 };
 const MY_WORDS_MAX = 300; // custom words the host can add
@@ -675,7 +676,7 @@ function startGame(room) {
   room.draw = null;
   room.brawl = null;
   room.arty = null;
-  if (room.mode === 'artillery') balanceTeams(room, false);
+  if (room.mode === 'artillery' && !room.options.artyFfa) balanceTeams(room, false);
   // Duel: the arena is picked now, so the countdown can show it.
   room.brawlLayout = room.mode === 'brawl' ? Math.floor(Math.random() * BRAWL_RULES.LAYOUTS.length) : null;
   if (room.mode === 'teams') {
@@ -805,6 +806,11 @@ function summarize(room) {
       give('hitter', 'HEAVY HITTER', 'Most damage dealt', (p) => p.stats.dealt || 0, (v) => `${v} damage`, 1, 0);
       give('bullseye', 'BULLSEYE', 'Biggest single hit', (p) => p.stats.bestHit || 0, (v) => `${v} damage`, 1, 0);
       give('far', 'LONG SHOT', 'Hit an enemy from the farthest away', (p) => p.stats.far || 0, (v) => `${Math.round(v / 10)} m`, 1, 0);
+      give('ghost', 'POLTERGEIST', 'Most damage dealt as a ghost', (p) => p.stats.haunted || 0, (v) => `${v} damage`, 1, 0);
+      // Free for all: whoever outlasted everyone.
+      const G = room.arty;
+      const last = G && G.ffa && typeof G.winner === 'string' ? list.find((p) => p.id === G.winner) : null;
+      if (last) awards.unshift({ key: 'survivor', title: 'LAST ONE STANDING', desc: 'Outlasted every other hero', id: last.id, value: `+${ARTY_RULES.FFA_WIN_POINTS}` });
     }
     return { stats, awards };
   }
@@ -1680,7 +1686,7 @@ const ARTY_POS_MS = 60; // how often the active hero's aim and position go out
 
 function beginArty(room, now) {
   const o = room.options;
-  room.arty = ARTY.createArty({ players: [...room.players.values()], length: o.length, level: o.level, specials: o.skills });
+  room.arty = ARTY.createArty({ players: [...room.players.values()], length: o.length, level: o.level, specials: o.skills, ffa: o.artyFfa });
   room.arty.endsAt = now + ARTY_FIRST_MS;
   room.artyWalk = null;
   room.artyLast = now;
@@ -1715,19 +1721,26 @@ function artyTick(room, now) {
   } else if ((G.phase === 'fly' || G.phase === 'pass') && now >= G.endsAt) artyNext(room, now);
 }
 
-// The turn's over without a shot: out of time, or the hero left (or fell).
+// The turn's over without a shot: out of time, or the hero left (or fell). Ghost bombs waiting fall anyway.
 function artyPass(room, now, timeUp = true) {
   const G = room.arty;
   if (timeUp && G.active) io.to(channel(room)).emit('arty:pass', { id: G.active });
-  G.phase = 'pass';
-  G.endsAt = now + ARTY_PASS_MS;
   room.artyWalk = null;
+  const ghosts = ARTY.ghostVolley(G, now);
+  if (ghosts) io.to(channel(room)).emit('arty:shot', ghosts);
+  else {
+    G.phase = 'pass';
+    G.endsAt = now + ARTY_PASS_MS;
+  }
   broadcastState(room);
 }
 
 function artyNext(room, now) {
   const G = room.arty;
   ARTY.fallNow(G, Infinity); // anyone still falling off the bottom is out before the next turn
+  // Sudden death: the water rises (and anyone in it is hurt, or drowns).
+  const flood = ARTY.flood(G);
+  if (flood) io.to(channel(room)).emit('arty:flood', flood);
   syncArty(room);
   const verdict = ARTY.verdict(G);
   if (verdict !== null) return artyOver(room, verdict);
@@ -1743,8 +1756,9 @@ function artyOver(room, winner) {
   clearInterval(room.ticker);
   room.ticker = null;
   ARTY.finish(G, winner);
-  room.winner = winner;
-  room.ko = winner >= 0 && !ARTY.aliveIn(G, 1 - winner).length;
+  // Free for all: the results rank everyone by score (the last one standing got a bonus).
+  room.winner = G.ffa ? null : winner;
+  room.ko = !G.ffa && winner >= 0 && !ARTY.aliveIn(G, 1 - winner).length;
   syncArty(room);
   finishGame(room);
 }
@@ -1773,9 +1787,9 @@ function syncArty(room) {
     p.kills = H.kos;
     p.deaths = H.deaths;
     p.roundScores[0] = H.score;
-    Object.assign(p.stats, { dealt: H.dealt, bestHit: H.best, far: H.far });
+    Object.assign(p.stats, { dealt: H.dealt, bestHit: H.best, far: H.far, haunted: H.haunted });
   }
-  room.teams = teams;
+  room.teams = G.ffa ? null : teams;
 }
 
 // ---- Duel (brawl) --------------------------------------------------------------
@@ -2386,6 +2400,29 @@ io.on('connection', (socket) => {
     if (!j) return reply(cb, { ok: false });
     io.to(channel(room)).emit('arty:jump', j);
     reply(cb, { ok: true, t: j.t });
+  });
+  // Ghosts (heroes who are out): float over the field, and drop a bomb when it's ready.
+  const ghostCtx = () => {
+    const { room, player } = ctx();
+    const G = room && room.arty;
+    if (!player || !G || room.state !== 'playing') return {};
+    return { room, player, G };
+  };
+  socket.on('arty:haunt', (data) => {
+    const { room, player, G } = ghostCtx();
+    if (!room) return;
+    const t = Date.now();
+    if (t - (player.hauntAt || 0) < 40) return;
+    player.hauntAt = t;
+    const x = ARTY.haunt(G, player.id, data?.x);
+    if (x !== null) socket.to(channel(room)).emit('arty:haunt', { id: player.id, x });
+  });
+  socket.on('arty:drop', (_data, cb) => {
+    const { room, player, G } = ghostCtx();
+    if (!room || !ARTY.arm(G, player.id)) return reply(cb, { ok: false });
+    io.to(channel(room)).emit('arty:drop', { id: player.id });
+    broadcastState(room);
+    reply(cb, { ok: true });
   });
   socket.on('arty:fire', (data, cb) => {
     const { room, player, G } = artyCtx();

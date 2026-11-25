@@ -53,6 +53,25 @@
     { name: 'FLAP', pet: 'BAT', text: 'jumps again in mid-air (tap JUMP while flying)', flap: true },
   ];
 
+  // Ghosts: a hero who's knocked out haunts the battlefield. It floats over the field (moved from its
+  // phone) and, `first` turns after it's out and then every `every` turns, it can drop a ghost bomb straight
+  // down; the bomb falls once the turn's shot has landed (or the turn runs out). Its hits score for the ghost.
+  const GHOST = { first: 2, every: 3, hover: 260, bomb: { kind: 'ghost', dmg: 18, r: 45, crater: 26, wind: 0, big: 1.1 } };
+  // How high a ghost floats at x: well over the ground there (and never above the top of the map).
+  const ghostY = (terrain, x) => Math.max(60, (terrain.groundBelow(x, 0) ?? MAP.H * 0.7) - GHOST.hover);
+
+  // Sudden death floods the battlefield: when it starts the water fills the lowest dip, then rises `rise`
+  // every turn (no higher than `top`). Feet in the water hurt (dmg a turn); a hero under it drowns.
+  const WATER = { rise: 24, top: 300, dmg: 15 };
+
+  // A knockout during a shot plays in slow motion (the replay runs at `speed` for `ms`), so the server
+  // waits that much longer before the next turn.
+  const SLOWMO = { ms: 1100, speed: 0.25 };
+  const SLOWMO_EXTRA = Math.round(SLOWMO.ms * (1 - SLOWMO.speed));
+
+  // Free for all: every hero for themselves. The last one standing gets this bonus.
+  const FFA_WIN_POINTS = 250;
+
   // Power-ups float over the middle of the battlefield: hit one with a shot (or a blast) and it's yours.
   // One appears at the start, then another every ORB.every turns while there are fewer than ORB.max.
   const ORB = { r: 30, every: 3, max: 2 };
@@ -509,7 +528,7 @@
   const Arty = {
     MAP, COLS, ROWS, GRAVITY, MAX_SPEED, WIND_ACCEL, HERO_R, HERO_MID, CLIMB, WALK_SPEED, STAMINA, HP, ANGLE_MIN, ANGLE_MAX,
     CHARGE_MS, KO_POINTS, WIN_POINTS, SUDDEN_STEP, SUDDEN_MAX, LAST_TURN, SPECIAL_MAX, SPECIAL_PER_DMG, SPECIAL_PER_HURT, SPECIAL_PER_TURN, SHOW_MS, TURNS, LEVELS,
-    SHOTS, ITEMS, STYLES, JUMP, MOUNTS, ORB, ORBS, Terrain, seeded, launch, fly, hop, PATH_MS,
+    SHOTS, ITEMS, STYLES, JUMP, MOUNTS, ORB, ORBS, GHOST, WATER, SLOWMO, SLOWMO_EXTRA, FFA_WIN_POINTS, ghostY, Terrain, seeded, launch, fly, hop, PATH_MS,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Arty;
   else root.Arty = Arty;

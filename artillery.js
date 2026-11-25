@@ -1,21 +1,28 @@
-// Artillery: the battle on the server. Two teams take turns: the hero whose turn it is can walk a little,
-// aim and fire. A shot is worked out here in full the moment it's fired (where it flies, what it blows up,
-// who gets hurt or falls) and sent to every screen to play out. No sockets here: server.js runs the turns'
-// clocks and passes things on. The numbers live in public/js/arty-rules.js, which the screens load too.
+// Artillery: the battle on the server. Heroes take turns (two teams, or free for all): the hero whose turn
+// it is can walk a little, jump, aim and fire. A shot is worked out here in full the moment it's fired
+// (where it flies, what it blows up, who gets hurt or falls) and sent to every screen to play out. Heroes
+// who are knocked out haunt the field as ghosts, and sudden death floods it. No sockets here: server.js
+// runs the turns' clocks and passes things on. The numbers live in public/js/arty-rules.js, which the
+// screens load too.
 const A = require('./public/js/arty-rules');
 
 const { MAP, HERO_MID, HERO_R } = A;
 
-function createArty({ players, length = 'full', level = 'normal', specials = true, rng = Math.random }) {
+// Free for all: everyone is on "team 0" (so the turns go round them all), and every other hero is a foe.
+const foe = (G, H, T) => (G.ffa ? H.id !== T.id : H.team !== T.team);
+const ally = (G, H, T) => (G.ffa ? H.id === T.id : H.team === T.team);
+
+function createArty({ players, length = 'full', level = 'normal', specials = true, ffa = false, rng = Math.random }) {
   const seed = Math.floor(rng() * 1e9);
   const style = Math.floor(rng() * A.STYLES.length);
   const G = {
     seed,
     style,
+    ffa: Boolean(ffa),
     terrain: new A.Terrain(seed, style),
     craters: [], // [x, y, r, grow?] in the order they happened, so a screen that joins late can rebuild the ground
     heroes: new Map(),
-    order: [[], []], // each team's heroes, in turn order
+    order: [[], []], // each team's heroes, in turn order (free for all: everyone in order[0])
     next: [0, 0], // whose turn it is next, in each team
     team: rng() < 0.5 ? 0 : 1, // the team that just went (the other goes first)
     turn: 0,
@@ -23,6 +30,7 @@ function createArty({ players, length = 'full', level = 'normal', specials = tru
     level: A.LEVELS[level] || A.LEVELS.normal,
     specials,
     wind: 0,
+    water: null, // sudden death: the water's surface (y), rising every turn
     phase: 'start', // 'aim' (someone's turn), 'fly' (a shot playing out), 'pass' (time ran out), 'over'
     active: null,
     endsAt: 0,
@@ -38,18 +46,28 @@ function createArty({ players, length = 'full', level = 'normal', specials = tru
     winner: null,
     rng,
   };
-  const teams = [players.filter((p) => p.team === 0), players.filter((p) => p.team === 1)];
-  teams.forEach((list, team) => list.forEach((p, i) => addHero(G, p, team, i, list.length)));
+  if (G.ffa) {
+    // Everyone spread out across the whole field, in a random order.
+    const list = players.slice();
+    for (let i = list.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    list.forEach((p, i) => addHero(G, p, 0, i, list.length));
+  } else {
+    const teams = [players.filter((p) => p.team === 0), players.filter((p) => p.team === 1)];
+    teams.forEach((list, team) => list.forEach((p, i) => addHero(G, p, team, i, list.length)));
+  }
   return G;
 }
 
-// A spot on the hero's own side of the map with ground under it: evenly spread for the starting line-up
-// (i of n), anywhere on their side for someone joining later.
+// A spot with ground under it: on the hero's own side, evenly spread for the starting line-up (i of n), or
+// anywhere on their side for someone joining later. Free for all: across the whole field.
 function spotFor(G, team, i = null, n = 1) {
-  const side = (f) => (team === 0 ? f : 1 - f);
+  const pick = G.ffa ? (f) => 0.05 + f * 0.9 : (f) => (team === 0 ? 0.05 + f * 0.32 : 0.95 - f * 0.32);
   const tries = [];
-  if (i !== null) tries.push(side(0.06 + (0.3 * (i + 0.5)) / Math.max(1, n)));
-  for (let k = 0; k < 40; k++) tries.push(side(0.05 + G.rng() * 0.32));
+  if (i !== null) tries.push(pick((i + 0.5) / Math.max(1, n)));
+  for (let k = 0; k < 40; k++) tries.push(pick(G.rng()));
   for (const f of tries) {
     for (const nudge of [0, 20, -20, 40, -40, 80, -80, 120, -120]) {
       const x = Math.max(30, Math.min(MAP.W - 30, f * MAP.W + nudge));
@@ -57,7 +75,8 @@ function spotFor(G, team, i = null, n = 1) {
       if (y !== null && y > 40 && !G.terrain.solid(x, y - HERO_MID * 2)) return { x, y };
     }
   }
-  return { x: side(0.2) * MAP.W, y: G.terrain.groundBelow(side(0.2) * MAP.W, 0) ?? MAP.H / 2 };
+  const x = pick(0.5) * MAP.W;
+  return { x, y: G.terrain.groundBelow(x, 0) ?? MAP.H / 2 };
 }
 
 // The hero's mount: their pet, and how it moves (see MOUNTS).
@@ -75,14 +94,18 @@ function pathAt(path, t) {
 }
 
 function addHero(G, p, team = p.team, i = null, n = 1) {
+  if (G.ffa) team = 0;
   const spot = spotFor(G, team, i, n);
   const pet = Number.isInteger(p.pet) && A.MOUNTS[p.pet] ? p.pet : 0;
   const stamina = A.STAMINA * (A.MOUNTS[pet].stamina || 1);
+  const face = G.ffa ? (spot.x < MAP.W / 2 ? 1 : -1) : team === 0 ? 1 : -1;
   const H = {
-    id: p.id, team, cls: A.SHOTS[p.cls] ? p.cls : 'knight', pet, x: spot.x, y: spot.y, face: team === 0 ? 1 : -1, angle: 45,
+    id: p.id, team, cls: A.SHOTS[p.cls] ? p.cls : 'knight', pet, x: spot.x, y: spot.y, face, angle: 45,
     hp: A.HP, max: A.HP, alive: true, special: 0, items: { heal: 1, double: 1 }, stamina, maxStamina: stamina, away: false,
     fury: false, shield: false, haste: false, twin: false, // power-ups waiting to be used
-    score: 0, dealt: 0, kos: 0, deaths: 0, best: 0, far: 0, power: 0, lastPower: 0, orbs: 0,
+    ghostWait: 0, gx: spot.x, armed: false, // once knocked out: turns until its ghost bomb is ready, where it floats, and whether it's dropping one
+    streak: 0, // shots in a row (their own turns) that hit a foe
+    score: 0, dealt: 0, kos: 0, deaths: 0, best: 0, far: 0, power: 0, lastPower: 0, orbs: 0, haunted: 0,
   };
   G.heroes.set(H.id, H);
   G.order[team].push(H.id);
@@ -98,7 +121,8 @@ function removeHero(G, id) {
 
 const aliveIn = (G, team) => [...G.heroes.values()].filter((H) => H.team === team && H.alive);
 
-// The next hero to go: the other team if it has anyone standing, taking its heroes in turn.
+// The next hero to go: the other team if it has anyone standing, taking its heroes in turn (free for
+// all: the next hero standing, round and round).
 function startTurn(G, now) {
   let team = 1 - G.team;
   if (!aliveIn(G, team).length) team = G.team;
@@ -128,6 +152,8 @@ function startTurn(G, now) {
   H.power = 0;
   if (G.specials) H.special = Math.min(A.SPECIAL_MAX, H.special + A.SPECIAL_PER_TURN);
   if (G.turn === 1 || (G.turn % A.ORB.every === 1 && G.orbs.length < A.ORB.max)) spawnOrb(G);
+  // Ghosts get closer to their next bomb.
+  for (const T of G.heroes.values()) if (!T.alive && T.ghostWait > 0) T.ghostWait -= 1;
   return H;
 }
 
@@ -148,15 +174,15 @@ function spawnOrb(G) {
   return null;
 }
 
-// The shooter takes a power-up their shot hit.
+// The shooter takes a power-up their shot hit (a ghost's bomb goes straight through them).
 function grab(G, H, orbId, t, events) {
+  if (!H.alive) return;
   const i = G.orbs.findIndex((o) => o.id === orbId);
   if (i < 0) return;
   const [o] = G.orbs.splice(i, 1);
   events.push({ t: Math.round(t), type: 'orb', id: H.id, orb: o.id, kind: o.kind, x: o.x, y: o.y });
   H.orbs += 1;
   if (o.kind === 'potion') {
-    if (!H.alive) return;
     const before = H.hp;
     H.hp = Math.min(H.max, H.hp + A.ORBS.potion.hp);
     if (H.hp > before) events.push({ t: Math.round(t), type: 'heal', id: H.id, d: H.hp - before });
@@ -190,7 +216,7 @@ function walk(G, id, dir, dt) {
     H.stamina = Math.max(0, H.stamina - 2);
     H.x = nx;
     if (y === null) {
-      knockOut(G, H, null, 0, []);
+      knockOut(G, H, null, 0, [], 'fell');
       return 'fell';
     }
     H.y = y;
@@ -261,8 +287,59 @@ function useItem(G, id, item) {
   return true;
 }
 
-// Fire! Works out the whole shot: every shell's path, what each blast does, who falls. Returns what the
-// screens need to play it out: { id, special, shells: [{ kind, t0, path, booms }], events, total }.
+// ---- ghosts --------------------------------------------------------------------------
+// A ghost floats over x (any time). Returns its x, or null if it isn't a ghost (or its bomb is on its way).
+function haunt(G, id, x) {
+  const H = G.heroes.get(id);
+  if (!H || H.alive || H.armed || !Number.isFinite(Number(x))) return null;
+  H.gx = Math.round(Math.max(40, Math.min(MAP.W - 40, Number(x))));
+  return H.gx;
+}
+
+// A ghost whose bomb is ready drops it where it floats: it falls once the turn's shot has landed.
+function arm(G, id) {
+  const H = G.heroes.get(id);
+  if (!H || H.alive || H.armed || H.ghostWait > 0 || G.phase !== 'aim') return false;
+  H.armed = true;
+  return true;
+}
+
+// The ghosts' bombs, falling one after another from `t0` (ms into the shot `out`). Returns when the last
+// one is done (or t0 if there are none).
+function ghostBombs(G, out, t0) {
+  let t = t0;
+  let end = t0;
+  for (const H of G.heroes.values()) {
+    if (H.alive || !H.armed) continue;
+    H.armed = false;
+    H.ghostWait = A.GHOST.every;
+    const from = { x: H.gx, y: A.ghostY(G.terrain, H.gx) + 24, vx: 0, vy: 120 };
+    out.events.push({ t: Math.round(t), type: 'ghost', id: H.id, x: H.gx });
+    const dealt = H.dealt;
+    end = Math.max(end, shell(G, H, A.GHOST.bomb, 0, 0, t, out, from));
+    H.haunted += H.dealt - dealt;
+    t += 300;
+  }
+  return end;
+}
+
+// A turn that ran out (or ended without a shot) with ghost bombs waiting: they fall on their own. Returns
+// a shot for the screens to play, or null if no ghost is dropping one.
+function ghostVolley(G, now) {
+  if (![...G.heroes.values()].some((H) => !H.alive && H.armed)) return null;
+  const out = { id: null, ghost: true, shells: [], events: [], total: 0 };
+  ghostBombs(G, out, 0);
+  out.total = Math.max(500, ...out.shells.map((s) => s.end));
+  out.slow = out.events.filter((e) => e.type === 'ko').length;
+  G.phase = 'fly';
+  G.endsAt = now + out.total + A.SHOW_MS + out.slow * A.SLOWMO_EXTRA;
+  return out;
+}
+
+// ---- firing --------------------------------------------------------------------------
+// Fire! Works out the whole shot: every shell's path, what each blast does, who falls, then the ghosts'
+// bombs. Returns what the screens need to play it out: { id, special, shells: [{ kind, t0, path, booms }],
+// events, total, hype (how it went, for the callouts), slow (knockouts: each one plays in slow motion) }.
 function fire(G, id, data, now) {
   const H = mine(G, id);
   if (!H || now < G.busyUntil) return null;
@@ -280,6 +357,7 @@ function fire(G, id, data, now) {
   const out = { id: H.id, special, alt, angle: H.angle, face: H.face, power, wind: G.wind, fury: H.fury, twin: H.twin, shells: [], events: [], total: 0 };
   H.fury = false;
   H.twin = false;
+  const foes = [...G.heroes.values()].filter((T) => T.alive && foe(G, H, T));
   // One volley: `count` shells at once (fanned out) or one after another (`gap`). DOUBLE fires it again.
   const volley = [];
   const n = def.count || 1;
@@ -295,16 +373,54 @@ function fire(G, id, data, now) {
     }
     start = end + 350;
   }
-  out.total = Math.max(500, ...out.shells.map((s) => s.end));
   G.mult = 1;
+  out.hype = hypeOf(G, H, def, out, foes);
+  // Then the ghosts' bombs, once it's all landed.
+  ghostBombs(G, out, start);
+  out.total = Math.max(500, ...out.shells.map((s) => s.end));
+  out.slow = out.events.filter((e) => e.type === 'ko').length;
   G.phase = 'fly';
-  G.endsAt = now + out.total + A.SHOW_MS;
+  G.endsAt = now + out.total + A.SHOW_MS + out.slow * A.SLOWMO_EXTRA;
   return out;
 }
 
+// How the shot went, for the screens' callouts: foes knocked out and hit, a direct hit, hurting your own
+// side (or yourself), a near miss, and how many of your shots in a row have hit a foe.
+function hypeOf(G, H, def, out, foes) {
+  const hit = new Set();
+  let kos = 0;
+  let direct = false;
+  let own = false;
+  let ownKo = false;
+  let self = false;
+  for (const e of out.events) {
+    const T = G.heroes.get(e.id);
+    if (!T) continue;
+    if (e.type === 'dmg' && e.by === H.id) {
+      if (T === H) self = true;
+      else if (foe(G, H, T)) {
+        hit.add(T.id);
+        if (e.direct) direct = true;
+      } else own = true;
+    } else if (e.type === 'ko') {
+      if (e.by === H.id) kos += 1;
+      else if (T !== H && !foe(G, H, T) && e.why !== 'drowned') ownKo = true;
+    }
+  }
+  H.streak = hit.size ? H.streak + 1 : 0;
+  // A near miss: nothing hit, but a blast landed close to a foe.
+  let close = false;
+  if (!hit.size) {
+    for (const s of out.shells) {
+      for (const b of s.booms) if (foes.some((T) => Math.hypot(T.x - b.x, T.y - HERO_MID - b.y) < (b.r || def.r) + HERO_R + 60)) close = true;
+    }
+  }
+  return { kos, hits: hit.size, direct, own, ownKo, self, close, streak: H.streak };
+}
+
 // One shell: fly it, blow it up (and bounce it, roll it, split it, burst it), apply what happens.
-// `from`: where and how fast it starts, for shells that come out of another (splits, bomblets); otherwise
-// it leaves the hero's hands. Returns when it's all done (ms).
+// `from`: where and how fast it starts, for shells that come out of another (splits, bomblets, a ghost's
+// bomb); otherwise it leaves the hero's hands. Returns when it's all done (ms).
 function shell(G, H, def, power, off, t0, out, from = null) {
   const heroes = () => [...G.heroes.values()].filter((h) => h.alive).map((h) => ({ id: h.id, x: h.x, y: h.y }));
   let s = from || A.launch(H.x, H.y, H.face, H.angle + off, power);
@@ -404,6 +520,7 @@ function boom(G, H, def, end, t, record, out) {
     G.craters.push([x, y, def.crater, 0]);
   }
   const hits = new Map();
+  const directs = new Set();
   const boost = sudden(G);
   for (const T of G.heroes.values()) {
     if (!T.alive) continue;
@@ -411,7 +528,10 @@ function boom(G, H, def, end, t, record, out) {
     if (d > def.r + HERO_R) continue;
     const direct = end.hit === 'hero' && end.hero === T.id;
     let dmg = def.dmg * (1 - 0.5 * Math.min(1, d / def.r));
-    if (direct) dmg = def.dmg * (def.direct || 1.25);
+    if (direct) {
+      dmg = def.dmg * (def.direct || 1.25);
+      directs.add(T.id);
+    }
     hits.set(T.id, Math.round(dmg * boost));
   }
   if (def.bolt) {
@@ -429,16 +549,18 @@ function boom(G, H, def, end, t, record, out) {
     const dmg = Math.round(raw * G.mult * (T && T.shield ? A.ORBS.shield.guard : 1) * (T ? mountOf(T).guard || 1 : 1));
     if (!T || !T.alive || dmg <= 0) continue;
     T.hp -= dmg;
-    const enemy = T.team !== H.team;
-    out.events.push({ t: Math.round(t), type: 'dmg', id: tid, d: dmg, by: H.id });
+    const enemy = foe(G, H, T);
+    const e = { t: Math.round(t), type: 'dmg', id: tid, d: dmg, by: H.id };
+    if (directs.has(tid)) e.direct = true;
+    out.events.push(e);
     if (enemy) {
       H.score += dmg;
       H.dealt += dmg;
       H.best = Math.max(H.best, dmg);
-      H.far = Math.max(H.far, Math.round(Math.abs(T.x - H.x)));
+      H.far = Math.max(H.far, Math.round(Math.abs(T.x - (H.alive ? H.x : H.gx))));
       drained += dmg;
       if (G.specials) {
-        H.special = Math.min(A.SPECIAL_MAX, H.special + dmg * A.SPECIAL_PER_DMG);
+        if (H.alive) H.special = Math.min(A.SPECIAL_MAX, H.special + dmg * A.SPECIAL_PER_DMG);
         T.special = Math.min(A.SPECIAL_MAX, T.special + dmg * A.SPECIAL_PER_HURT);
       }
     }
@@ -446,7 +568,7 @@ function boom(G, H, def, end, t, record, out) {
   }
   if (def.heal) {
     for (const T of G.heroes.values()) {
-      if (!T.alive || T.team !== H.team || Math.hypot(T.x - x, T.y - y) > def.healR) continue;
+      if (!T.alive || !ally(G, H, T) || Math.hypot(T.x - x, T.y - y) > def.healR) continue;
       const before = T.hp;
       T.hp = Math.min(T.max, T.hp + def.heal);
       if (T.hp > before) out.events.push({ t: Math.round(t), type: 'heal', id: T.id, d: T.hp - before });
@@ -469,7 +591,7 @@ function boom(G, H, def, end, t, record, out) {
 }
 
 // After the ground changes: heroes buried by a mound climb out on top; heroes over a hole drop to the
-// ground below, or off the bottom (a KO, to whoever blew the hole if it was an enemy).
+// ground below, or off the bottom (a KO, to whoever blew the hole if it was a foe).
 function settle(G, H, t, events) {
   for (const T of G.heroes.values()) {
     if (!T.alive) continue;
@@ -482,7 +604,7 @@ function settle(G, H, t, events) {
     const ground = G.terrain.groundBelow(T.x, y);
     if (ground === null) {
       events.push({ t: Math.round(t), type: 'fall', id: T.id, y: MAP.H + 80, out: true });
-      knockOut(G, T, T.team !== H.team ? H : null, t, events, 'fell');
+      knockOut(G, T, foe(G, H, T) ? H : null, t, events, 'fell');
     } else if (ground !== T.y) {
       events.push({ t: Math.round(t), type: 'fall', id: T.id, y: ground });
       T.y = ground;
@@ -490,13 +612,18 @@ function settle(G, H, t, events) {
   }
 }
 
+// Out: the hero becomes a ghost, floating over where they fell; its first bomb is ready in a few turns.
 function knockOut(G, T, H, t, events, why = 'hp') {
   if (!T.alive) return;
   T.alive = false;
   T.hp = 0;
   T.deaths += 1;
+  T.ghostWait = A.GHOST.first;
+  T.gx = Math.round(Math.max(40, Math.min(MAP.W - 40, T.x)));
+  T.armed = false;
+  T.fury = T.shield = T.haste = T.twin = false;
   if (why === 'fell') T.y = MAP.H + 80;
-  const enemy = H && H.team !== T.team;
+  const enemy = H && foe(G, H, T);
   if (enemy) {
     H.kos += 1;
     H.score += A.KO_POINTS;
@@ -509,9 +636,46 @@ function sudden(G) {
   return Math.min(A.SUDDEN_MAX, 1 + Math.max(0, G.turn - G.turns) * A.SUDDEN_STEP);
 }
 
-// Who won: 0, 1, -1 for a draw, or null if it goes on. A battle ends when a team is wiped out (or both
-// are). `now`: end it here anyway (the host skipped, or LAST_TURN): the team with more HP wins.
+// Sudden death floods the field, between turns: when it starts the water fills the lowest dip, then it rises
+// every turn. Feet in the water hurt; a hero under it drowns. Returns { water, events } for the screens, or
+// null before sudden death.
+function flood(G) {
+  if (G.turn < G.turns) return null;
+  if (G.water === null) {
+    let deep = 0;
+    for (let x = 4; x < MAP.W; x += 8) {
+      const y = G.terrain.groundBelow(x, 0);
+      if (y !== null) deep = Math.max(deep, y);
+    }
+    G.water = Math.min(MAP.H, deep || MAP.H);
+  } else G.water = Math.max(A.WATER.top, G.water - A.WATER.rise);
+  const events = [];
+  for (const H of G.heroes.values()) {
+    if (!H.alive || H.y <= G.water) continue;
+    if (H.y - HERO_MID > G.water) {
+      knockOut(G, H, null, 0, events, 'drowned');
+      continue;
+    }
+    H.hp -= A.WATER.dmg;
+    events.push({ t: 0, type: 'dmg', id: H.id, d: A.WATER.dmg, water: true });
+    if (H.hp <= 0) knockOut(G, H, null, 0, events, 'drowned');
+  }
+  return { water: G.water, events };
+}
+
+// Who won, or null if it goes on. Teams: 0, 1, or -1 for a draw; the battle ends when a team is wiped out
+// (or both are). Free for all: the last hero standing's id, or -1 if nobody is. `now`: end it here anyway
+// (the host skipped, or LAST_TURN): the side (or hero) with the most HP wins.
 function verdict(G, now = false) {
+  if (G.ffa) {
+    const up = [...G.heroes.values()].filter((H) => H.alive);
+    if (G.heroes.size >= 2 && up.length === 1) return up[0].id;
+    if (!up.length) return -1;
+    if (!now && G.turn < A.LAST_TURN) return null;
+    const most = Math.max(...up.map((H) => H.hp));
+    const top = up.filter((H) => H.hp === most);
+    return top.length === 1 ? top[0].id : -1;
+  }
   const up = [aliveIn(G, 0), aliveIn(G, 1)];
   const had = [G.order[0].length, G.order[1].length];
   if (had[0] && had[1]) {
@@ -527,22 +691,33 @@ function verdict(G, now = false) {
 function finish(G, winner) {
   G.phase = 'over';
   G.winner = winner;
-  if (winner < 0) return;
+  if (winner === -1 || winner === null) return;
+  if (G.ffa) {
+    const H = G.heroes.get(winner);
+    if (H) H.score += A.FFA_WIN_POINTS;
+    return;
+  }
   for (const H of G.heroes.values()) if (H.team === winner) H.score += A.WIN_POINTS;
 }
 
 // What every screen gets with the room's state: the battlefield (seed and style), whose turn, the wind, the
-// power-ups ([id, kind, x, y]) and every hero: [id, team, x, y, hp, alive, face, angle, special, heal item,
-// double item, stamina, last power, power-ups waiting (1 fury, 2 shield, 4 haste, 8 twin), most stamina].
+// water (sudden death), the power-ups ([id, kind, x, y]) and every hero: [id, team, x, y, hp, alive, face,
+// angle, special, heal item, double item, stamina, last power, power-ups waiting (1 fury, 2 shield, 4 haste,
+// 8 twin), most stamina, ghost: turns until its bomb is ready (-1 alive), where it floats, dropping a bomb].
 function stateOf(G) {
   return {
-    seed: G.seed, style: G.style, turn: G.turn, turns: G.turns, team: G.team, active: G.active, wind: G.wind, phase: G.phase,
+    seed: G.seed, style: G.style, ffa: G.ffa, turn: G.turn, turns: G.turns, team: G.team, active: G.active, wind: G.wind, phase: G.phase,
     endsAt: G.endsAt, double: G.double, winner: G.winner, specials: G.specials, turnMs: G.level.turnMs, boost: Math.round(sudden(G) * 10) / 10,
+    water: G.water,
     orbs: G.orbs.map((o) => [o.id, o.kind, o.x, o.y]),
     heroes: [...G.heroes.values()].map((H) => [H.id, H.team, Math.round(H.x), H.y, Math.max(0, H.hp), H.alive ? 1 : 0, H.face, H.angle,
       Math.floor(H.special), H.items.heal, H.items.double, Math.round(H.stamina), H.lastPower,
-      (H.fury ? 1 : 0) | (H.shield ? 2 : 0) | (H.haste ? 4 : 0) | (H.twin ? 8 : 0), Math.round(H.maxStamina)]),
+      (H.fury ? 1 : 0) | (H.shield ? 2 : 0) | (H.haste ? 4 : 0) | (H.twin ? 8 : 0), Math.round(H.maxStamina),
+      H.alive ? -1 : H.ghostWait, H.gx, H.armed ? 1 : 0]),
   };
 }
 
-module.exports = { createArty, addHero, removeHero, startTurn, walk, jump, fallNow, aim, useItem, fire, verdict, finish, stateOf, aliveIn, spawnOrb, mountOf };
+module.exports = {
+  createArty, addHero, removeHero, startTurn, walk, jump, fallNow, aim, useItem, fire, haunt, arm, ghostVolley, flood,
+  verdict, finish, stateOf, aliveIn, spawnOrb, mountOf,
+};

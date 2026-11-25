@@ -71,8 +71,10 @@
   const knockedOut = () => royaleOn() && Boolean(me()?.out);
   const brawlOn = () => mode === 'brawl' && !solo;
   const artyOn = () => mode === 'artillery' && !solo;
-  // Modes played in two teams: team battle and artillery (the lobby's team badge, SWITCH TEAM, the results).
-  const teamMode = () => (mode === 'teams' || mode === 'artillery') && !solo;
+  // Modes played in two teams: team battle and artillery (unless it's a free for all): the lobby's team
+  // badge, SWITCH TEAM, the results.
+  const artyFfa = () => artyOn() && Boolean(options.artyFfa);
+  const teamMode = () => (mode === 'teams' || (mode === 'artillery' && !options.artyFfa)) && !solo;
 
   // ---- viewport: keep the typing bar above the on-screen keyboard ----
   // A PC window or a tablet gets the phone layout scaled up (--ui), so nothing ends up tiny on a big
@@ -1800,7 +1802,8 @@
       $('#lobbyTeam').style.background = side.color;
     }
     $('#btnTeam').classList.toggle('hidden', !tb);
-    $('#lobbyMode').textContent = artyOn() ? 'ARTILLERY: your team against theirs, taking turns. Set your angle, charge your power, mind the wind!'
+    $('#lobbyMode').textContent = artyFfa() ? 'ARTILLERY, FREE FOR ALL: every hero for themselves, taking turns. Last one standing wins!'
+      : artyOn() ? 'ARTILLERY: your team against theirs, taking turns. Set your angle, charge your power, mind the wind!'
       : tb ? "TEAM BATTLE: type your side's words to hit the other team!"
       : royaleOn() ? 'BATTLE ROYALE: your own monsters and 100 HP. Words that reach you hurt. Last hero standing wins!'
         : drawOn() ? 'DRAW BATTLE: take turns drawing on your phone while everyone else guesses. The sooner you guess, the more points!'
@@ -1816,7 +1819,7 @@
     const drawing = drawOn();
     opts.append(el('span', {
       class: 'pick',
-      text: artyOn() ? `LAST TEAM STANDING · SUDDEN DEATH AT TURN ${rounds[0]?.turns || AR.TURNS.full}`
+      text: artyOn() ? `${artyFfa() ? 'LAST HERO' : 'LAST TEAM'} STANDING · SUDDEN DEATH AT TURN ${rounds[0]?.turns || AR.TURNS.full}`
         : brawlOn() ? `${clockText(rounds[0] ? rounds[0].duration : 240000)} ARENA FIGHT`
         : drawing ? (rounds.length === 1 ? 'EVERYONE DRAWS ONCE' : `EVERYONE DRAWS ${rounds.length} TIMES`)
         : royaleOn() ? 'NO ROUNDS: EASY > MEDIUM > HARD' : one ? `ONE ROUND · ${rounds[0]?.title || ''}` : `${rounds.length} ROUNDS`,
@@ -1885,7 +1888,8 @@
       options.skills ? ['SPECIAL', `${shots.special.name}: ${shots.special.text}. It charges as you hit and get hit${pcControls ? ' (key 3)' : ''}.`] : null,
       ['ITEMS', `HEAL (+40 HP) and DOUBLE (fire twice): once each a game${pcControls ? ' (keys H and X)' : ''}.`],
       ['POWER-UPS', 'Bubbles float over the middle: shoot one to take it. POTION heals, FURY hits harder, SHIELD halves damage, HASTE goes farther, TWIN SHOT fires twice.'],
-      ['WIN', `Wipe out the other team. Falling off the bottom is a KO! From turn ${rounds[0]?.turns || AR.TURNS.full}, sudden death: shots hit harder every turn.`],
+      ['GHOST', `Knocked out? You haunt the field: ${pcControls ? 'arrow keys' : '◀ ▶'} float over it, and every few turns ${pcControls ? 'Space' : 'DROP'} lets a ghost bomb fall after the turn's shot. Its hits still score!`],
+      ['WIN', `${artyFfa() ? 'Every hero for themselves: be the last one standing (+' + AR.FFA_WIN_POINTS + ').' : 'Wipe out the other team.'} Falling off the bottom is a KO! From turn ${rounds[0]?.turns || AR.TURNS.full}, sudden death: shots hit harder and the water rises every turn.`],
       ['MOUNT', pet ? `You ride your ${pet.name.toLowerCase()}. ${mount.name}: it ${mount.text}.`
         : 'No companion: you fight on foot. Pick one in CHANGE HERO: each moves its own way.'],
       options.chat ? ['CHAT', `${pcControls ? 'Press Enter' : 'Tap CHAT'} to say something: it pops up over your hero.`] : null,
@@ -2054,6 +2058,9 @@
 
   // ---- artillery ---------------------------------------------------------
   socket.on('arty:jump', (j) => aView.onJump(j));
+  socket.on('arty:haunt', (g) => aView.onHaunt(g));
+  socket.on('arty:drop', (g) => aView.onDrop(g));
+  socket.on('arty:flood', (f) => aView.onFlood(f));
   socket.on('arty:pos', (p) => aView.onPos(p));
   socket.on('arty:shot', (shot) => aView.onShot(shot));
   socket.on('arty:fell', ({ id }) => aView.fell(id));
@@ -2114,10 +2121,14 @@
     renderArtyChat();
     const A = arty;
     const mine = me();
+    const ffa = artyFfa();
     const team = mine ? TEAMS[mine.team] : TEAMS[0];
     $('#aScore').textContent = mine ? mine.score : 0;
-    $('#aTeam').textContent = team.short;
-    $('#aTeam').style.color = team.color;
+    // Free for all: no team bars, just how many heroes are left.
+    $('#scrArty .a-teams').classList.toggle('hidden', ffa);
+    const standing = [...aView.heroes.values()].filter((x) => x.alive).length;
+    $('#aTeam').textContent = ffa ? `${standing} LEFT` : team.short;
+    $('#aTeam').style.color = ffa ? '' : team.color;
     const aiming = A && A.phase === 'aim';
     const left = aiming ? Math.max(0, A.endsAt - now()) : 0;
     $('#aTime').textContent = aiming ? `0:${String(Math.ceil(left / 1000)).padStart(2, '0')}` : A ? `TURN ${A.turn}` : '';
@@ -2139,18 +2150,27 @@
     let lines = null;
     if (st === 'countdown') {
       const n = Math.ceil(Math.max(0, state.phaseEndsAt - now()) / 1000);
-      lines = ['ARTILLERY', n > 3 ? 'READY?' : String(Math.max(1, n)), `You're on ${team.name}. Set your angle, hold FIRE to charge, mind the wind!`];
-    } else if (h && !h.alive && !aView.replay) lines = ['KNOCKED OUT', 'WATCHING', 'Cheer your team on!'];
+      lines = ['ARTILLERY', n > 3 ? 'READY?' : String(Math.max(1, n)), ffa ? 'Every hero for themselves: last one standing wins! Set your angle, hold FIRE, mind the wind!'
+        : `You're on ${team.name}. Set your angle, hold FIRE to charge, mind the wind!`];
+    } else if (h && !h.alive && !aView.replay && performance.now() - (h.koAt || 0) < 6000) {
+      lines = ['KNOCKED OUT', "YOU'RE A GHOST", 'Float over the field with ◀ ▶ and drop a ghost bomb every few turns!'];
+    }
     $('#aOver').classList.toggle('hidden', !lines);
     if (lines) [1, 2, 3].forEach((i) => { $(`#aO${i}`).textContent = lines[i - 1]; });
     // What's happening.
     let wait = '';
     if (A && A.active) {
       const p = players.find((x) => x.id === A.active);
-      const who = A.active === you ? 'YOUR TURN' : `${p ? p.name : 'Someone'} (${TEAMS[A.team].short})`;
+      const who = A.active === you ? 'YOUR TURN' : ffa ? (p ? p.name : 'Someone') : `${p ? p.name : 'Someone'} (${TEAMS[A.team].short})`;
       wait = A.phase === 'aim' ? (A.active === you ? 'YOUR TURN! AIM AND FIRE' : `${who} IS AIMING...`)
         : A.phase === 'fly' ? 'INCOMING!' : A.phase === 'pass' ? 'NEXT TURN...' : '';
-      if (A.phase === 'aim' && A.active !== you && A.team === (mine ? mine.team : -1)) wait += ' (YOUR TEAM)';
+      if (!ffa && A.phase === 'aim' && A.active !== you && A.team === (mine ? mine.team : -1)) wait += ' (YOUR TEAM)';
+      // A ghost: when its bomb is ready, and what to do.
+      if (h && !h.alive && h.ghostWait >= 0 && st === 'playing') {
+        wait = h.armed ? 'GHOST: YOUR BOMB DROPS AFTER THIS SHOT'
+          : h.ghostWait > 0 ? `GHOST: ◀ ▶ FLOAT · BOMB IN ${h.ghostWait} TURN${h.ghostWait === 1 ? '' : 'S'}`
+            : A.phase === 'aim' ? 'GHOST: BOMB READY! ◀ ▶ AND TAP DROP' : 'GHOST: BOMB READY ON THE NEXT TURN';
+      }
       if (A.boost > 1) wait += ` · SUDDEN DEATH x${A.boost}`;
     } else if (st === 'countdown' || (A && A.phase === 'start')) wait = 'GET READY...';
     $('#aWait').textContent = wait;

@@ -165,17 +165,31 @@ for (let i = 0; i < count; i++) {
       else if (b.crater) field.terrain.carve(b.x, b.y, b.crater);
     }
   });
+  let haunted = 0; // the turn our ghost last dropped a bomb on
   socket.on('room:state', (s) => {
     const A = s.arty;
     if (!A || s.state !== 'playing') return;
     const key = `${A.seed}:${A.style}`;
     if (!field || field.key !== key) field = { key, terrain: new AR.Terrain(A.seed, A.style) };
+    const heroes = A.heroes.map(([id, team, x, y, hp, alive, , , special, , , , , , , ghostWait]) => ({ id, team, x, y, hp, alive, special, ghostWait }));
+    const H = heroes.find((h) => h.id === me);
+    if (!H) return;
+    // Free for all: everyone else is a foe.
+    const foes = heroes.filter((h) => h.alive && (A.ffa ? h.id !== me : h.team !== H.team)).sort((a, b) => Math.abs(a.x - H.x) - Math.abs(b.x - H.x));
+    // A ghost: float over a foe (the one whose turn it is, if it's one) and drop the bomb when it's ready.
+    if (!H.alive) {
+      if (H.ghostWait === 0 && A.phase === 'aim' && haunted !== A.turn && foes.length) {
+        haunted = A.turn;
+        const T = foes.find((f) => f.id === A.active) || foes[Math.floor(Math.random() * foes.length)];
+        const wait = 800 + Math.random() * 2500;
+        setTimeout(() => socket.emit('arty:haunt', { x: Math.round(T.x + (Math.random() - 0.5) * 60) }), wait);
+        setTimeout(() => socket.emit('arty:drop', {}, () => {}), wait + 400);
+      }
+      return;
+    }
     if (A.phase !== 'aim' || A.active !== me || planned === A.turn) return;
     planned = A.turn;
-    const heroes = A.heroes.map(([id, team, x, y, hp, alive, , , special]) => ({ id, team, x, y, hp, alive, special }));
-    const H = heroes.find((h) => h.id === me);
-    const foes = heroes.filter((h) => h.alive && h.team !== H.team).sort((a, b) => Math.abs(a.x - H.x) - Math.abs(b.x - H.x));
-    if (!H || !foes.length) return;
+    if (!foes.length) return;
     const T = foes[0];
     const kit = AR.SHOTS[CLASSES[i % CLASSES.length]];
     const special = A.specials && H.special >= AR.SPECIAL_MAX;

@@ -60,7 +60,9 @@
   };
   const BLAST = { slash: '#fff6b0', axe: '#d5dbe6', fireball: '#ff7b1c', meteor: '#ff5a1f', arrow: '#ffd23f', dagger: '#d5dbe6', beam: '#fff6b0',
     shuriken: '#d5dbe6', soul: '#7dff6b', thorn: '#4fa865', cannon: '#ffd23f', notes: '#ff9ad0', spear: '#7fd4ff', boulder: '#a99cc7',
-    frost: '#9fd7ff', seed: '#6fe08b', grape: '#ffd23f', drum: '#ff5a4d', shard: '#ff7b1c' };
+    frost: '#9fd7ff', seed: '#6fe08b', grape: '#ffd23f', drum: '#ff5a4d', shard: '#ff7b1c', ghost: '#bb8cff' };
+  // Sudden death floods these battlefields with lava, the rest with water.
+  const LAVA = new Set(['canyon', 'craters']);
   // Shells only artillery has (the rest are the heroes' usual attacks): blocks of [dx, dy, size, color] in
   // sprite pixels, turned to face the way they fly (boulders and drums just tumble).
   const SHELLS = {
@@ -70,6 +72,7 @@
     grape: [[0, 0, 2.2, '#1b1426'], [-0.4, -0.4, 0.8, '#8691a6']],
     drum: [[0, 0, 4.6, '#1b1426'], [0, 0, 3.8, '#e8374a'], [0, 0, 2.4, '#efe6d0'], [0, -1.6, 3.8, '#f5c542']],
     shard: [[0, 0, 2.2, '#ff7b1c'], [0, 0, 1.2, '#ffd23f']],
+    ghost: [[0, 0, 5, '#1b1426'], [0, 0, 4, '#7a55b0'], [-1, -1, 1.6, '#e0c8ff'], [1.2, -0.4, 1, '#ff3b3b'], [-1.2, -0.4, 1, '#ff3b3b'], [0, -2.6, 1.2, '#e0c8ff']],
   };
 
   class ArtyView {
@@ -99,6 +102,14 @@
       this.chatLift = 0; // css px kept clear at the bottom (the phone's chat box)
       this.hold = null; // where the last shot landed: the view stays there until the next turn
       this.easeUntil = 0; // a slower, smoother pan to the next hero until then
+      this.ffa = false; // free for all: heroes in their own colors, not their team's
+      this.water = null; // sudden death: where the water's surface is (and is shown, rising to it)
+      this.waterShown = null;
+      this.slowUntil = 0; // a knockout plays in slow motion until then, zoomed in on it
+      this.zoomOn = null; // { x, y, until }
+      this.zoom = 1;
+      this.flashAt = 0;
+      this.lookAt = null; // phone: { x, until } a ghost looking for where to drop its bomb
       this.shake = { until: 0, pow: 0 };
       this.cam = null; // phone: { x, y } the middle of the view
       this.pan = null; // phone: dragged away to look around, until this time
@@ -152,9 +163,13 @@
         this.heroes.clear();
         this.orbs.clear();
         this.orbsSeen = false;
+        this.waterShown = null;
+        this.floodShown = false;
       }
       const prev = this.state;
       this.state = s;
+      this.ffa = Boolean(s.ffa);
+      this.water = s.water ?? null;
       if (this.replay) {
         this.held = s;
         return;
@@ -179,11 +194,13 @@
 
     takeHeroes(s) {
       const seen = new Set();
-      for (const [id, team, x, y, hp, alive, face, angle, special, heal, double, stamina, lastPower, buffs, maxStamina] of s.heroes) {
+      for (const [id, team, x, y, hp, alive, face, angle, special, heal, double, stamina, lastPower, buffs, maxStamina, ghostWait, gx, armed] of s.heroes) {
         seen.add(id);
         const h = this.heroes.get(id) || { shownY: y };
         Object.assign(h, { id, team, x, y, hp, alive: Boolean(alive) && y <= MAP.H, face, angle, special, heal, double, stamina, lastPower, buffs: buffs || 0,
-          maxStamina: maxStamina || A.STAMINA, power: 0 });
+          maxStamina: maxStamina || A.STAMINA, power: 0, ghostWait: ghostWait ?? -1, armed: Boolean(armed) });
+        // A ghost: where it floats (the phone that moves it keeps its own).
+        if (gx !== undefined && !(this.phone && id === this.selfId && h.drifting)) h.gx = gx;
         if (Math.abs(h.shownY - y) > 300) h.shownY = y;
         this.heroes.set(id, h);
       }
@@ -195,16 +212,53 @@
       if (!h) return;
       if (s.boost > 1 && !this.suddenShown) {
         this.suddenShown = true;
-        this.callout('SUDDEN DEATH!', '#ff5a4d', 'Every turn from now on, shots hit harder');
+        this.callout('SUDDEN DEATH!', '#ff5a4d', `The ${this.lava() ? 'lava' : 'water'} rises every turn: get to high ground!`);
         Sfx.play('roar');
       }
       const look = this.looks.get(s.active) || {};
       const mine = this.phone && s.active === this.selfId;
-      this.callout(mine ? 'YOUR TURN!' : `${(look.name || 'HERO').toUpperCase()}'S TURN`, TEAMS[h.team].color);
+      this.callout(mine ? 'YOUR TURN!' : `${(look.name || 'HERO').toUpperCase()}'S TURN`, this.colorOf(h));
       this.pan = null;
       // Off the last shot's landing spot, over to whoever's up: smoothly, not in a snap.
       if (this.hold) this.easeUntil = performance.now() + 1400;
       this.hold = null;
+    }
+
+    // A hero's color: their team's, or (free for all) their own.
+    colorOf(h) {
+      if (!this.ffa) return TEAMS[h.team] ? TEAMS[h.team].color : '#ffffff';
+      const look = this.looks.get(h.id) || {};
+      return (COLORS[look.color || 0] || COLORS[0]).Q;
+    }
+
+    lava() {
+      return Boolean(this.terrain) && LAVA.has(A.STYLES[this.terrain.style].key);
+    }
+
+    // A ghost floats somewhere else (moved from its phone).
+    onHaunt({ id, x }) {
+      const h = this.heroes.get(id);
+      if (h && !(this.phone && id === this.selfId)) h.gx = x;
+    }
+
+    // A ghost dropped its bomb: it falls once the turn's shot has landed.
+    onDrop({ id }) {
+      const h = this.heroes.get(id);
+      if (!h) return;
+      h.armed = true;
+      const look = this.looks.get(id) || {};
+      this.callout('GHOST BOMB!', '#bb8cff', `${look.name || 'A ghost'} drops one after this shot`);
+      Sfx.play('skill:necromancer');
+    }
+
+    // Sudden death: the water rises, hurting (or drowning) anyone in it.
+    onFlood(f) {
+      this.water = f.water;
+      if (!this.floodShown) {
+        this.floodShown = true;
+        this.callout(this.lava() ? 'THE LAVA RISES!' : 'THE WATER RISES!', this.lava() ? '#ff7b1c' : '#7fd4ff', 'Higher every turn: get to high ground!');
+      }
+      for (const e of f.events || []) this.happen(e);
     }
 
     // A jump, as the server worked it out: the hero follows its path (and falls off the bottom, if it ends
@@ -299,16 +353,22 @@
     // ---- a shot playing out ---------------------------------------------------------
     onShot(shot) {
       if (!this.terrain) return;
-      this.replay = { shot, t0: performance.now(), booms: new Set(), events: new Set(), end: shot.total + 250 };
+      this.replay = { shot, t0: performance.now(), clock: 0, lag: 0, booms: new Set(), events: new Set(), end: shot.total + 250 };
       const h = this.heroes.get(shot.id);
       if (h) Object.assign(h, { angle: shot.angle, face: shot.face, power: 0, lastPower: shot.power });
       Sfx.play(shot.special ? 'boom' : 'shoot');
     }
 
-    playReplay(pt) {
+    playReplay(pt, dt) {
       const R = this.replay;
       if (!R) return null;
-      const t = pt - R.t0;
+      // The replay runs on its own clock: slower while a knockout plays in slow motion (and catching up if
+      // the screen fell behind, say while the phone was asleep).
+      const speed = pt < this.slowUntil ? A.SLOWMO.speed : 1;
+      R.clock += dt * speed;
+      R.lag += dt * (1 - speed);
+      if (pt - R.t0 - R.lag - R.clock > 1500) R.clock = pt - R.t0 - R.lag;
+      const t = R.clock;
       const shells = [];
       R.shot.shells.forEach((s, si) => {
         s.booms.forEach((b, bi) => {
@@ -335,6 +395,7 @@
       });
       if (t >= R.end) {
         this.replay = null;
+        this.hype(R.shot);
         if (this.held) {
           const s = this.held;
           this.held = null;
@@ -385,13 +446,31 @@
       } else if (e.type === 'ko' && h) {
         h.alive = false;
         h.hp = 0;
+        h.koAt = performance.now();
+        h.gx = h.x;
+        h.gxShown = h.x;
+        h.ghostWait = A.GHOST.first;
         if (e.why !== 'fell') this.burst(h.x, h.y - 20, ['#ffffff', '#ff5a4d', '#ffd23f'], 30, 0.3);
         const by = e.by && this.looks.get(e.by);
-        this.callout(`${(look.name || 'HERO').toUpperCase()} IS OUT!`, '#ff5a4d', by ? `KO by ${by.name}` : e.why === 'fell' ? 'Fell off the map' : '');
+        const how = by ? `KO by ${by.name}` : e.why === 'fell' ? 'Fell off the map' : e.why === 'drowned' ? (this.lava() ? 'Into the lava!' : 'Drowned!') : '';
+        this.callout(`${(look.name || 'HERO').toUpperCase()} IS OUT!`, '#ff5a4d', how);
         Sfx.play('boom');
+        // During a shot: slow motion, zoomed in on them, with a flash.
+        if (this.replay) {
+          const t = performance.now();
+          this.slowUntil = t + A.SLOWMO.ms;
+          this.zoomOn = { x: h.x, y: Math.min(h.shownY ?? h.y, MAP.H - 80) - 50, until: t + A.SLOWMO.ms + 250 };
+          this.flashAt = t;
+        }
       } else if (e.type === 'bolt') {
         this.bolts.push({ x: e.x, r: e.r, t0: performance.now(), life: 450 });
         Sfx.play('skill:valkyrie');
+      } else if (e.type === 'ghost' && h) {
+        // A ghost lets its bomb go.
+        h.armed = false;
+        h.ghostWait = A.GHOST.every;
+        if (this.terrain) this.burst(e.x, A.ghostY(this.terrain, e.x), ['#bb8cff', '#e0c8ff', '#ffffff'], 18, 0.15);
+        Sfx.play('escape');
       } else if (e.type === 'orb') {
         // A power-up, hit: it pops, and the shooter has it.
         this.orbs.delete(e.orb);
@@ -408,12 +487,40 @@
       if (this.onEvent) this.onEvent(e);
     }
 
+    // How the shot went, called out once it's all landed: a multi-KO, a bullseye, an own goal, a near miss,
+    // and a hot streak.
+    hype(shot) {
+      const H = shot.hype;
+      if (!H) return;
+      const name = (this.looks.get(shot.id) || {}).name || 'Hero';
+      let main = null;
+      if (H.kos >= 3) main = [`${H.kos === 3 ? 'TRIPLE' : 'MEGA'} KO!`, '#ffd23f', 'win'];
+      else if (H.kos === 2) main = ['DOUBLE KO!', '#ffd23f', 'win'];
+      else if (H.ownKo) main = ['OWN GOAL!', '#ff5a4d', 'miss'];
+      else if (H.direct) main = ['BULLSEYE!', '#ff9a3c', 'streak'];
+      else if (H.hits >= 3) main = [`MULTI-HIT x${H.hits}!`, '#ffd23f', 'streak'];
+      else if (H.own && !H.hits) main = ['FRIENDLY FIRE!', '#ff5a4d', 'miss'];
+      else if (H.self && !H.hits) main = ['OOPS!', '#ff9ad0', 'miss'];
+      else if (H.close) main = ['SO CLOSE!', '#7fd4ff', 'miss'];
+      const hot = H.streak >= 3 ? `${name} is on fire: ${H.streak} hits in a row!` : '';
+      if (main) {
+        this.callout(main[0], main[1], hot || name);
+        Sfx.play(main[2]);
+      } else if (hot) {
+        this.callout('ON FIRE!', '#ff7b1c', hot);
+        Sfx.play('streak');
+      }
+    }
+
     // A hero walked (or jumped) off the edge (not during a shot).
     fell(id, jumped = false) {
       const h = this.heroes.get(id);
       if (!h) return;
       h.alive = false;
       h.y = MAP.H + 80;
+      h.koAt = performance.now();
+      h.gx = h.gxShown = clamp(h.x, 40, MAP.W - 40);
+      h.ghostWait = A.GHOST.first;
       const look = this.looks.get(id) || {};
       this.callout(`${(look.name || 'HERO').toUpperCase()} FELL!`, '#ff5a4d', jumped ? 'Jumped off the edge' : 'Walked off the edge');
     }
@@ -461,13 +568,15 @@
       const top = this.phone ? 0 : this.reserveTop * this.dpr;
       const H = this.H - top;
       if (!this.follow) {
-        const s = Math.min(W / MAP.W, H / MAP.H);
+        // The whole field; zoomed in on a knockout (kept inside the field).
+        const s = Math.min(W / MAP.W, H / MAP.H) * this.zoom;
         this.s = s;
-        this.ox = (W - MAP.W * s) / 2;
-        this.oy = top + (H - MAP.H * s) / 2;
+        const fit = (span, size, at) => (span * s <= size ? (size - span * s) / 2 : clamp(size / 2 - at * s, size - span * s, 0));
+        this.ox = fit(MAP.W, W, focus.x);
+        this.oy = top + fit(MAP.H, H, focus.y);
         return;
       }
-      const s = Math.min(W / (this.phone ? 900 : 1100), H / 520);
+      const s = Math.min(W / (this.phone ? 900 : 1100), H / 520) * this.zoom;
       this.s = s;
       const vw = W / s;
       const vh = H / s;
@@ -522,19 +631,28 @@
       const ctx = this.ctx;
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.imageSmoothingEnabled = false;
-      const shells = this.playReplay(pt) || [];
+      const slow = pt < this.slowUntil ? A.SLOWMO.speed : 1;
+      const shells = this.playReplay(pt, dt) || [];
       const s = this.state;
       const act = s && this.heroes.get(s.active);
-      // The view follows the shot; once it lands it stays there (this.hold) until the next turn starts.
+      // The view follows the shot; once it lands it stays there (this.hold) until the next turn starts. A
+      // knockout zooms in on it; a ghost looking where to drop its bomb (phone) sees under itself.
       let focus;
-      if (shells.length) {
+      const zoomed = this.zoomOn && pt < this.zoomOn.until;
+      this.zoom += ((zoomed ? 1.8 : 1) - this.zoom) * (1 - Math.exp(-dt / 160));
+      if (zoomed) focus = this.zoomOn;
+      else if (shells.length) {
         focus = { x: shells[0].x, y: shells[0].y };
         this.hold = { ...focus };
       } else if (act && act.jump) {
         const [x, y] = pathAt(act.jump.path, pt - act.jump.t0);
         focus = { x, y: y - 120 };
+      } else if (this.lookAt && pt < this.lookAt.until && this.terrain) {
+        focus = { x: this.lookAt.x, y: A.ghostY(this.terrain, this.lookAt.x) + 160 };
       } else if (this.hold) focus = this.hold;
       else focus = act ? { x: act.x, y: act.y - 120 } : { x: MAP.W / 2, y: MAP.H / 2 };
+      if (!zoomed && this.zoomOn && this.zoom < 1.02) this.zoomOn = null;
+      if (this.zoomOn && !zoomed) focus = this.zoomOn; // easing back out where it zoomed in
       this.camera(focus, dt);
       this.drawSky(pt);
       if (pt < this.shake.until) {
@@ -546,16 +664,101 @@
       this.drawBolts(pt);
       this.drawOrbs(pt);
       for (const h of this.heroes.values()) this.drawHero(h, pt, dt, s);
+      this.drawWater(pt, dt);
+      this.drawGhosts(pt, dt);
       for (const sh of shells) this.drawShell(sh, pt);
       this.drawRings(pt);
-      this.drawParticles(pt, dt);
+      this.drawParticles(pt, dt * slow);
       this.drawTexts(pt);
       for (const h of this.heroes.values()) if (h.say && h.bubbleAt) this.drawBubble(h, pt);
       ctx.setTransform(1, 0, 0, 1, 0, 0);
+      // A knockout: a white flash.
+      const fk = (pt - this.flashAt) / 180;
+      if (fk < 1) {
+        ctx.globalAlpha = (1 - fk) * 0.45;
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, this.W, this.H);
+        ctx.globalAlpha = 1;
+      }
       this.drawWind(pt, dt);
       this.drawCallouts(pt);
       this.drawFeed(pt);
       if (this.follow) this.drawMinimap(shells);
+    }
+
+    // Sudden death's flood: see-through water (or lava) from its surface down, with a rippling top. It
+    // rises smoothly to where the server says it is.
+    drawWater(pt, dt) {
+      if (this.water === null || this.water === undefined) {
+        this.waterShown = null;
+        return;
+      }
+      this.waterShown = this.waterShown === null ? Math.min(MAP.H + 40, this.water + 60) : this.waterShown + (this.water - this.waterShown) * (1 - Math.exp(-dt / 600));
+      const ctx = this.ctx;
+      const lava = this.lava();
+      const top = this.Y(this.waterShown);
+      if (top > this.H) return;
+      ctx.globalAlpha = lava ? 0.75 : 0.55;
+      ctx.fillStyle = lava ? '#e8371c' : '#2f6fd0';
+      ctx.fillRect(0, Math.round(top), this.W, Math.ceil(this.H - top));
+      ctx.globalAlpha = 0.85;
+      const step = 20;
+      for (let x = 0; x < MAP.W; x += step) {
+        const y = this.waterShown + Math.sin(pt / 300 + x / 55) * 4;
+        this.block(this.X(x + step / 2), this.Y(y), Math.max(2, step * this.s), lava ? '#ffd23f' : '#9fd7ff');
+      }
+      if (lava && Math.random() < 0.3) {
+        const x = rand(0, MAP.W);
+        this.particles.push({ x, y: this.waterShown, vx: 0, vy: -0.08, g: 0.0002, life: 600, t0: pt, size: 5, color: Math.random() < 0.5 ? '#ff7b1c' : '#ffd23f' });
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Ghosts: knocked-out heroes floating over the field, see-through, with a wavy tail. One whose bomb is
+    // ready glows; one that's dropping a bomb holds it, with a line down to where it will land.
+    drawGhosts(pt, dt) {
+      if (!this.terrain) return;
+      const ctx = this.ctx;
+      const u = PX * this.s;
+      for (const h of this.heroes.values()) {
+        if (h.alive || h.ghostWait === undefined || h.ghostWait < 0 || h.gx === undefined) continue;
+        const look = this.looks.get(h.id);
+        if (!look) continue;
+        h.gxShown = h.gxShown === undefined ? h.gx : lerp(h.gxShown, h.gx, 1 - Math.exp(-dt / 120));
+        const x = h.gxShown;
+        const y = A.ghostY(this.terrain, x) + Math.sin(pt / 500 + x / 90) * 8;
+        const X = this.X(x);
+        const Y = this.Y(y);
+        const me = this.phone && h.id === this.selfId;
+        const ready = h.ghostWait === 0 && !h.armed;
+        if (h.armed || (me && ready)) {
+          // Where the bomb will fall.
+          const ground = this.terrain.groundBelow(x, y + 30) ?? MAP.H;
+          for (let gy = y + 40; gy < ground; gy += 22) {
+            ctx.globalAlpha = Math.floor(pt / 200 + gy / 22) % 2 ? 0.75 : 0.35;
+            this.block(X, this.Y(gy), Math.max(2, 4 * this.s), h.armed ? '#ff5a4d' : '#bb8cff');
+          }
+          ctx.globalAlpha = 0.8;
+          this.block(X, this.Y(ground - 4), Math.max(3, 14 * this.s), h.armed ? '#ff5a4d' : '#bb8cff');
+        }
+        ctx.globalAlpha = ready || h.armed ? 0.3 + Math.sin(pt / 160) * 0.12 : 0.16;
+        ctx.fillStyle = '#bb8cff';
+        ctx.beginPath();
+        ctx.arc(X, Y - 22 * this.s, 30 * this.s, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = me ? 0.8 : 0.55;
+        const spr = heroSprite(look);
+        const w = spr.width * u;
+        const hh = spr.height * u;
+        ctx.drawImage(spr, Math.round(X - w / 2), Math.round(Y - hh), Math.round(w), Math.round(hh));
+        for (let i = 0; i < 4; i++) this.block(X + Math.sin(pt / 150 + i) * 2 * u, Y + (i * 3 + 1) * u, (8 - i * 2) * u, '#e0d8ff');
+        ctx.globalAlpha = 1;
+        if (h.armed) this.drawShell({ kind: 'ghost', big: 1.1, x, y: y + 28, a: 0 }, pt);
+        const label = me ? (h.armed ? 'BOMB DROPS!' : ready ? 'YOU: READY!' : 'YOU') : h.armed ? 'BOMB!' : ready ? 'READY' : '';
+        ctx.globalAlpha = me ? 1 : 0.8;
+        this.text(`${look.name}${label ? ` · ${label}` : ''}`, X, Y - hh - 6 * this.dpr, this.phone ? 6 : clamp((8 * this.s) / this.dpr, 6, 10), '#e0c8ff');
+        ctx.globalAlpha = 1;
+      }
     }
 
     // Power-ups: a bubble with the power-up inside, bobbing in the air.
@@ -716,7 +919,7 @@
       const X = this.X(hx);
       const Y = this.Y(hy);
       const u = PX * this.s;
-      const team = TEAMS[h.team];
+      const team = { color: this.colorOf(h) };
       const up = s && s.active === h.id && s.phase === 'aim';
       if (!alive) {
         // A gravestone where they fell.
@@ -802,8 +1005,8 @@
       const ctx = this.ctx;
       const bob = Math.sin(pt / 180) * 4 * s;
       const top = Y - 75 * s + bob;
-      const team = TEAMS[h.team];
-      for (let i = 0; i < 4; i++) this.block(X, top + i * 3 * s, (8 - i * 2) * s, team.color);
+      const color = this.colorOf(h);
+      for (let i = 0; i < 4; i++) this.block(X, top + i * 3 * s, (8 - i * 2) * s, color);
       // The arc of angles you can pick, and where you're aiming.
       ctx.strokeStyle = 'rgba(255,255,255,0.35)';
       ctx.lineWidth = Math.max(1, 1.5 * this.dpr);
@@ -935,7 +1138,7 @@
       const MAX = 16;
       const mini = this.follow ? Math.min(this.W * 0.42, 170 * d) / d : 0;
       const half = this.follow ? clamp((this.W / d - mini - 32) / 2, 60, 130) : 180;
-      const cx = this.follow ? (8 + half) * d : this.ox + (MAP.W * this.s) / 2;
+      const cx = this.follow ? (8 + half) * d : this.W / 2; // the middle of the screen (the field is centred, unless zoomed in)
       const top = ((this.phone ? 0 : this.reserveTop) + 8) * d;
       const h = (this.follow ? 26 : 34) * d;
       const y = top + h / 2;
@@ -1006,7 +1209,7 @@
 
     drawCallouts(pt) {
       const d = this.dpr;
-      const cx = this.follow ? this.W / 2 : this.ox + (MAP.W * this.s) / 2;
+      const cx = this.W / 2;
       let y = this.follow ? this.H * 0.35 : (this.reserveTop + 110) * d;
       this.callouts = this.callouts.filter((c) => pt - c.t0 < 1800);
       for (const c of this.callouts) {
@@ -1046,12 +1249,16 @@
       ctx.strokeRect(x + vx0 * k, y + vy0 * k, (vx1 - vx0) * k, (vy1 - vy0) * k);
       for (const hh of this.heroes.values()) {
         if (!hh.alive) continue;
-        ctx.fillStyle = hh.id === this.selfId ? '#ffffff' : TEAMS[hh.team].color;
+        ctx.fillStyle = hh.id === this.selfId ? '#ffffff' : this.colorOf(hh);
         ctx.fillRect(x + hh.x * k - 2 * d, y + (hh.y - 20) * k - 2 * d, 4 * d, 4 * d);
       }
       for (const o of this.orbs.values()) {
         ctx.fillStyle = (POWERS[o.kind] || {}).color || '#ffffff';
         ctx.fillRect(x + o.x * k - 2 * d, y + o.y * k - 2 * d, 4 * d, 4 * d);
+      }
+      if (this.waterShown !== null && this.waterShown < MAP.H) {
+        ctx.fillStyle = this.lava() ? 'rgba(232,55,28,0.7)' : 'rgba(47,111,208,0.7)';
+        ctx.fillRect(x, y + this.waterShown * k, w, (MAP.H - this.waterShown) * k);
       }
       for (const sh of shells) {
         ctx.fillStyle = '#ffd23f';
@@ -1064,7 +1271,8 @@
   // ---- the phone's controls -----------------------------------------------------------
   // On your turn: ◀ ▶ walk (held), JUMP, ▲ ▼ angle (held), FIRE: hold to charge, let go to shoot. Pick
   // SHOT 1, SHOT 2 or your special, and use HEAL or DOUBLE. On a keyboard: arrows walk and aim, J jumps,
-  // Space charges and fires, 1, 2 and 3 pick the shot, H heals, X doubles.
+  // Space charges and fires, 1, 2 and 3 pick the shot, H heals, X doubles. Knocked out, you're a ghost:
+  // ◀ ▶ float over the field (any time), and DROP (FIRE, or Space) lets your bomb go when it's ready.
   class ArtyPad {
     constructor(root, { send, view }) {
       this.root = root;
@@ -1110,9 +1318,10 @@
       this.el.double.onclick = () => this.item('double');
       const keys = new Set();
       window.addEventListener('keydown', (e) => {
-        if (!this.mine || e.repeat || /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
+        if (!(this.mine || this.ghost) || e.repeat || /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
         const k = e.key.toLowerCase();
         keys.add(k);
+        if (this.ghost && !['arrowleft', 'a', 'arrowright', 'd', ' '].includes(k)) return;
         if (k === 'arrowleft' || k === 'a') this.walk(-1);
         else if (k === 'arrowright' || k === 'd') this.walk(1);
         else if (k === 'arrowup' || k === 'w') this.tilting = 1;
@@ -1153,6 +1362,8 @@
       const was = this.mine;
       const h = state && this.view.heroes.get(you);
       this.mine = Boolean(state && state.phase === 'aim' && state.active === you && h && h.alive);
+      this.ghost = Boolean(state && state.phase !== 'over' && h && !h.alive && h.ghostWait >= 0);
+      if (!this.ghost) this.drift = 0;
       this.hero = h || null;
       this.state = state;
       if (this.mine && !was) {
@@ -1173,6 +1384,13 @@
     }
 
     walk(dir) {
+      if (this.ghost) {
+        // A ghost drifts over the field (update() moves it).
+        this.drift = dir;
+        if (this.hero) this.hero.drifting = Boolean(dir);
+        if (!dir) this.haunt(true);
+        return;
+      }
       if (!this.mine) return;
       if (dir) this.face = dir;
       if (this.walking === dir) return;
@@ -1220,7 +1438,39 @@
       this.render();
     }
 
+    // A ghost's place, to every screen (now and then while it drifts).
+    haunt(force = false) {
+      const h = this.hero;
+      if (!h || h.gx === undefined) return;
+      const t = performance.now();
+      if (!force && t - (this.hauntAt || 0) < 80) return;
+      this.hauntAt = t;
+      this.send('arty:haunt', { x: Math.round(h.gx) });
+    }
+
+    canDrop() {
+      const h = this.hero;
+      return Boolean(this.ghost && h && h.ghostWait === 0 && !h.armed && this.state && this.state.phase === 'aim' && !this.dropping);
+    }
+
+    // Let the ghost's bomb go: it falls where you float, once this turn's shot has landed.
+    drop() {
+      if (!this.canDrop()) return;
+      this.haunt(true);
+      this.dropping = true;
+      this.send('arty:drop', {}, (res) => {
+        this.dropping = false;
+        if (res && res.ok) {
+          this.hero.armed = true;
+          if (navigator.vibrate) navigator.vibrate(40);
+        }
+        this.render();
+      });
+      this.render();
+    }
+
     charge() {
+      if (this.ghost) return this.drop();
       if (!this.mine || this.charging || performance.now() < this.airUntil) return;
       this.walk(0);
       this.aim(true);
@@ -1262,6 +1512,22 @@
     }
 
     update(dt) {
+      // Knocked out during a shot: a ghost right away (not only once the next state comes in).
+      const me = this.hero;
+      if (!this.ghost && me && !me.alive && me.ghostWait >= 0 && this.state && this.state.phase !== 'over') {
+        this.ghost = true;
+        this.mine = false;
+      }
+      if (this.ghost) {
+        const h = this.hero;
+        if (this.drift && h && !h.armed) {
+          h.gx = clamp((h.gx ?? h.x) + this.drift * dt * 0.6, 40, MAP.W - 40);
+          this.view.lookAt = { x: h.gx, until: performance.now() + 1500 };
+          this.haunt();
+        }
+        this.render();
+        return;
+      }
       if (!this.mine) return;
       if (this.tilting) {
         this.angle = clamp(this.angle + this.tilting * dt * 0.04, A.ANGLE_MIN, A.ANGLE_MAX);
@@ -1284,9 +1550,20 @@
       const E = this.el;
       const h = this.hero;
       this.root.classList.toggle('mine', this.mine);
+      this.root.classList.toggle('ghost', this.ghost);
       const air = performance.now() < this.airUntil;
       for (const b of [E.left, E.right, E.up, E.down, E.fire, E.shot, E.shot2, E.special, E.heal, E.double, E.jump]) b.disabled = !this.mine;
       E.fire.disabled = !this.mine || air;
+      // A ghost: ◀ ▶ float, FIRE becomes DROP.
+      const fireLabel = this.ghost ? 'DROP' : 'FIRE';
+      if (E.fire.firstChild.nodeValue !== fireLabel) {
+        E.fire.firstChild.nodeValue = fireLabel;
+        E.fire.querySelector('small').textContent = this.ghost ? 'BOMB' : 'HOLD';
+      }
+      if (this.ghost) {
+        E.left.disabled = E.right.disabled = Boolean(h && h.armed);
+        E.fire.disabled = !this.canDrop();
+      }
       E.jump.disabled = !this.canJump();
       const jumpLabel = air && this.mount().flap && !this.flapped ? 'FLAP' : 'JUMP';
       if (E.jump.textContent !== jumpLabel) E.jump.textContent = jumpLabel;
