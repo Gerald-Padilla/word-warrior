@@ -190,7 +190,15 @@
     { key: 'hollow', name: 'HOLLOW HILLS', sky: ['#0e1630', '#23305a', '#46508a'], grass: '#3f8f4a', dirt: ['#5c4a3a', '#4a3a2a'], rock: '#2e2a40' },
     { key: 'sawtooth', name: 'SAWTOOTH RIDGE', sky: ['#7fb0e0', '#c0dcf0', '#ffffff'], grass: '#f4f8fc', dirt: ['#8a96b8', '#7a86a8'], rock: '#4a5070' },
     { key: 'craters', name: 'CRATER FIELD', sky: ['#2a0e1e', '#5e1e2e', '#a04a3a'], grass: '#8a6a5a', dirt: ['#4a3a3a', '#3e3030'], rock: '#2a2020' },
+    // Free for all only: no two sides, but perches at all heights, one for every hero.
+    { key: 'pillars', ffa: true, back: 'mesas', name: 'STONE PILLARS', sky: ['#24506e', '#5a9ab0', '#f4c890'], grass: '#9bbf5a', dirt: ['#b0703c', '#9a5f30'], rock: '#6a3e2a' },
+    { key: 'mushrooms', ffa: true, back: 'shrooms', name: 'MUSHROOM GROVE', sky: ['#0c1e30', '#1c4654', '#4a9a84'], grass: '#7fd06a', dirt: ['#5a3e5e', '#4a324e'], rock: '#2e2238', cap: ['#d94a4a', '#b83838'], spot: '#f4e8d8', stem: ['#eadfc4', '#d2c4a4'] },
+    { key: 'arena', ffa: true, back: 'city', name: 'THE COLOSSEUM', sky: ['#3a7bd5', '#89c2e8', '#f6e0b0'], grass: '#e0c080', dirt: ['#c49a5a', '#b0874a'], rock: '#7a5a3a' },
+    { key: 'drift', ffa: true, back: 'isles', name: 'DRIFTING ISLES', sky: ['#38286a', '#c06a9a', '#ffd0a0'], grass: '#8ee06a', dirt: ['#8a6a7a', '#7a5a6a'], rock: '#4a3a5a' },
+    { key: 'ruins', ffa: true, back: 'towers', name: 'THE OLD RUINS', sky: ['#22324a', '#4e6a84', '#c8b89a'], grass: '#6aa84f', dirt: ['#6b5a44', '#5c4c38'], rock: '#3e3a44' },
   ];
+  // The battlefields a battle can be on: team battles get the first ten, free for all the rest.
+  const stylesFor = (ffa) => STYLES.map((s, i) => i).filter((i) => Boolean(STYLES[i].ffa) === Boolean(ffa));
 
   // Repeatable random numbers (mulberry32).
   function seeded(seed) {
@@ -203,8 +211,8 @@
     };
   }
 
-  // Ground cells: 0 air, 1 earth, 2 stone (towers), 3 earth grown by a Druid. `depth`: how far each cell
-  // is below the surface it was made with (for its color).
+  // Ground cells: 0 air, 1 earth, 2 stone (towers), 3 earth grown by a Druid, 4 a mushroom's cap, 5 its
+  // stem. `depth`: how far each cell is below the surface it was made with (for its color).
   class Terrain {
     constructor(seed, style) {
       this.seed = seed;
@@ -213,6 +221,7 @@
       this.depth = new Uint8Array(COLS * ROWS);
       this.under = new Uint8Array(COLS * ROWS); // deep inside the earth: once dug out, a dark hollow (not sky)
       this.holes = []; // caves and pits, dug once the ground's colors are worked out
+      this.perches = []; // free-for-all battlefields: where heroes start, [left, right, top] in cells
       this.generate();
     }
 
@@ -228,7 +237,8 @@
         const parts = amps.map(([amp, len]) => ({ amp, f: (Math.PI * 2) / len, p: rnd() * Math.PI * 2 }));
         return (cx) => base + parts.reduce((s, w) => s + w.amp * Math.sin(cx * w.f + w.p), 0);
       };
-      if (key === 'islands') {
+      if (STYLES[this.style].ffa) this.perchy(key, rnd, fill, waves);
+      else if (key === 'islands') {
         // Floating islands over a bottomless drop; there's always one under each team's side.
         const xs = [0.12, 0.3, 0.5, 0.7, 0.88].map((f) => f * COLS + (rnd() - 0.5) * 30);
         for (const [i, x] of xs.entries()) {
@@ -325,11 +335,14 @@
           }
         }
       }
-      // How deep each cell is below its surface, for the colors; deep earth shows dark when dug out.
+      // How deep each cell is below its surface, for the colors; deep earth shows dark when dug out. On the
+      // free-for-all battlefields, earth under stone or a mushroom starts its own surface.
+      const fresh = Boolean(STYLES[this.style].ffa);
       for (let cx = 0; cx < COLS; cx++) {
         let run = 0;
         for (let cy = 0; cy < ROWS; cy++) {
           const i = cy * COLS + cx;
+          if (fresh && C[i] === 1 && cy && C[i - COLS] > 1) run = 0;
           if (C[i]) {
             this.depth[i] = Math.min(255, run);
             if (C[i] === 1 && run >= 8) this.under[i] = 1;
@@ -346,6 +359,202 @@
           }
         }
       }
+    }
+
+    // The free-for-all battlefields: no two sides, but perches at all heights, one for every hero (they
+    // share when there are more heroes than perches). Each goes in this.perches as [left, right, top].
+    perchy(key, rnd, fill, waves) {
+      const put = (cx, top, bottom, kind = 1) => {
+        if (cx >= 0 && cx < COLS) fill(cx, top, bottom, kind);
+      };
+      const perch = (a, b, top) => this.perches.push([Math.max(2, Math.round(a)), Math.min(COLS - 3, Math.round(b)), Math.round(top)]);
+      const ground = (surface) => {
+        for (let cx = 0; cx < COLS; cx++) fill(cx, surface(cx), ROWS);
+      };
+      // m things spread evenly from a to b (fractions of the width), wobbled a little.
+      const spread = (m, a, b, wobble) => Array.from({ length: m }, (_, j) => (a + ((b - a) * j) / (m - 1)) * COLS + (rnd() - 0.5) * wobble);
+      // m heights (rows) from lo to hi, a step apart, shuffled so each is well apart from the one before.
+      const heights = (m, lo, hi, apart) => {
+        const steps = Array.from({ length: m }, (_, k) => lo + ((hi - lo) * (k + 0.2 + rnd() * 0.6)) / m);
+        let best = steps;
+        let bestGap = -1;
+        for (let t = 0; t < 12 && bestGap < apart; t++) {
+          const order = steps.slice();
+          for (let i = m - 1; i > 0; i--) {
+            const j = Math.floor(rnd() * (i + 1));
+            [order[i], order[j]] = [order[j], order[i]];
+          }
+          let gap = Infinity;
+          for (let i = 1; i < m; i++) gap = Math.min(gap, Math.abs(order[i] - order[i - 1]));
+          if (gap > bestGap) [best, bestGap] = [order, gap];
+        }
+        return best;
+      };
+
+      if (key === 'pillars') {
+        // Tall pillars of rock with flat tops, over a gully.
+        ground(waves(ROWS * 0.9, [[4, 140], [2, 37]]));
+        const m = 7 + Math.floor(rnd() * 2);
+        const xs = spread(m, 0.06, 0.94, 14);
+        const tops = heights(m, ROWS * 0.3, ROWS * 0.64, 24);
+        xs.forEach((x, j) => {
+          const top = tops[j];
+          const half = 14 + rnd() * 5;
+          const rough = waves(0, [[1.2, 13], [0.8, 5]]);
+          const side = waves(0, [[2, 29], [1.2, 9]]);
+          for (let cy = Math.floor(top - 3); cy < ROWS; cy++) {
+            const w = half * (1 + 0.3 * ((cy - top) / (ROWS - top))) + side(cy);
+            for (let cx = Math.floor(x - w); cx <= Math.ceil(x + w); cx++) {
+              const shoulder = Math.max(0, Math.abs(cx - x) - (w - 4));
+              if (cy >= top + rough(cx) + shoulder * 0.9) put(cx, cy, cy + 1);
+            }
+          }
+          perch(x - half + 4, x + half - 4, top);
+        });
+      } else if (key === 'mushrooms') {
+        // Giant mushrooms: stand on their caps, or blow their stems out from under each other.
+        const floor = waves(ROWS * 0.84, [[7, 210], [3, 53]]);
+        ground(floor);
+        const shroom = (x, top, half, thick, stem, lean) => {
+          const foot = floor(x + lean);
+          for (let cy = Math.floor(top + thick * 0.5); cy < foot + 3; cy++) {
+            const k = (cy - top) / (foot - top);
+            const sx = x + lean * k * k;
+            const w = stem * (1 + Math.max(0, k - 0.75) * 2.4); // flared at the foot
+            for (let cx = Math.floor(sx - w); cx <= Math.ceil(sx + w); cx++) put(cx, cy, cy + 1, 5);
+          }
+          for (let cx = Math.floor(x - half); cx <= Math.ceil(x + half); cx++) {
+            const k = Math.abs(cx - x) / half;
+            if (k > 1) continue;
+            const t = top + k * k * k * 7; // flat on top, drooping at the rim
+            put(cx, t, t + Math.max(2, thick * (1 - k * k)), 4);
+          }
+        };
+        const m = 6 + Math.floor(rnd() * 2);
+        const xs = spread(m, 0.07, 0.93, 14);
+        const tops = heights(m, ROWS * 0.28, ROWS * 0.6, 26);
+        const room = (0.86 * COLS) / (m - 1) / 2 - 7;
+        xs.forEach((x, j) => {
+          const half = Math.min(room, 24 + rnd() * 8);
+          shroom(x, tops[j], half, 9 + rnd() * 4, 3.5 + rnd() * 1.5, (rnd() - 0.5) * 16);
+          perch(x - half * 0.7, x + half * 0.7, tops[j]);
+          if (j) {
+            // A little one in between.
+            const mx = (xs[j - 1] + x) / 2 + (rnd() - 0.5) * 10;
+            shroom(mx, floor(mx) - 12 - rnd() * 8, 6 + rnd() * 4, 5, 1.5, 0);
+          }
+        });
+      } else if (key === 'arena') {
+        // Tiers of stone seats rising from a sandy floor to both edges, with a dais in the middle.
+        const mid = COLS / 2 + (rnd() - 0.5) * 60;
+        const base = ROWS * 0.86;
+        const halfFloor = 55 + rnd() * 20;
+        const surf = new Array(COLS).fill(null);
+        const seats = [];
+        for (const dir of [-1, 1]) {
+          const n = 3 + Math.floor(rnd() * 2);
+          const start = mid + dir * halfFloor;
+          const span = (dir < 0 ? start : COLS - start) / n;
+          let y = base;
+          for (let s = 0; s < n; s++) {
+            const below = y;
+            y -= 22 + rnd() * 12;
+            const a = start + dir * span * s; // the seat's front edge, toward the middle
+            const b = start + dir * span * (s + 1);
+            seats.push({ lo: Math.min(a, b), hi: Math.max(a, b), y, front: a, dir, below, back: s === n - 1 });
+            for (let cx = Math.max(0, Math.floor(Math.min(a, b))); cx < Math.min(COLS, Math.ceil(Math.max(a, b))); cx++) surf[cx] = y;
+          }
+        }
+        const sand = waves(0, [[1, 23], [0.6, 7]]);
+        for (let cx = 0; cx < COLS; cx++) fill(cx, surf[cx] === null ? base + sand(cx) : surf[cx], ROWS);
+        for (const s of seats) {
+          // The seat's top, and its front (the step down toward the middle), are stone.
+          for (let cx = Math.floor(s.lo); cx < Math.ceil(s.hi); cx++) put(cx, s.y, s.y + 3, 2);
+          for (let k = 0; k < 5; k++) put(Math.round(s.front + s.dir * k) - (s.dir < 0 ? 1 : 0), s.y, s.below + 3, 2);
+          // The top row of seats has a column at the field's edge.
+          const edge = s.back ? 14 : 6;
+          perch(s.lo + (s.dir < 0 ? edge : 6), s.hi - (s.dir > 0 ? edge : 6), s.y);
+          if (!s.back) continue;
+          const x = s.dir < 0 ? 4 : COLS - 5;
+          for (let cx = x - 3; cx <= x + 3; cx++) put(cx, s.y - 44, s.y, 2);
+          for (let cx = x - 5; cx <= x + 5; cx++) put(cx, s.y - 48, s.y - 44, 2);
+        }
+        const dh = 14 + rnd() * 4;
+        const top = base - 10 - rnd() * 4;
+        for (let cx = Math.floor(mid - dh); cx <= Math.ceil(mid + dh); cx++) put(cx, top + (Math.abs(cx - mid) > dh - 3 ? 3 : 0), base + 3, 2);
+        perch(mid - dh + 4, mid + dh - 4, top);
+      } else if (key === 'drift') {
+        // Little islands adrift at all heights, over a bottomless drop.
+        const m = 9 + Math.floor(rnd() * 3);
+        const xs = spread(m, 0.05, 0.95, 8);
+        const room = (0.9 * COLS) / (m - 1) / 2 - 6;
+        let high = rnd() < 0.5;
+        xs.forEach((x) => {
+          const top = ROWS * (high ? 0.26 + rnd() * 0.14 : 0.5 + rnd() * 0.16);
+          high = !high;
+          const half = Math.min(room, 18 + rnd() * 10);
+          const thick = 26 + rnd() * 14;
+          const bump = waves(0, [[2, 31], [1.5, 11]]);
+          for (let cx = Math.floor(x - half); cx <= Math.ceil(x + half); cx++) {
+            const k = Math.abs(cx - x) / half;
+            if (k > 1) continue;
+            put(cx, top + bump(cx) + k * k * 6, top + 4 + thick * Math.pow(1 - k, 0.9));
+          }
+          perch(x - half + 4, x + half - 4, top);
+        });
+      } else {
+        // Broken stone floors on old columns, two storeys of them, over grass strewn with rubble.
+        const floor = waves(ROWS * 0.86, [[5, 180], [2, 41]]);
+        ground(floor);
+        const slab = (x, half, top, legs) => {
+          const thick = 6 + rnd() * 2;
+          const bite = [2 + rnd() * 6, 2 + rnd() * 6]; // how far each end has crumbled
+          for (let cx = Math.floor(x - half); cx <= Math.ceil(x + half); cx++) {
+            const left = half - Math.abs(cx - x);
+            const b = bite[cx < x ? 0 : 1];
+            const k = left < b ? 1 - left / b : 0;
+            put(cx, top + k * 3 + (k ? rnd() * 1.5 : 0), top + thick - k * 2, 2);
+          }
+          if (legs.length === 2) {
+            // An arch between the two columns.
+            const span = Math.abs(legs[1][0] - legs[0][0]) / 2;
+            for (let cx = Math.floor(x - span); cx <= Math.ceil(x + span); cx++) {
+              const u = Math.min(1, Math.abs(cx - x) / span);
+              put(cx, top + thick, top + thick + 12 * (1 - Math.sqrt(1 - u * u)), 2);
+            }
+          }
+          for (const [lx, broken] of legs) {
+            const foot = floor(lx);
+            const from = broken ? foot - 8 - rnd() * 20 : top + thick;
+            for (let cx = Math.round(lx - 3); cx <= Math.round(lx + 3); cx++) put(cx, from, foot + 2, 2);
+            for (let cx = Math.round(lx - 5); cx <= Math.round(lx + 5); cx++) {
+              if (!broken) put(cx, top + thick, top + thick + 2, 2);
+              put(cx, foot - 2, foot + 2, 2);
+            }
+          }
+          perch(x - half + 5, x + half - 5, top);
+        };
+        const xs = spread(4, 0.12, 0.88, 16);
+        const tops = heights(4, ROWS * 0.55, ROWS * 0.68, 12);
+        xs.forEach((x, j) => {
+          const half = 24 + rnd() * 6;
+          const broken = rnd() < 0.4 ? Math.floor(rnd() * 2) : -1;
+          slab(x, half, tops[j], [[x - half * 0.55, broken === 0], [x + half * 0.55, broken === 1]]);
+        });
+        const ups = heights(3, ROWS * 0.28, ROWS * 0.42, 14);
+        for (let j = 0; j < 3; j++) {
+          const x = (xs[j] + xs[j + 1]) / 2 + (rnd() - 0.5) * 12;
+          slab(x, 18 + rnd() * 6, ups[j], [[x, false]]);
+        }
+        // Rubble.
+        for (let i = 0; i < 5; i++) {
+          const x = 10 + rnd() * (COLS - 20);
+          const w = 3 + rnd() * 4;
+          const h = 3 + rnd() * 4;
+          for (let cx = Math.floor(x - w); cx <= Math.ceil(x + w); cx++) put(cx, floor(x) - h, floor(x) + 2, 2);
+        }
+      }
+      this.perches.sort((p, q) => p[0] - q[0]);
     }
 
     // Is (x, y), in units, solid ground?
@@ -528,7 +737,7 @@
   const Arty = {
     MAP, COLS, ROWS, GRAVITY, MAX_SPEED, WIND_ACCEL, HERO_R, HERO_MID, CLIMB, WALK_SPEED, STAMINA, HP, ANGLE_MIN, ANGLE_MAX,
     CHARGE_MS, KO_POINTS, WIN_POINTS, SUDDEN_STEP, SUDDEN_MAX, LAST_TURN, SPECIAL_MAX, SPECIAL_PER_DMG, SPECIAL_PER_HURT, SPECIAL_PER_TURN, SHOW_MS, TURNS, LEVELS,
-    SHOTS, ITEMS, STYLES, JUMP, MOUNTS, ORB, ORBS, GHOST, WATER, SLOWMO, SLOWMO_EXTRA, FFA_WIN_POINTS, ghostY, Terrain, seeded, launch, fly, hop, PATH_MS,
+    SHOTS, ITEMS, STYLES, stylesFor, JUMP, MOUNTS, ORB, ORBS, GHOST, WATER, SLOWMO, SLOWMO_EXTRA, FFA_WIN_POINTS, ghostY, Terrain, seeded, launch, fly, hop, PATH_MS,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Arty;
   else root.Arty = Arty;

@@ -295,6 +295,9 @@
         this.gctx = this.ground.getContext('2d');
       }
       this.pal = { grass: rgb(st.grass), dirt: st.dirt.map(rgb), rock: rgb(st.rock), vine: [rgb('#3f8f4a'), rgb('#4fa865')], stone: [rgb('#8a8aa0'), rgb('#6e6e88'), rgb('#4a4a60')] };
+      this.pal.cap = (st.cap || ['#d94a4a', '#b83838']).map(rgb);
+      this.pal.spot = rgb(st.spot || '#f4e8d8');
+      this.pal.stem = (st.stem || ['#eadfc4', '#d2c4a4']).map(rgb);
       this.pal.hollow = this.pal.dirt[1].map((c) => c * 0.32);
       this.img = this.gctx.createImageData(COLS, ROWS);
       this.redraw(0, 0, COLS - 1, ROWS - 1);
@@ -313,6 +316,11 @@
         const mortar = cy % 6 === 0 || (cx + (Math.floor(cy / 6) % 2) * 4) % 8 === 0;
         c = mortar ? P.stone[2] : n < 0.5 ? P.stone[0] : P.stone[1];
       } else if (kind === 3) c = P.vine[n < 0.5 ? 0 : 1];
+      else if (kind === 4) {
+        // A mushroom's cap, with pale spots; darker gills underneath.
+        const gill = cy + 1 < ROWS && !this.terrain.cells[i + COLS];
+        c = gill ? P.cap[1].map((v) => v * 0.6) : hash(cx >> 2, cy >> 2) < 0.2 && d > 0 ? P.spot : P.cap[n < 0.5 ? 0 : 1];
+      } else if (kind === 5) c = P.stem[cx % 4 === 0 ? 1 : 0];
       else if (d <= 2) c = P.grass;
       else if (d < 40) c = P.dirt[n < 0.5 ? 0 : 1];
       else c = P.rock;
@@ -855,17 +863,7 @@
       st.sky.forEach((c, i) => g.addColorStop(i / (st.sky.length - 1), c));
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, this.W, this.H);
-      // Far hills, sliding a little with the view.
-      const base = this.Y(MAP.H * 0.55);
-      ctx.fillStyle = 'rgba(27,20,38,0.18)';
-      ctx.beginPath();
-      ctx.moveTo(0, this.H);
-      for (let x = 0; x <= this.W; x += 8) {
-        const wx = (x - this.ox * 0.4) / Math.max(0.05, this.s);
-        ctx.lineTo(x, base + Math.sin(wx / 260) * 60 * this.s + Math.sin(wx / 97) * 20 * this.s);
-      }
-      ctx.lineTo(this.W, this.H);
-      ctx.fill();
+      this.drawBack(st.back || 'hills', pt);
       // Clouds drifting.
       ctx.fillStyle = 'rgba(255,255,255,0.35)';
       for (let i = 0; i < 6; i++) {
@@ -874,6 +872,69 @@
         const w = (120 + (i % 3) * 60) * this.s;
         ctx.fillRect(Math.round(this.X(cx)), Math.round(this.Y(cy)), Math.round(w), Math.round(18 * this.s));
         ctx.fillRect(Math.round(this.X(cx) + w * 0.2), Math.round(this.Y(cy) - 12 * this.s), Math.round(w * 0.5), Math.round(14 * this.s));
+      }
+    }
+
+    // Far-off shapes behind the battlefield, sliding a little with the view: hills, or something to go with
+    // a free-for-all battlefield (mesas, giant mushrooms, a city, floating isles, old towers).
+    drawBack(back, pt) {
+      const ctx = this.ctx;
+      const s = Math.max(0.05, this.s);
+      const base = this.Y(MAP.H * 0.55);
+      const far = (x) => (x - this.ox * 0.4) / s; // the far-off x behind screen x
+      const near = (w) => w * s + this.ox * 0.4; // and back
+      ctx.fillStyle = 'rgba(27,20,38,0.18)';
+      // A skyline: how far above (or below) the base line it is, at far-off x.
+      const lines = {
+        hills: (w) => Math.sin(w / 260) * 60 + Math.sin(w / 97) * 20,
+        shrooms: (w) => Math.sin(w / 300) * 30 + 40,
+        mesas: (w) => {
+          const k = Math.floor(w / 150);
+          return hash(k, 7) < 0.6 ? -(40 + hash(k, 3) * 160) : 30;
+        },
+        city: (w) => {
+          const k = Math.floor(w / 60);
+          const spire = hash(k, 2) < 0.2 && Math.abs((((w % 60) + 60) % 60) - 30) < 5;
+          return -(20 + hash(k, 5) * 110) - (spire ? 70 : 0);
+        },
+        towers: (w) => {
+          const k = Math.floor(w / 220);
+          const at = ((w % 220) + 220) % 220;
+          if (at > 80 && at < 130) return -(110 + hash(k, 4) * 150) + (Math.floor(at / 10) % 2 ? 0 : 14);
+          return -(5 + hash(Math.floor(w / 40), 6) * 35);
+        },
+      };
+      if (lines[back]) {
+        ctx.beginPath();
+        ctx.moveTo(0, this.H);
+        for (let x = 0; x <= this.W; x += 4) ctx.lineTo(x, base + lines[back](far(x)) * s);
+        ctx.lineTo(this.W, this.H);
+        ctx.fill();
+      }
+      const span = (gap, draw) => {
+        for (let i = Math.floor(far(0) / gap) - 1; i <= Math.ceil(far(this.W) / gap) + 1; i++) draw(i, near(i * gap));
+      };
+      if (back === 'shrooms') {
+        span(380, (i, x) => {
+          const y = base - (150 + hash(i, 1) * 170) * s;
+          const half = (50 + hash(i, 2) * 50) * s;
+          ctx.fillRect(Math.round(x - 7 * s), Math.round(y), Math.round(14 * s), Math.round(base - y + 60 * s));
+          ctx.beginPath();
+          ctx.ellipse(x, y + 6 * s, half, 26 * s, 0, Math.PI, 0);
+          ctx.fill();
+        });
+      } else if (back === 'isles') {
+        span(300, (i, x) => {
+          const cx = x + Math.sin(pt / 5000 + i) * 18 * s;
+          const y = this.Y(MAP.H * (0.15 + hash(i, 1) * 0.45));
+          const half = (30 + hash(i, 2) * 40) * s;
+          ctx.beginPath();
+          ctx.moveTo(cx - half, y);
+          ctx.lineTo(cx + half, y);
+          ctx.lineTo(cx + half * 0.2, y + half * 1.1);
+          ctx.closePath();
+          ctx.fill();
+        });
       }
     }
 

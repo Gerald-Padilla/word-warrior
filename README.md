@@ -381,13 +381,13 @@ Players split into Red Dragons and Blue Griffins like a team battle: **SWITCH TE
 big screen click a hero to move them, or **SHUFFLE TEAMS**. Or switch on **FREE FOR ALL** in the lobby for no
 teams at all:
 
-- **Free for all.** Every hero for themselves, spread out across the whole field, taking turns one after
-  another. Every other hero is a foe (a Cleric's heal only heals themselves). The last hero standing gets
+- **Free for all.** Every hero for themselves, each starting on a perch of their own (see the free-for-all
+  battlefields below), taking turns one after another. Every other hero is a foe (a Cleric's heal only heals themselves). The last hero standing gets
   +250 points and the **Last One Standing** award, and the results rank everyone by score, like a free for
   all typing battle. The phones show how many heroes are left instead of the team bars.
 
-- **The battlefield.** A side-on landscape, one of ten, a little different every game. Teams start on opposite
-  sides.
+- **The battlefield.** A side-on landscape, a little different every game. A team battle is on one of ten,
+  with the teams on opposite sides.
 
   | Battlefield | What's in it |
   |---|---|
@@ -401,6 +401,18 @@ teams at all:
   | **Hollow Hills** | Hills with hidden caves: blow a roof in and whoever's on it drops through |
   | **Sawtooth Ridge** | Jagged, snowy peaks all the way across |
   | **Crater Field** | A battered plain full of old pits |
+
+  A free-for-all battle is on one of five of its own, with no two sides: perches at all heights, a hero on
+  each (higher and lower ones mixed, so nobody gets all the high ground), sharing them when there are more
+  heroes than perches. Someone joining later gets the perch farthest from anyone.
+
+  | Battlefield | What's in it |
+  |---|---|
+  | **Stone Pillars** | Tall rock pillars with flat tops, over a gully |
+  | **Mushroom Grove** | Giant mushrooms to stand on: blow a stem out and the cap's left hanging, or blast through the cap |
+  | **The Colosseum** | Tiers of stone seats rising from a sandy floor to both edges, with a dais in the middle |
+  | **Drifting Isles** | Little islands adrift at all heights over a bottomless drop |
+  | **The Old Ruins** | Broken stone floors on old columns, two storeys of them, over grass and rubble |
 
 - **Turns.** The teams take turns, each team's heroes in rotation. On your turn your phone buzzes and its
   controls light up; everyone else watches. You have 20 seconds (25 on easy, 15 on hard).
@@ -496,8 +508,8 @@ teams at all:
   - The controls. Held sideways, the controls sit in a column on the right.
 - **Details.**
   - Every hero has 120 HP.
-  - A hero who joins mid-battle goes on the smaller team, on their own side of the field (free for all:
-    anywhere).
+  - A hero who joins mid-battle goes on the smaller team, on their own side of the field (free for all: on
+    the perch farthest from anyone).
   - A hero whose phone drops out loses their turn after 3 seconds.
 - Streaks, special words, the boss, class perks and **MY WORDS** are off (hidden in the lobby).
 - **Awards:**

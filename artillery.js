@@ -14,7 +14,9 @@ const ally = (G, H, T) => (G.ffa ? H.id === T.id : H.team === T.team);
 
 function createArty({ players, length = 'full', level = 'normal', specials = true, ffa = false, rng = Math.random }) {
   const seed = Math.floor(rng() * 1e9);
-  const style = Math.floor(rng() * A.STYLES.length);
+  // Team battles and free for all each have their own battlefields.
+  const pool = A.stylesFor(ffa);
+  const style = pool[Math.floor(rng() * pool.length)];
   const G = {
     seed,
     style,
@@ -62,8 +64,10 @@ function createArty({ players, length = 'full', level = 'normal', specials = tru
 }
 
 // A spot with ground under it: on the hero's own side, evenly spread for the starting line-up (i of n), or
-// anywhere on their side for someone joining later. Free for all: across the whole field.
+// anywhere on their side for someone joining later. Free for all: on a perch (see perchSpot), or anywhere.
 function spotFor(G, team, i = null, n = 1) {
+  const perched = G.ffa ? perchSpot(G, i, n) : null;
+  if (perched) return perched;
   const pick = G.ffa ? (f) => 0.05 + f * 0.9 : (f) => (team === 0 ? 0.05 + f * 0.32 : 0.95 - f * 0.32);
   const tries = [];
   if (i !== null) tries.push(pick((i + 0.5) / Math.max(1, n)));
@@ -77,6 +81,61 @@ function spotFor(G, team, i = null, n = 1) {
   }
   const x = pick(0.5) * MAP.W;
   return { x, y: G.terrain.groundBelow(x, 0) ?? MAP.H / 2 };
+}
+
+// Free for all: a perch each (heroes share them when there are more heroes than perches), as far apart as
+// they can be, across the field and in height. Someone joining later gets the perch farthest from anyone
+// standing. null if there are no perches (or the one picked has been blown away).
+function perchSpot(G, i, n) {
+  const P = G.terrain.perches;
+  if (!P.length) return null;
+  let k = 0;
+  let slot = 0.5; // where on the perch, from its left (0) to its right (1)
+  if (i !== null && n <= P.length) k = perchPlan(G, n)[i];
+  else if (i !== null) {
+    k = i % P.length;
+    slot = (Math.floor(i / P.length) + 0.5) / Math.ceil(n / P.length);
+  } else {
+    let far = -1;
+    P.forEach(([a, b, top], j) => {
+      const x = ((a + b) / 2) * MAP.CELL;
+      const y = top * MAP.CELL;
+      let d = Infinity;
+      for (const H of G.heroes.values()) if (H.alive) d = Math.min(d, Math.hypot(H.x - x, H.y - y));
+      if (d > far) [far, k] = [d, j];
+    });
+  }
+  const [a, b, top] = P[k];
+  for (const f of [slot, slot + 0.2, slot - 0.2, 0.5, 0.2, 0.8]) {
+    const x = (a + (b - a) * Math.max(0, Math.min(1, f))) * MAP.CELL;
+    const y = G.terrain.groundBelow(x, (top - 6) * MAP.CELL);
+    if (y !== null && Math.abs(y - top * MAP.CELL) < 40 && !G.terrain.solid(x, y - HERO_MID * 2)) return { x, y };
+  }
+  return null;
+}
+
+// Which perches n heroes start on: one at random, then each the one farthest from those already picked,
+// where being from the lowest perch to the highest counts as far as from one end of the field to the other
+// (so they don't all end up as high, or as low, as each other).
+function perchPlan(G, n) {
+  if (G.perchPlan && G.perchPlan.n === n) return G.perchPlan.picks;
+  const P = G.terrain.perches;
+  const tops = P.map((p) => p[2]);
+  const range = Math.max(1, Math.max(...tops) - Math.min(...tops));
+  const apart = (j, k) => Math.abs(P[j][0] + P[j][1] - P[k][0] - P[k][1]) / 2 / A.COLS + Math.abs(P[j][2] - P[k][2]) / range;
+  const picks = [Math.floor(G.rng() * P.length)];
+  while (picks.length < Math.min(n, P.length)) {
+    let far = -1;
+    let k = 0;
+    P.forEach((p, j) => {
+      if (picks.includes(j)) return;
+      const d = Math.min(...picks.map((q) => apart(j, q)));
+      if (d > far) [far, k] = [d, j];
+    });
+    picks.push(k);
+  }
+  G.perchPlan = { n, picks };
+  return picks;
 }
 
 // The hero's mount: their pet, and how it moves (see MOUNTS).
