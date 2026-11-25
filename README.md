@@ -404,7 +404,17 @@ teams at all:
 
   A free-for-all battle is on one of five of its own, with no two sides: perches at all heights, a hero on
   each (higher and lower ones mixed, so nobody gets all the high ground), sharing them when there are more
-  heroes than perches. Someone joining later gets the perch farthest from anyone.
+  heroes than perches. Someone joining later gets the perch farthest from anyone. So nobody gets stuck in
+  one place, these battlefields also have:
+
+  - **Trampolines** at the bottom: one on every stretch of floor you can walk along (more on a long one),
+    or, over a bottomless drop, a few floating low. Walk onto one, or tap **JUMP** on one (it says
+    **BOING**), and it throws you up onto the nearest perch the way you're going (another perch if it can't
+    reach that one). It's free, even with no walk left, and nothing can blow a trampoline up.
+  - **Portals:** two pairs of glowing rings, one pair blue and one orange, on perches across the field. Walk
+    into one and you come out of the other of the same color, facing away from it (where you stop: walk on
+    to go on). Portals stay where they are even if the ground under one is blown away, so look before you
+    step through: coming out over the drop is a KO.
 
   | Battlefield | What's in it |
   |---|---|
@@ -412,7 +422,7 @@ teams at all:
   | **Mushroom Grove** | Giant mushrooms to stand on: blow a stem out and the cap's left hanging, or blast through the cap |
   | **The Colosseum** | Tiers of stone seats rising from a sandy floor to both edges, with a dais in the middle |
   | **Drifting Isles** | Little islands adrift at all heights over a bottomless drop |
-  | **The Old Ruins** | Broken stone floors on old columns, two storeys of them, over grass and rubble |
+  | **The Old Ruins** | Broken stone floors floating on what's left of their columns, two storeys of them, over grass and rubble (walk under the columns) |
 
 - **Turns.** The teams take turns, each team's heroes in rotation. On your turn your phone buzzes and its
   controls light up; everyone else watches. You have 20 seconds (25 on easy, 15 on hard).
@@ -422,6 +432,8 @@ teams at all:
     jump uses up some of the blue bar (a few jumps a turn), and you can't fire until you land. Jump off the
     edge of the world and you're out.
   - **Aim:** ▲ ▼ set the angle, from a little below level to straight up.
+  - **Zoom:** pinch the battlefield on your phone, or tap **+** and **−** (the mouse wheel works too), to zoom
+    in close or out to see the whole field and find your target. It stays as you left it.
   - **Fire:** hold **FIRE** to charge the power (about 2 seconds to full), and let go to shoot. A white mark on
     the power bar shows your last shot's power.
   - **Pick a shot:** **SHOT 1**, **SHOT 2**, or **SPECIAL** when it's charged.
@@ -458,9 +470,10 @@ teams at all:
   | **Twin Shot** | Your next shot fires twice (three times with DOUBLE) |
 
 - **Ghosts.** A hero who's knocked out isn't out of the game: they haunt the battlefield as a ghost, floating
-  over it (◀ ▶ on their phone, or the arrow keys, any time). Two turns after they're out, and every three turns
-  after that, they can tap **DROP** (Space): their ghost bomb falls straight down from where they float once
-  the turn's shot has landed (or when the turn runs out). Everyone can see a ghost holding a bomb, with a line
+  anywhere over it, up and down as well as across, and through anything (◀ ▶ ▲ ▼ on their phone, or the arrow
+  keys, any time). Two turns after they're out, and every three turns after that, they can tap **DROP**
+  (Space): their ghost bomb falls straight down from where they float once the turn's shot has landed (or when
+  the turn runs out). Everyone can see a ghost holding a bomb, with a line
   down to where it will land, so the hero under it can move. A ghost bomb's hits and KOs score for the ghost,
   and the **Poltergeist** award goes to the most ghost damage.
 - **Winning.** The battle goes on until a team is wiped out (or both are, a draw); free for all, until one hero
@@ -503,8 +516,9 @@ teams at all:
   - After a shot lands, two seconds to see what it did before the next turn.
 - **Phone.**
   - Both teams' HP and the clock.
-  - The battlefield following the action (drag it to look around), with a minimap. It follows a shot until it
-    lands and stays there until the next turn starts, then pans over to whoever's up.
+  - The battlefield following the action (drag it to look around, pinch or **+** **−** to zoom), with a
+    minimap. It follows a shot until it lands and stays there until the next turn starts, then pans over to
+    whoever's up.
   - The controls. Held sideways, the controls sit in a column on the right.
 - **Details.**
   - Every hero has 120 HP.
@@ -714,8 +728,8 @@ streak steps (`STREAK_STEPS`), special words (`SPECIAL_CHANCE`, `GOLD_FACTOR`, `
 perks (`PERKS`), skills (`SKILLS`, `SKILL_WORDS`). The auto-typer limits are the `KEY_*` and `FLAG_AFTER`
 settings. Word lists are in `words.js`; if you change them a lot, the perk bonuses may need re-measuring.
 The music tracks are the `TRACKS` table in `public/js/common.js`. Artillery's numbers (gravity, wind, power, HP,
-walking, jumping, the mounts' perks, the power-ups, every class's shots and specials, the battlefields, turns
-and points) are in `public/js/arty-rules.js`.
+walking, jumping, the mounts' perks, the power-ups, every class's shots and specials, the battlefields (and
+their trampolines and portals), ghosts, turns and points) are in `public/js/arty-rules.js`.
 Everything about a duel is in
 `public/js/brawl-rules.js`: the class kits (HP, speed, attack, perk and skill), the perks' and skills' numbers
 (`PERK`, `SKILL`), the monsters and when they come (`MONSTERS`, `MOB_WAVES`), power-ups and kegs, the arena layouts

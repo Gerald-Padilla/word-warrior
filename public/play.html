@@ -188,6 +188,9 @@
     .ap-btn:not(:disabled):active { transform: translateY(2px); }
     /* Chat in the battle: a button on the field, and a box over its bottom with quick sayings. */
     .a-chat-btn { position: absolute; right: 8px; bottom: 8px; z-index: 3; font: inherit; font-size: 8px; padding: 8px 10px; border: 0; cursor: pointer; background: rgba(27, 20, 38, 0.85); color: var(--cream); box-shadow: inset 0 0 0 2px var(--panel-3); }
+    .a-zoom { position: absolute; right: 8px; top: 104px; z-index: 3; display: flex; flex-direction: column; gap: 4px; }
+    .a-zoom button { font: inherit; font-size: 12px; width: 32px; height: 30px; padding: 0; border: 0; cursor: pointer; background: rgba(27, 20, 38, 0.85); color: var(--cream); box-shadow: inset 0 0 0 2px var(--panel-3); touch-action: manipulation; }
+    .a-zoom button:active { transform: translateY(2px); }
     .a-chat-btn.new { color: var(--gold); box-shadow: inset 0 0 0 2px var(--gold); animation: blink 1s steps(2) 3; }
     .a-chat { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; display: flex; flex-direction: column; gap: 6px; padding: 6px 8px; background: rgba(27, 20, 38, 0.92); }
     .a-chat input { user-select: text; -webkit-user-select: text; touch-action: auto; }
@@ -669,6 +672,7 @@
         <div class="b-over hidden" id="aOver"><div class="o1" id="aO1"></div><div class="o2" id="aO2"></div><div class="o3" id="aO3"></div></div>
         <div class="toast" id="aToast"></div>
         <button class="a-chat-btn hidden" id="aChatBtn" type="button">CHAT</button>
+        <div class="a-zoom"><button type="button" id="aZoomIn" aria-label="Zoom in">+</button><button type="button" id="aZoomOut" aria-label="Zoom out">&minus;</button></div>
         <form class="a-chat hidden" id="aChat" autocomplete="off">
           <div class="a-quick">
             <button type="button" data-say="Nice shot!">NICE SHOT!</button>

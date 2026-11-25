@@ -409,6 +409,7 @@
   // Artillery: the active hero's aim, shots to play out, items, turns that ran out.
   socket.on('arty:pos', (p) => artyView.onPos(p));
   socket.on('arty:jump', (j) => artyView.onJump(j));
+  socket.on('arty:warp', (w) => artyView.onWarp(w));
   socket.on('arty:haunt', (g) => artyView.onHaunt(g));
   socket.on('arty:drop', (g) => artyView.onDrop(g));
   socket.on('arty:flood', (f) => artyView.onFlood(f));
@@ -914,11 +915,12 @@
     box.dataset.mode = key;
     box.innerHTML = '';
     const tips = mode === 'artillery' ? [
-      ['MOVE', 'On your turn, ◀ ▶ walk a little and JUMP out of holes (PC: arrows, J). Each pet moves its own way'],
+      options.artyFfa ? ['MOVE', 'Walk and JUMP. Trampolines throw you up onto a perch; walk into a portal to come out of its twin']
+        : ['MOVE', 'On your turn, ◀ ▶ walk a little and JUMP out of holes (PC: arrows, J). Each pet moves its own way'],
       ['AIM', '▲ ▼ set the angle. The wind changes every turn and bends your shot: check the arrow'],
       ['FIRE', 'Hold FIRE to charge the power, let go to shoot (PC: Space)'],
       ['SHOTS', 'Two shots, a special, HEAL and DOUBLE. Shoot the bubbles over the middle for power-ups'],
-      ['GHOSTS', 'Knocked out? Haunt the field: drop a ghost bomb every few turns'],
+      ['GHOSTS', 'Knocked out? Float anywhere over the field and drop a ghost bomb every few turns'],
       ['WIN', `${options.artyFfa ? 'Last hero standing wins' : 'Wipe out the other team'}. From turn ${(rounds[0] || {}).turns || AR.TURNS.full}, sudden death: the water rises`],
     ] : [
       ['MOVE', 'Left thumb: drag on the left half (PC: WASD)'],

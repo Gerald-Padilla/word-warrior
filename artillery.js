@@ -162,7 +162,7 @@ function addHero(G, p, team = p.team, i = null, n = 1) {
     id: p.id, team, cls: A.SHOTS[p.cls] ? p.cls : 'knight', pet, x: spot.x, y: spot.y, face, angle: 45,
     hp: A.HP, max: A.HP, alive: true, special: 0, items: { heal: 1, double: 1 }, stamina, maxStamina: stamina, away: false,
     fury: false, shield: false, haste: false, twin: false, // power-ups waiting to be used
-    ghostWait: 0, gx: spot.x, armed: false, // once knocked out: turns until its ghost bomb is ready, where it floats, and whether it's dropping one
+    ghostWait: 0, gx: spot.x, gy: 0, armed: false, // once knocked out: turns until its ghost bomb is ready, where it floats, and whether it's dropping one
     streak: 0, // shots in a row (their own turns) that hit a foe
     score: 0, dealt: 0, kos: 0, deaths: 0, best: 0, far: 0, power: 0, lastPower: 0, orbs: 0, haunted: 0,
   };
@@ -257,11 +257,14 @@ const mine = (G, id) => {
 };
 
 // Walk the active hero dir (-1 or 1) for dt seconds, along the ground, while their stamina lasts (their
-// mount sets how fast, and how high a step they can climb). Returns 'fell' if they walked off into the drop.
-function walk(G, id, dir, dt) {
+// mount sets how fast, and how high a step they can climb). Returns 'fell' if they walked off into the drop,
+// { warp } if they walked into a portal (and came out of its twin: { warp, fell } if there was nothing
+// under that), or { bounce } if they stepped onto a trampoline (a jump for the screens to play, like jump's).
+function walk(G, id, dir, dt, now = 0) {
   const H = mine(G, id);
   if (!H || !dir) return null;
   H.face = dir;
+  if (onSpring(G, H.x, H.y)) return { bounce: spring(G, H, now, dir) };
   const M = mountOf(H);
   const climb = A.CLIMB * (M.climb || 1);
   let left = Math.min(H.stamina, A.WALK_SPEED * (M.speed || 1) * dt);
@@ -272,6 +275,7 @@ function walk(G, id, dir, dt) {
     const y = G.terrain.standAt(nx, H.y, climb);
     if (y === false) break; // a wall
     if (y === null && M.sure) break; // a goat stops at the edge of the drop
+    const was = portalAt(G, H.x, H.y);
     H.stamina = Math.max(0, H.stamina - 2);
     H.x = nx;
     if (y === null) {
@@ -279,8 +283,80 @@ function walk(G, id, dir, dt) {
       return 'fell';
     }
     H.y = y;
+    const gate = portalAt(G, H.x, H.y);
+    if (gate && gate !== was) return warp(G, H, gate);
+    if (onSpring(G, H.x, H.y)) return { bounce: spring(G, H, now, dir) };
   }
   return 'ok';
+}
+
+// ---- trampolines and portals (free-for-all battlefields) -------------------------------
+const onSpring = (G, x, y) => G.terrain.kind(x, y) === 6;
+const portalAt = (G, x, y) => G.terrain.portals.find((p) => Math.abs(x - p.x) < A.PORTAL.r && Math.abs(y - p.y) < 50) || null;
+
+// Through a portal: out of its twin, a step past it the way it faces, onto the ground there (or falling to
+// whatever's under it: off the bottom, a KO).
+function warp(G, H, gate) {
+  const twin = G.terrain.portals.find((p) => p.pair === gate.pair && p !== gate);
+  const from = [Math.round(H.x), H.y];
+  H.x = Math.max(20, Math.min(MAP.W - 20, twin.x + twin.side * (A.PORTAL.r + 14)));
+  H.face = twin.side;
+  const y = G.terrain.groundBelow(H.x, twin.y - 60);
+  const w = { id: H.id, from, to: [Math.round(H.x), y ?? MAP.H + 80], pair: gate.pair, face: H.face };
+  if (y === null) {
+    knockOut(G, H, null, 0, [], 'fell');
+    return { warp: w, fell: true };
+  }
+  H.y = y;
+  return { warp: w };
+}
+
+// Where a trampoline at (x, y) throws a hero going dir: a jump onto the nearest perch higher up that way
+// (the next ones if it can't get there, then the other way), the first arc that lands on it; or, if none
+// does, straight up and down again.
+function fling(G, x, y, dir) {
+  const T = G.terrain;
+  const g = A.JUMP.grav;
+  const C = MAP.CELL;
+  const spots = T.perches.map(([a, b, top]) => ({ a: a * C, b: b * C, y: top * C, x: ((a + b) / 2) * C })).filter((q) => q.y < y - 40);
+  const near = (q, r) => Math.abs(q.x - x) - Math.abs(r.x - x);
+  const ahead = spots.filter((q) => (q.x - x) * dir > 0).sort(near).slice(0, 3);
+  const behind = spots.filter((q) => (q.x - x) * dir <= 0).sort(near).slice(0, 2);
+  for (const q of ahead.concat(behind)) {
+    for (const lift of [140, 240, 360, 500]) {
+      for (const f of [0.5, 0.3, 0.7]) {
+        const tx = q.a + (q.b - q.a) * f;
+        const ty = T.groundBelow(tx, q.y - 60);
+        if (ty === null || Math.abs(ty - q.y) > 40) continue; // that bit of the perch is gone
+        const apex = Math.min(y, ty) - lift;
+        const vy = -Math.sqrt(2 * g * (y - apex));
+        const time = -vy / g + Math.sqrt((2 * (ty - apex)) / g);
+        const j = A.hop(T, x, y, (tx - x) / time, vy);
+        if (!j.fell && j.x >= q.a - 8 && j.x <= q.b + 8 && Math.abs(j.y - ty) < 30) return j;
+      }
+    }
+  }
+  return A.hop(T, x, y, 0, -A.SPRING.up);
+}
+
+// The hero bounces off the trampoline they're on: like a jump (no walk used), for the screens to play.
+function spring(G, H, now, dir) {
+  const j = fling(G, H.x, H.y, dir);
+  return leap(G, H, now, [{ t: 0, x: Math.round(H.x), y: H.y }], j);
+}
+
+// A jump (or a bounce) worked out: the hero goes along its path, and lands (or falls off the bottom: a KO
+// once they've fallen). boings: when (and where) a trampoline threw them, for the screens.
+function leap(G, H, now, boings, j, flap = false) {
+  if (!flap && Math.abs(j.x - H.x) > 4) H.face = j.x > H.x ? 1 : -1;
+  H.x = Math.round(j.x);
+  H.y = j.y;
+  G.busyUntil = now + j.t;
+  G.hop = { t0: now, path: j.path };
+  G.flapped = flap;
+  G.fallAt = j.fell ? now + j.t : 0;
+  G.fallId = j.fell ? H.id : null;
+  return { id: H.id, path: j.path, t: j.t, fell: j.fell, flap, x: H.x, y: H.y, stamina: Math.round(H.stamina), boings };
 }
 
 // Jump the way they face (their mount sets how far and how high, and what it costs). Worked out in full
@@ -298,18 +374,19 @@ function jump(G, id, now) {
     if (!M.flap || G.flapped || !G.hop) return null;
     from = pathAt(G.hop.path, now - G.hop.t0);
   }
+  if (!flap && onSpring(G, H.x, H.y)) return spring(G, H, now, H.face);
   const cost = Math.round(A.JUMP.cost * (M.jumpCost || 1) * (flap ? 0.5 : 1));
   if (H.stamina < cost) return null;
-  const j = A.hop(G.terrain, from[0], from[1], H.face * A.JUMP.vx * (M.jumpX || 1), -A.JUMP.vy * (M.jumpY || 1) * (flap ? 0.85 : 1), M.glide || 0);
+  let j = A.hop(G.terrain, from[0], from[1], H.face * A.JUMP.vx * (M.jumpX || 1), -A.JUMP.vy * (M.jumpY || 1) * (flap ? 0.85 : 1), M.glide || 0);
   H.stamina = Math.max(0, H.stamina - cost);
-  H.x = Math.round(j.x);
-  H.y = j.y;
-  G.busyUntil = now + j.t;
-  G.hop = { t0: now, path: j.path };
-  G.flapped = flap;
-  G.fallAt = j.fell ? now + j.t : 0;
-  G.fallId = j.fell ? H.id : null;
-  return { id: H.id, path: j.path, t: j.t, fell: j.fell, flap, x: H.x, y: H.y, stamina: Math.round(H.stamina) };
+  const boings = [];
+  if (!j.fell && onSpring(G, j.x, j.y)) {
+    // Landed on a trampoline: off they go again, on from there.
+    const b = fling(G, j.x, j.y, H.face);
+    boings.push({ t: j.t, x: Math.round(j.x), y: j.y });
+    j = { path: j.path.concat(b.path.slice(1).map(([t, x, y]) => [t + j.t, x, y])), x: b.x, y: b.y, t: j.t + b.t, fell: b.fell };
+  }
+  return leap(G, H, now, boings, j, flap);
 }
 
 // A hero who jumped off the bottom is out once they've fallen. Returns their id when it happens.
@@ -347,12 +424,13 @@ function useItem(G, id, item) {
 }
 
 // ---- ghosts --------------------------------------------------------------------------
-// A ghost floats over x (any time). Returns its x, or null if it isn't a ghost (or its bomb is on its way).
-function haunt(G, id, x) {
+// A ghost floats to (x, y), anywhere over the field (any time; without y, it keeps its height). Returns
+// where it is, [x, y], or null if it isn't a ghost (or its bomb is on its way).
+function haunt(G, id, x, y) {
   const H = G.heroes.get(id);
   if (!H || H.alive || H.armed || !Number.isFinite(Number(x))) return null;
-  H.gx = Math.round(Math.max(40, Math.min(MAP.W - 40, Number(x))));
-  return H.gx;
+  [H.gx, H.gy] = A.ghostAt(Number(x), Number.isFinite(Number(y)) && y !== null ? Number(y) : H.gy);
+  return [H.gx, H.gy];
 }
 
 // A ghost whose bomb is ready drops it where it floats: it falls once the turn's shot has landed.
@@ -372,8 +450,8 @@ function ghostBombs(G, out, t0) {
     if (H.alive || !H.armed) continue;
     H.armed = false;
     H.ghostWait = A.GHOST.every;
-    const from = { x: H.gx, y: A.ghostY(G.terrain, H.gx) + 24, vx: 0, vy: 120 };
-    out.events.push({ t: Math.round(t), type: 'ghost', id: H.id, x: H.gx });
+    const from = { x: H.gx, y: H.gy + 24, vx: 0, vy: 120 };
+    out.events.push({ t: Math.round(t), type: 'ghost', id: H.id, x: H.gx, y: H.gy });
     const dealt = H.dealt;
     end = Math.max(end, shell(G, H, A.GHOST.bomb, 0, 0, t, out, from));
     H.haunted += H.dealt - dealt;
@@ -678,7 +756,7 @@ function knockOut(G, T, H, t, events, why = 'hp') {
   T.hp = 0;
   T.deaths += 1;
   T.ghostWait = A.GHOST.first;
-  T.gx = Math.round(Math.max(40, Math.min(MAP.W - 40, T.x)));
+  [T.gx, T.gy] = A.ghostAt(T.x, A.ghostY(G.terrain, Math.max(40, Math.min(MAP.W - 40, T.x))));
   T.armed = false;
   T.fury = T.shield = T.haste = T.twin = false;
   if (why === 'fell') T.y = MAP.H + 80;
@@ -762,7 +840,8 @@ function finish(G, winner) {
 // What every screen gets with the room's state: the battlefield (seed and style), whose turn, the wind, the
 // water (sudden death), the power-ups ([id, kind, x, y]) and every hero: [id, team, x, y, hp, alive, face,
 // angle, special, heal item, double item, stamina, last power, power-ups waiting (1 fury, 2 shield, 4 haste,
-// 8 twin), most stamina, ghost: turns until its bomb is ready (-1 alive), where it floats, dropping a bomb].
+// 8 twin), most stamina, ghost: turns until its bomb is ready (-1 alive), where it floats (x), dropping a
+// bomb, where it floats (y)].
 function stateOf(G) {
   return {
     seed: G.seed, style: G.style, ffa: G.ffa, turn: G.turn, turns: G.turns, team: G.team, active: G.active, wind: G.wind, phase: G.phase,
@@ -772,7 +851,7 @@ function stateOf(G) {
     heroes: [...G.heroes.values()].map((H) => [H.id, H.team, Math.round(H.x), H.y, Math.max(0, H.hp), H.alive ? 1 : 0, H.face, H.angle,
       Math.floor(H.special), H.items.heal, H.items.double, Math.round(H.stamina), H.lastPower,
       (H.fury ? 1 : 0) | (H.shield ? 2 : 0) | (H.haste ? 4 : 0) | (H.twin ? 8 : 0), Math.round(H.maxStamina),
-      H.alive ? -1 : H.ghostWait, H.gx, H.armed ? 1 : 0]),
+      H.alive ? -1 : H.ghostWait, H.gx, H.armed ? 1 : 0, H.gy]),
   };
 }
 

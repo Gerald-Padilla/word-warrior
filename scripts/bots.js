@@ -166,6 +166,19 @@ for (let i = 0; i < count; i++) {
     }
   });
   let haunted = 0; // the turn our ghost last dropped a bomb on
+  let pos = null; // where our hero is, as the server says while it moves
+  let afterBounce = null; // what to do once a trampoline has thrown us up onto a perch
+  socket.on('arty:pos', (p) => {
+    if (p.id === me) pos = { x: p.x, y: p.y };
+  });
+  socket.on('arty:jump', (j) => {
+    if (j.id !== me) return;
+    pos = { x: j.x, y: j.y };
+    if (!afterBounce) return;
+    const go = afterBounce;
+    afterBounce = null;
+    setTimeout(go, j.t + 400);
+  });
   socket.on('room:state', (s) => {
     const A = s.arty;
     if (!A || s.state !== 'playing') return;
@@ -182,7 +195,9 @@ for (let i = 0; i < count; i++) {
         haunted = A.turn;
         const T = foes.find((f) => f.id === A.active) || foes[Math.floor(Math.random() * foes.length)];
         const wait = 800 + Math.random() * 2500;
-        setTimeout(() => socket.emit('arty:haunt', { x: Math.round(T.x + (Math.random() - 0.5) * 60) }), wait);
+        // Float down to just over them.
+        const at = { x: Math.round(T.x + (Math.random() - 0.5) * 60), y: Math.round(T.y - 160 - Math.random() * 120) };
+        setTimeout(() => socket.emit('arty:haunt', at), wait);
         setTimeout(() => socket.emit('arty:drop', {}, () => {}), wait + 400);
       }
       return;
@@ -190,6 +205,32 @@ for (let i = 0; i < count; i++) {
     if (A.phase !== 'aim' || A.active !== me || planned === A.turn) return;
     planned = A.turn;
     if (!foes.length) return;
+    pos = { x: H.x, y: H.y };
+    // Free for all, down on the floor: walk to the nearest trampoline, let it throw us up onto a perch,
+    // then shoot from there (or from wherever we got to, if it's taking too long).
+    const T0 = field.terrain;
+    const lowest = T0.perches.length ? Math.max(...T0.perches.map((q) => q[2])) * AR.MAP.CELL : Infinity;
+    if (A.ffa && T0.springs.length && H.y > lowest + 60) {
+      const sx = T0.springs.map(([a, b]) => ((a + b + 1) / 2) * AR.MAP.CELL).sort((p, q) => Math.abs(p - H.x) - Math.abs(q - H.x))[0];
+      const dir = sx >= H.x ? 1 : -1;
+      setTimeout(() => socket.emit('arty:walk', { dir }), 600);
+      afterBounce = () => shoot(heroes, foes, pos, A);
+      setTimeout(() => {
+        if (!afterBounce) return;
+        socket.emit('arty:walk', { dir: 0 });
+        const go = afterBounce;
+        afterBounce = null;
+        go();
+      }, 7000);
+      return;
+    }
+    shoot(heroes, foes, H, A);
+  });
+
+  // Aim at the nearest foe from `from` by trying shots against the ground, charge up and fire, a little off.
+  function shoot(heroes, foes, from, A) {
+    const H = { ...heroes.find((h) => h.id === me), x: from.x, y: from.y };
+    foes.sort((a, b) => Math.abs(a.x - H.x) - Math.abs(b.x - H.x));
     const T = foes[0];
     const kit = AR.SHOTS[CLASSES[i % CLASSES.length]];
     const special = A.specials && H.special >= AR.SPECIAL_MAX;
@@ -199,7 +240,7 @@ for (let i = 0; i < count; i++) {
     const def = special ? kit.special.shot : alt ? a2 : kit.shot;
     const face = T.x >= H.x ? 1 : -1;
     let best = null;
-    const live = heroes.filter((h) => h.alive);
+    const live = heroes.filter((h) => h.alive).map((h) => (h.id === me ? H : h));
     for (let angle = 20; angle <= 80; angle += 4) {
       for (let power = 25; power <= 100; power += 3) {
         const { end } = AR.fly(field.terrain, live, me, AR.launch(H.x, H.y, face, angle, power), def, A.wind);
@@ -214,7 +255,7 @@ for (let i = 0; i < count; i++) {
     setTimeout(() => socket.emit('arty:aim', { angle: shot.angle, face }), think * 0.5);
     for (let k = 1; k <= 4; k++) setTimeout(() => socket.emit('arty:charge', { power: Math.round((power * k) / 4) }), think + k * 250);
     setTimeout(() => socket.emit('arty:fire', { angle: shot.angle, face, power, shot: special ? 'special' : alt ? 'two' : 'one' }, () => {}), think + 1100);
-  });
+  }
 
   socket.on('room:state', (s) => {
     trackTeam(s.players);

@@ -1708,9 +1708,18 @@ function artyTick(room, now) {
   if (G.phase === 'aim') {
     const w = room.artyWalk;
     if (w && w.id === G.active && w.dir && now >= G.busyUntil) {
-      const r = ARTY.walk(G, w.id, w.dir, dt);
-      if (r === 'fell') {
-        // Walked off the edge: a KO, and the turn's over.
+      const r = ARTY.walk(G, w.id, w.dir, dt, now);
+      // Through a portal, or off a trampoline: they stop walking there (holding the button again walks on).
+      if (r && r.warp) {
+        io.to(channel(room)).emit('arty:warp', r.warp);
+        room.artyWalk = null;
+      }
+      if (r && r.bounce) {
+        io.to(channel(room)).emit('arty:jump', r.bounce);
+        room.artyWalk = null;
+      }
+      if (r === 'fell' || (r && r.fell)) {
+        // Walked off the edge (or out of a portal into the drop): a KO, and the turn's over.
         io.to(channel(room)).emit('arty:fell', { id: w.id });
         return artyPass(room, now, false);
       }
@@ -2414,8 +2423,8 @@ io.on('connection', (socket) => {
     const t = Date.now();
     if (t - (player.hauntAt || 0) < 40) return;
     player.hauntAt = t;
-    const x = ARTY.haunt(G, player.id, data?.x);
-    if (x !== null) socket.to(channel(room)).emit('arty:haunt', { id: player.id, x });
+    const at = ARTY.haunt(G, player.id, data?.x, data?.y);
+    if (at) socket.to(channel(room)).emit('arty:haunt', { id: player.id, x: at[0], y: at[1] });
   });
   socket.on('arty:drop', (_data, cb) => {
     const { room, player, G } = ghostCtx();

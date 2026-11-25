@@ -109,7 +109,9 @@
       this.zoomOn = null; // { x, y, until }
       this.zoom = 1;
       this.flashAt = 0;
-      this.lookAt = null; // phone: { x, until } a ghost looking for where to drop its bomb
+      this.lookAt = null; // phone: { x, y, until } a ghost looking for where to drop its bomb
+      this.userZoom = 1; // phone: how far the player has zoomed in (over 1) or out (under 1)
+      this.squash = null; // a trampoline that just threw someone: { x, t0 }
       this.shake = { until: 0, pow: 0 };
       this.cam = null; // phone: { x, y } the middle of the view
       this.pan = null; // phone: dragged away to look around, until this time
@@ -194,13 +196,16 @@
 
     takeHeroes(s) {
       const seen = new Set();
-      for (const [id, team, x, y, hp, alive, face, angle, special, heal, double, stamina, lastPower, buffs, maxStamina, ghostWait, gx, armed] of s.heroes) {
+      for (const [id, team, x, y, hp, alive, face, angle, special, heal, double, stamina, lastPower, buffs, maxStamina, ghostWait, gx, armed, gy] of s.heroes) {
         seen.add(id);
         const h = this.heroes.get(id) || { shownY: y };
         Object.assign(h, { id, team, x, y, hp, alive: Boolean(alive) && y <= MAP.H, face, angle, special, heal, double, stamina, lastPower, buffs: buffs || 0,
           maxStamina: maxStamina || A.STAMINA, power: 0, ghostWait: ghostWait ?? -1, armed: Boolean(armed) });
         // A ghost: where it floats (the phone that moves it keeps its own).
-        if (gx !== undefined && !(this.phone && id === this.selfId && h.drifting)) h.gx = gx;
+        if (gx !== undefined && !(this.phone && id === this.selfId && h.drifting)) {
+          h.gx = gx;
+          if (gy !== undefined) h.gy = gy;
+        }
         if (Math.abs(h.shownY - y) > 300) h.shownY = y;
         this.heroes.set(id, h);
       }
@@ -236,9 +241,11 @@
     }
 
     // A ghost floats somewhere else (moved from its phone).
-    onHaunt({ id, x }) {
+    onHaunt({ id, x, y }) {
       const h = this.heroes.get(id);
-      if (h && !(this.phone && id === this.selfId)) h.gx = x;
+      if (!h || (this.phone && id === this.selfId)) return;
+      h.gx = x;
+      if (y !== undefined) h.gy = y;
     }
 
     // A ghost dropped its bomb: it falls once the turn's shot has landed.
@@ -268,7 +275,27 @@
       if (!h) return;
       h.jump = { path: j.path, t0: performance.now(), end: j.t, fell: j.fell };
       Object.assign(h, { x: j.x, y: j.y, stamina: j.stamina });
-      Sfx.play('jump');
+      // A trampoline throws them (now, or when they land on one).
+      const boings = j.boings || [];
+      for (const b of boings) setTimeout(() => this.boing(b.x, b.y), b.t);
+      if (!boings.some((b) => !b.t)) Sfx.play('jump');
+    }
+
+    boing(x, y) {
+      this.burst(x, y, ['#ff5a4d', '#ffffff', '#5fe0ff'], 16, 0.22);
+      this.texts.push({ x, y: y - 40, text: 'BOING!', color: '#ffd23f', t0: performance.now(), life: 900, size: 14 });
+      this.squash = { x, t0: performance.now() };
+      Sfx.play('boing');
+    }
+
+    // Through a portal: out of its twin, with a flash at both.
+    onWarp(w) {
+      const color = A.PORTAL.colors[w.pair] || '#ffffff';
+      for (const [x, y] of [w.from, w.to]) this.burst(x, y - 30, [color, '#ffffff'], 22, 0.2);
+      this.rings.push({ x: w.to[0], y: w.to[1] - 30, r: 50, color, t0: performance.now(), life: 400 });
+      const h = this.heroes.get(w.id);
+      if (h) Object.assign(h, { x: w.to[0], y: w.to[1], shownY: w.to[1], face: w.face });
+      Sfx.play('warp');
     }
 
     // Chat: a speech bubble over the hero who said it, and the list at the bottom.
@@ -321,6 +348,12 @@
         const gill = cy + 1 < ROWS && !this.terrain.cells[i + COLS];
         c = gill ? P.cap[1].map((v) => v * 0.6) : hash(cx >> 2, cy >> 2) < 0.2 && d > 0 ? P.spot : P.cap[n < 0.5 ? 0 : 1];
       } else if (kind === 5) c = P.stem[cx % 4 === 0 ? 1 : 0];
+      else if (kind === 6) {
+        // A trampoline: a blue mat on a red-and-white frame.
+        const mat = cy > 0 && !this.terrain.cells[i - COLS];
+        c = mat ? (cx % 4 < 2 ? [74, 96, 224] : [52, 70, 176]) : cx % 4 < 2 ? [255, 90, 77] : [244, 232, 216];
+        return c;
+      }
       else if (d <= 2) c = P.grass;
       else if (d < 40) c = P.dirt[n < 0.5 ? 0 : 1];
       else c = P.rock;
@@ -455,8 +488,8 @@
         h.alive = false;
         h.hp = 0;
         h.koAt = performance.now();
-        h.gx = h.x;
-        h.gxShown = h.x;
+        [h.gx, h.gy] = A.ghostAt(h.x, this.terrain ? A.ghostY(this.terrain, clamp(h.x, 40, MAP.W - 40)) : 300);
+        [h.gxShown, h.gyShown] = [h.gx, h.gy];
         h.ghostWait = A.GHOST.first;
         if (e.why !== 'fell') this.burst(h.x, h.y - 20, ['#ffffff', '#ff5a4d', '#ffd23f'], 30, 0.3);
         const by = e.by && this.looks.get(e.by);
@@ -477,7 +510,7 @@
         // A ghost lets its bomb go.
         h.armed = false;
         h.ghostWait = A.GHOST.every;
-        if (this.terrain) this.burst(e.x, A.ghostY(this.terrain, e.x), ['#bb8cff', '#e0c8ff', '#ffffff'], 18, 0.15);
+        if (this.terrain) this.burst(e.x, e.y ?? A.ghostY(this.terrain, e.x), ['#bb8cff', '#e0c8ff', '#ffffff'], 18, 0.15);
         Sfx.play('escape');
       } else if (e.type === 'orb') {
         // A power-up, hit: it pops, and the shooter has it.
@@ -527,7 +560,8 @@
       h.alive = false;
       h.y = MAP.H + 80;
       h.koAt = performance.now();
-      h.gx = h.gxShown = clamp(h.x, 40, MAP.W - 40);
+      [h.gx, h.gy] = A.ghostAt(h.x, this.terrain ? A.ghostY(this.terrain, clamp(h.x, 40, MAP.W - 40)) : 300);
+      [h.gxShown, h.gyShown] = [h.gx, h.gy];
       h.ghostWait = A.GHOST.first;
       const look = this.looks.get(id) || {};
       this.callout(`${(look.name || 'HERO').toUpperCase()} FELL!`, '#ff5a4d', jumped ? 'Jumped off the edge' : 'Walked off the edge');
@@ -553,13 +587,45 @@
     }
 
     // ---- the view ---------------------------------------------------------------------
-    // Phone: drag the field to look around; it goes back to following the action after a few seconds.
+    // Zoom in (k over 1) or out: on a phone, from close up to the whole field; on the big screen, in from
+    // the whole field.
+    zoomBy(k) {
+      this.userZoom = clamp(this.userZoom * k, this.follow ? 0.35 : 1, this.follow ? 2.5 : 3);
+    }
+
+    // Phone: drag the field to look around (it goes back to following the action after a few seconds),
+    // pinch (or the mouse wheel) to zoom in and out.
     dragToLook() {
       let drag = null;
+      let pinch = null;
+      const fingers = new Map();
       this.canvas.addEventListener('pointerdown', (e) => {
-        drag = { x: e.clientX, y: e.clientY, cam: this.cam ? { ...this.cam } : null };
+        fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (fingers.size === 2) {
+          const [a, b] = [...fingers.values()];
+          pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom: this.userZoom };
+          drag = null;
+        } else if (fingers.size === 1) drag = { x: e.clientX, y: e.clientY, cam: this.cam ? { ...this.cam } : null };
       });
+      const up = (e) => {
+        fingers.delete(e.pointerId);
+        if (fingers.size < 2) pinch = null;
+        if (!fingers.size) drag = null;
+      };
+      window.addEventListener('pointerup', up);
+      window.addEventListener('pointercancel', up);
+      this.canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        this.zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15);
+      }, { passive: false });
       window.addEventListener('pointermove', (e) => {
+        if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        if (pinch && fingers.size >= 2) {
+          const [a, b] = [...fingers.values()];
+          this.userZoom = 1;
+          this.zoomBy(pinch.zoom * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
+          return;
+        }
         if (!drag || !drag.cam || !this.s) return;
         const k = this.dpr / this.s;
         const dx = (e.clientX - drag.x) * k;
@@ -568,7 +634,6 @@
         this.cam = { x: drag.cam.x - dx, y: drag.cam.y - dy };
         this.pan = performance.now() + 4000;
       });
-      window.addEventListener('pointerup', () => { drag = null; });
     }
 
     camera(focus, dt) {
@@ -577,14 +642,14 @@
       const H = this.H - top;
       if (!this.follow) {
         // The whole field; zoomed in on a knockout (kept inside the field).
-        const s = Math.min(W / MAP.W, H / MAP.H) * this.zoom;
+        const s = Math.min(W / MAP.W, H / MAP.H) * this.zoom * Math.max(1, this.userZoom);
         this.s = s;
         const fit = (span, size, at) => (span * s <= size ? (size - span * s) / 2 : clamp(size / 2 - at * s, size - span * s, 0));
         this.ox = fit(MAP.W, W, focus.x);
         this.oy = top + fit(MAP.H, H, focus.y);
         return;
       }
-      const s = Math.min(W / (this.phone ? 900 : 1100), H / 520) * this.zoom;
+      const s = Math.min(W / (this.phone ? 900 : 1100), H / 520) * this.zoom * this.userZoom;
       this.s = s;
       const vw = W / s;
       const vh = H / s;
@@ -596,7 +661,8 @@
         this.cam.y = lerp(this.cam.y, focus.y, k);
       }
       this.cam.x = vw >= MAP.W ? MAP.W / 2 : clamp(this.cam.x, vw / 2, MAP.W - vw / 2);
-      this.cam.y = vh >= MAP.H ? MAP.H / 2 : clamp(this.cam.y, vh / 2 - 200, MAP.H - vh / 2 + 60);
+      // Zoomed out far enough to see it all: the field sits at the bottom of the view, with sky over it.
+      this.cam.y = vh >= MAP.H ? MAP.H - vh / 2 + 60 : clamp(this.cam.y, vh / 2 - 200, MAP.H - vh / 2 + 60);
       this.ox = W / 2 - this.cam.x * s;
       this.oy = top + H / 2 - this.cam.y * s;
     }
@@ -656,7 +722,7 @@
         const [x, y] = pathAt(act.jump.path, pt - act.jump.t0);
         focus = { x, y: y - 120 };
       } else if (this.lookAt && pt < this.lookAt.until && this.terrain) {
-        focus = { x: this.lookAt.x, y: A.ghostY(this.terrain, this.lookAt.x) + 160 };
+        focus = { x: this.lookAt.x, y: (this.lookAt.y ?? A.ghostY(this.terrain, this.lookAt.x)) + 120 };
       } else if (this.hold) focus = this.hold;
       else focus = act ? { x: act.x, y: act.y - 120 } : { x: MAP.W / 2, y: MAP.H / 2 };
       if (!zoomed && this.zoomOn && this.zoom < 1.02) this.zoomOn = null;
@@ -669,6 +735,8 @@
       } else this.shake.pow = 0;
       if (this.ground) ctx.drawImage(this.ground, Math.round(this.X(0)), Math.round(this.Y(0)), Math.round(MAP.W * this.s), Math.round(MAP.H * this.s));
       this.drawAbyss(pt);
+      this.drawSprings(pt);
+      this.drawPortals(pt);
       this.drawBolts(pt);
       this.drawOrbs(pt);
       for (const h of this.heroes.values()) this.drawHero(h, pt, dt, s);
@@ -732,9 +800,11 @@
         if (h.alive || h.ghostWait === undefined || h.ghostWait < 0 || h.gx === undefined) continue;
         const look = this.looks.get(h.id);
         if (!look) continue;
+        if (h.gy === undefined) h.gy = A.ghostY(this.terrain, h.gx);
         h.gxShown = h.gxShown === undefined ? h.gx : lerp(h.gxShown, h.gx, 1 - Math.exp(-dt / 120));
+        h.gyShown = h.gyShown === undefined ? h.gy : lerp(h.gyShown, h.gy, 1 - Math.exp(-dt / 120));
         const x = h.gxShown;
-        const y = A.ghostY(this.terrain, x) + Math.sin(pt / 500 + x / 90) * 8;
+        const y = h.gyShown + Math.sin(pt / 500 + x / 90) * 8;
         const X = this.X(x);
         const Y = this.Y(y);
         const me = this.phone && h.id === this.selfId;
@@ -765,6 +835,75 @@
         const label = me ? (h.armed ? 'BOMB DROPS!' : ready ? 'YOU: READY!' : 'YOU') : h.armed ? 'BOMB!' : ready ? 'READY' : '';
         ctx.globalAlpha = me ? 1 : 0.8;
         this.text(`${look.name}${label ? ` · ${label}` : ''}`, X, Y - hh - 6 * this.dpr, this.phone ? 6 : clamp((8 * this.s) / this.dpr, 6, 10), '#e0c8ff');
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Trampolines: a blue mat on a red-and-white frame (drawn bigger than the ground cells under it, so it
+    // shows from far off), yellow arrows bobbing over it, little springs under one over the drop, and the
+    // mat dipping and flashing when one throws someone.
+    drawSprings(pt) {
+      if (!this.terrain || !(this.s > 0)) return;
+      const ctx = this.ctx;
+      const s = this.s;
+      for (const [a, b, top] of this.terrain.springs) {
+        const x0 = a * MAP.CELL;
+        const x1 = (b + 1) * MAP.CELL;
+        const y = top * MAP.CELL;
+        const mid = (x0 + x1) / 2;
+        const sq = this.squash;
+        const k = sq && sq.x >= x0 - 8 && sq.x <= x1 + 8 ? (pt - sq.t0) / 300 : 1;
+        const dip = k < 1 ? Math.sin(k * Math.PI) * 5 : 0;
+        if (this.terrain.groundBelow(mid, y + 9) === null) {
+          for (const cx of [x0 + 6, x1 - 6]) {
+            for (let i = 0; i < 4; i++) this.block(this.X(cx + (i % 2 ? 3 : -3)), this.Y(y + 10 + i * 4), Math.max(2, 3.5 * s), '#c9cfdc');
+          }
+        }
+        for (let x = x0 - 2; x < x1 + 2; x += 6) {
+          ctx.fillStyle = Math.floor((x - x0) / 6) % 2 ? '#f4e8d8' : '#ff5a4d';
+          ctx.fillRect(Math.round(this.X(x)), Math.round(this.Y(y + 2)), Math.ceil(6 * s), Math.max(2, Math.round(6 * s)));
+        }
+        ctx.fillStyle = k < 1 ? '#9fb0ff' : '#4a60e0';
+        ctx.fillRect(Math.round(this.X(x0)), Math.round(this.Y(y - 3 + dip)), Math.round((x1 - x0) * s), Math.max(2, Math.round(5 * s)));
+        ctx.globalAlpha = 0.55 + Math.sin(pt / 250) * 0.2;
+        const bob = Math.sin(pt / 300) * 4;
+        for (let n = 0; n < 2; n++) {
+          for (let i = -2; i <= 2; i++) this.block(this.X(mid + i * 4), this.Y(y - 22 - n * 12 + Math.abs(i) * 4 + bob), Math.max(2, 4 * s), '#ffd23f');
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // Portals: a ring of light standing on its perch, in its pair's color, with sparks going round it.
+    drawPortals(pt) {
+      if (!this.terrain || !(this.s > 0)) return;
+      const ctx = this.ctx;
+      const s = this.s;
+      for (const p of this.terrain.portals) {
+        const color = A.PORTAL.colors[p.pair];
+        const X = this.X(p.x);
+        const Y = this.Y(p.y - A.PORTAL.tall / 2);
+        const rx = 15 * s;
+        const ry = (A.PORTAL.tall / 2) * s;
+        ctx.globalAlpha = 0.25 + Math.sin(pt / 300 + p.pair) * 0.08;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.ellipse(X, Y, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2, 4 * s);
+        ctx.beginPath();
+        ctx.ellipse(X, Y, rx, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        for (let i = 0; i < 6; i++) {
+          const a = (i / 6) * Math.PI * 2 + (pt / 400) * (p.side || 1);
+          this.block(X + Math.cos(a) * rx, Y + Math.sin(a) * ry, Math.max(2, 4 * s), i % 2 ? '#ffffff' : color);
+        }
+        // Which way out.
+        ctx.globalAlpha = 0.7;
+        this.block(X + p.side * (rx + 6 * s), Y + ry - 8 * s, Math.max(2, 5 * s), color);
+        this.block(X + p.side * (rx + 12 * s), Y + ry - 8 * s, Math.max(2, 3 * s), color);
         ctx.globalAlpha = 1;
       }
     }
@@ -1317,6 +1456,10 @@
         ctx.fillStyle = (POWERS[o.kind] || {}).color || '#ffffff';
         ctx.fillRect(x + o.x * k - 2 * d, y + o.y * k - 2 * d, 4 * d, 4 * d);
       }
+      for (const p of this.terrain ? this.terrain.portals : []) {
+        ctx.fillStyle = A.PORTAL.colors[p.pair];
+        ctx.fillRect(x + p.x * k - 1.5 * d, y + (p.y - 50) * k - 3 * d, 3 * d, 6 * d);
+      }
       if (this.waterShown !== null && this.waterShown < MAP.H) {
         ctx.fillStyle = this.lava() ? 'rgba(232,55,28,0.7)' : 'rgba(47,111,208,0.7)';
         ctx.fillRect(x, y + this.waterShown * k, w, (MAP.H - this.waterShown) * k);
@@ -1333,7 +1476,8 @@
   // On your turn: ◀ ▶ walk (held), JUMP, ▲ ▼ angle (held), FIRE: hold to charge, let go to shoot. Pick
   // SHOT 1, SHOT 2 or your special, and use HEAL or DOUBLE. On a keyboard: arrows walk and aim, J jumps,
   // Space charges and fires, 1, 2 and 3 pick the shot, H heals, X doubles. Knocked out, you're a ghost:
-  // ◀ ▶ float over the field (any time), and DROP (FIRE, or Space) lets your bomb go when it's ready.
+  // ◀ ▶ ▲ ▼ float anywhere over the field (any time), and DROP (FIRE, or Space) lets your bomb go when it's
+  // ready.
   class ArtyPad {
     constructor(root, { send, view }) {
       this.root = root;
@@ -1348,6 +1492,8 @@
       this.charging = null;
       this.walking = 0;
       this.tilting = 0;
+      this.drift = 0; // a ghost floating left (-1) or right (1)
+      this.driftY = 0; // ... and up (-1) or down (1)
       this.sentAim = '';
       this.airUntil = 0; // in the middle of a jump until then: no firing
       const q = (sel) => root.querySelector(sel);
@@ -1368,8 +1514,8 @@
       };
       hold(this.el.left, () => this.walk(-1), () => this.walk(0));
       hold(this.el.right, () => this.walk(1), () => this.walk(0));
-      hold(this.el.up, () => { this.tilting = 1; }, () => { this.tilting = 0; this.aim(true); });
-      hold(this.el.down, () => { this.tilting = -1; }, () => { this.tilting = 0; this.aim(true); });
+      hold(this.el.up, () => this.tilt(1), () => this.tilt(0));
+      hold(this.el.down, () => this.tilt(-1), () => this.tilt(0));
       hold(this.el.fire, () => this.charge(), () => this.release());
       hold(this.el.jump, () => this.jump(), () => {});
       this.el.shot.onclick = () => this.pick('one');
@@ -1382,11 +1528,11 @@
         if (!(this.mine || this.ghost) || e.repeat || /^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName || '')) return;
         const k = e.key.toLowerCase();
         keys.add(k);
-        if (this.ghost && !['arrowleft', 'a', 'arrowright', 'd', ' '].includes(k)) return;
+        if (this.ghost && !['arrowleft', 'a', 'arrowright', 'd', 'arrowup', 'w', 'arrowdown', 's', ' '].includes(k)) return;
         if (k === 'arrowleft' || k === 'a') this.walk(-1);
         else if (k === 'arrowright' || k === 'd') this.walk(1);
-        else if (k === 'arrowup' || k === 'w') this.tilting = 1;
-        else if (k === 'arrowdown' || k === 's') this.tilting = -1;
+        else if (k === 'arrowup' || k === 'w') this.tilt(1);
+        else if (k === 'arrowdown' || k === 's') this.tilt(-1);
         else if (k === ' ') this.charge();
         else if (k === 'j') this.jump();
         else if (k === '1') this.pick('one');
@@ -1401,10 +1547,7 @@
         const k = e.key.toLowerCase();
         keys.delete(k);
         if (['arrowleft', 'a', 'arrowright', 'd'].includes(k)) this.walk(0);
-        if (['arrowup', 'w', 'arrowdown', 's'].includes(k)) {
-          this.tilting = 0;
-          this.aim(true);
-        }
+        if (['arrowup', 'w', 'arrowdown', 's'].includes(k)) this.tilt(0);
         if (k === ' ' && this.charging) this.release();
       });
       this.last = performance.now();
@@ -1424,7 +1567,7 @@
       const h = state && this.view.heroes.get(you);
       this.mine = Boolean(state && state.phase === 'aim' && state.active === you && h && h.alive);
       this.ghost = Boolean(state && state.phase !== 'over' && h && !h.alive && h.ghostWait >= 0);
-      if (!this.ghost) this.drift = 0;
+      if (!this.ghost) this.drift = this.driftY = 0;
       this.hero = h || null;
       this.state = state;
       if (this.mine && !was) {
@@ -1448,7 +1591,7 @@
       if (this.ghost) {
         // A ghost drifts over the field (update() moves it).
         this.drift = dir;
-        if (this.hero) this.hero.drifting = Boolean(dir);
+        if (this.hero) this.hero.drifting = Boolean(dir || this.driftY);
         if (!dir) this.haunt(true);
         return;
       }
@@ -1457,6 +1600,18 @@
       if (this.walking === dir) return;
       this.walking = dir;
       this.send('arty:walk', { dir });
+    }
+
+    // ▲ ▼ held: aim higher or lower; a ghost floats up or down.
+    tilt(dir) {
+      if (this.ghost) {
+        this.driftY = -dir;
+        if (this.hero) this.hero.drifting = Boolean(dir || this.drift);
+        if (!dir) this.haunt(true);
+        return;
+      }
+      this.tilting = dir;
+      if (!dir) this.aim(true);
     }
 
     aim(force = false) {
@@ -1475,9 +1630,16 @@
       return A.MOUNTS[look ? look.pet : 0] || A.MOUNTS[0];
     }
 
+    // Standing on a trampoline: JUMP bounces you (free).
+    onSpring() {
+      const h = this.hero;
+      return Boolean(h && this.view.terrain && performance.now() >= this.airUntil && this.view.terrain.kind(h.x, h.y) === 6);
+    }
+
     canJump() {
       const h = this.hero;
       if (!this.mine || this.charging || !h || this.jumping) return false;
+      if (this.onSpring()) return true;
       const air = performance.now() < this.airUntil;
       if (air && (!this.mount().flap || this.flapped)) return false;
       return (h.stamina ?? 0) >= Math.round(A.JUMP.cost * (this.mount().jumpCost || 1) * (air ? 0.5 : 1));
@@ -1506,7 +1668,7 @@
       const t = performance.now();
       if (!force && t - (this.hauntAt || 0) < 80) return;
       this.hauntAt = t;
-      this.send('arty:haunt', { x: Math.round(h.gx) });
+      this.send('arty:haunt', { x: Math.round(h.gx), y: Math.round(h.gy ?? A.ghostY(this.view.terrain, h.gx)) });
     }
 
     canDrop() {
@@ -1581,9 +1743,10 @@
       }
       if (this.ghost) {
         const h = this.hero;
-        if (this.drift && h && !h.armed) {
-          h.gx = clamp((h.gx ?? h.x) + this.drift * dt * 0.6, 40, MAP.W - 40);
-          this.view.lookAt = { x: h.gx, until: performance.now() + 1500 };
+        if ((this.drift || this.driftY) && h && !h.armed && this.view.terrain) {
+          const v = (A.GHOST.speed / 1000) * dt;
+          [h.gx, h.gy] = A.ghostAt((h.gx ?? h.x) + this.drift * v, (h.gy ?? A.ghostY(this.view.terrain, h.gx ?? h.x)) + this.driftY * v);
+          this.view.lookAt = { x: h.gx, y: h.gy, until: performance.now() + 1500 };
           this.haunt();
         }
         this.render();
@@ -1622,11 +1785,11 @@
         E.fire.querySelector('small').textContent = this.ghost ? 'BOMB' : 'HOLD';
       }
       if (this.ghost) {
-        E.left.disabled = E.right.disabled = Boolean(h && h.armed);
+        E.left.disabled = E.right.disabled = E.up.disabled = E.down.disabled = Boolean(h && h.armed);
         E.fire.disabled = !this.canDrop();
       }
       E.jump.disabled = !this.canJump();
-      const jumpLabel = air && this.mount().flap && !this.flapped ? 'FLAP' : 'JUMP';
+      const jumpLabel = this.mine && this.onSpring() ? 'BOING' : air && this.mount().flap && !this.flapped ? 'FLAP' : 'JUMP';
       if (E.jump.textContent !== jumpLabel) E.jump.textContent = jumpLabel;
       E.power.style.width = `${this.mine ? this.power : 0}%`;
       E.last.style.left = `${h ? h.lastPower || 0 : 0}%`;

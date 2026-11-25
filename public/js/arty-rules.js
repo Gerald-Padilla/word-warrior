@@ -53,12 +53,24 @@
     { name: 'FLAP', pet: 'BAT', text: 'jumps again in mid-air (tap JUMP while flying)', flap: true },
   ];
 
-  // Ghosts: a hero who's knocked out haunts the battlefield. It floats over the field (moved from its
-  // phone) and, `first` turns after it's out and then every `every` turns, it can drop a ghost bomb straight
-  // down; the bomb falls once the turn's shot has landed (or the turn runs out). Its hits score for the ghost.
-  const GHOST = { first: 2, every: 3, hover: 260, bomb: { kind: 'ghost', dmg: 18, r: 45, crater: 26, wind: 0, big: 1.1 } };
-  // How high a ghost floats at x: well over the ground there (and never above the top of the map).
-  const ghostY = (terrain, x) => Math.max(60, (terrain.groundBelow(x, 0) ?? MAP.H * 0.7) - GHOST.hover);
+  // Ghosts: a hero who's knocked out haunts the battlefield. It floats anywhere over the field, through
+  // anything (moved from its phone, `speed` units a second), and, `first` turns after it's out and then every
+  // `every` turns, it can drop a ghost bomb straight down from where it is; the bomb falls once the turn's
+  // shot has landed (or the turn runs out). Its hits score for the ghost. It starts `hover` over where it fell.
+  const GHOST = { first: 2, every: 3, hover: 260, speed: 600, top: 60, bottom: 1140, bomb: { kind: 'ghost', dmg: 18, r: 45, crater: 26, wind: 0, big: 1.1 } };
+  // How high a ghost floats at x when it first rises: well over the ground there (and never above the top).
+  const ghostY = (terrain, x) => Math.max(GHOST.top, (terrain.groundBelow(x, 0) ?? MAP.H * 0.7) - GHOST.hover);
+  // Where a ghost can be: anywhere on the map, not right at its edges.
+  const ghostAt = (x, y) => [Math.round(Math.max(40, Math.min(MAP.W - 40, x))), Math.round(Math.max(GHOST.top, Math.min(GHOST.bottom, y)))];
+
+  // Trampolines (on the free-for-all battlefields, on the floor or over the drop): step onto one (or jump
+  // onto it, or JUMP while on it) and it throws you up onto the nearest perch the way you're going (any
+  // perch if there's none that way, or straight up and down again if it can't reach one). Free: no walk
+  // used. They can't be blown up. `w`: how wide (cells); `up`: how fast the straight-up bounce goes.
+  const SPRING = { w: 14, up: 800 };
+  // Portals (free-for-all battlefields): two pairs, each with its own color, on perches across the field.
+  // Walk into one and you come out of its twin, facing away from it. `r`: how close counts as in it (across).
+  const PORTAL = { r: 12, tall: 70, colors: ['#5fe0ff', '#ff9a3c'] };
 
   // Sudden death floods the battlefield: when it starts the water fills the lowest dip, then rises `rise`
   // every turn (no higher than `top`). Feet in the water hurt (dmg a turn); a hero under it drowns.
@@ -212,7 +224,7 @@
   }
 
   // Ground cells: 0 air, 1 earth, 2 stone (towers), 3 earth grown by a Druid, 4 a mushroom's cap, 5 its
-  // stem. `depth`: how far each cell is below the surface it was made with (for its color).
+  // stem, 6 a trampoline (nothing blows it up). `depth`: how far each cell is below the surface it was made with (for its color).
   class Terrain {
     constructor(seed, style) {
       this.seed = seed;
@@ -222,6 +234,8 @@
       this.under = new Uint8Array(COLS * ROWS); // deep inside the earth: once dug out, a dark hollow (not sky)
       this.holes = []; // caves and pits, dug once the ground's colors are worked out
       this.perches = []; // free-for-all battlefields: where heroes start, [left, right, top] in cells
+      this.springs = []; // ... their trampolines, [left, right, top] in cells
+      this.portals = []; // ... and portals, { x, y (its foot), pair, side (the way out: 1 right, -1 left) } in units
       this.generate();
     }
 
@@ -368,6 +382,7 @@
         if (cx >= 0 && cx < COLS) fill(cx, top, bottom, kind);
       };
       const perch = (a, b, top) => this.perches.push([Math.max(2, Math.round(a)), Math.min(COLS - 3, Math.round(b)), Math.round(top)]);
+      const later = []; // things to add once the trampolines are in
       const ground = (surface) => {
         for (let cx = 0; cx < COLS; cx++) fill(cx, surface(cx), ROWS);
       };
@@ -395,7 +410,8 @@
         // Tall pillars of rock with flat tops, over a gully.
         ground(waves(ROWS * 0.9, [[4, 140], [2, 37]]));
         const m = 7 + Math.floor(rnd() * 2);
-        const xs = spread(m, 0.06, 0.94, 14);
+        const xs = spread(m, 0.03, 0.97, 8);
+        [xs[0], xs[m - 1]] = [4 + rnd() * 4, COLS - 5 - rnd() * 4]; // the end ones right at the edges
         const tops = heights(m, ROWS * 0.3, ROWS * 0.64, 24);
         xs.forEach((x, j) => {
           const top = tops[j];
@@ -403,7 +419,7 @@
           const rough = waves(0, [[1.2, 13], [0.8, 5]]);
           const side = waves(0, [[2, 29], [1.2, 9]]);
           for (let cy = Math.floor(top - 3); cy < ROWS; cy++) {
-            const w = half * (1 + 0.3 * ((cy - top) / (ROWS - top))) + side(cy);
+            const w = half * (1 + 0.15 * ((cy - top) / (ROWS - top))) + side(cy);
             for (let cx = Math.floor(x - w); cx <= Math.ceil(x + w); cx++) {
               const shoulder = Math.max(0, Math.abs(cx - x) - (w - 4));
               if (cy >= top + rough(cx) + shoulder * 0.9) put(cx, cy, cy + 1);
@@ -431,17 +447,22 @@
           }
         };
         const m = 6 + Math.floor(rnd() * 2);
-        const xs = spread(m, 0.07, 0.93, 14);
+        const xs = spread(m, 0.03, 0.97, 8);
+        [xs[0], xs[m - 1]] = [4 + rnd() * 4, COLS - 5 - rnd() * 4]; // the end ones right at the edges
         const tops = heights(m, ROWS * 0.28, ROWS * 0.6, 26);
-        const room = (0.86 * COLS) / (m - 1) / 2 - 7;
+        const room = (0.94 * COLS) / (m - 1) / 2 - 12;
         xs.forEach((x, j) => {
           const half = Math.min(room, 24 + rnd() * 8);
           shroom(x, tops[j], half, 9 + rnd() * 4, 3.5 + rnd() * 1.5, (rnd() - 0.5) * 16);
           perch(x - half * 0.7, x + half * 0.7, tops[j]);
-          if (j) {
-            // A little one in between.
+          if (j && j % 2 === 0) {
+            // A little one in between, low enough to step over (every other gap), unless a trampoline's
+            // there (they go in first).
             const mx = (xs[j - 1] + x) / 2 + (rnd() - 0.5) * 10;
-            shroom(mx, floor(mx) - 12 - rnd() * 8, 6 + rnd() * 4, 5, 1.5, 0);
+            const r = 3 + rnd() * 2;
+            later.push(() => {
+              if (!this.springs.some(([a, b]) => mx > a - r - 4 && mx < b + r + 4)) shroom(mx, floor(mx) - 4, r, 2, 1, 0);
+            });
           }
         });
       } else if (key === 'arena') {
@@ -487,7 +508,7 @@
         // Little islands adrift at all heights, over a bottomless drop.
         const m = 9 + Math.floor(rnd() * 3);
         const xs = spread(m, 0.05, 0.95, 8);
-        const room = (0.9 * COLS) / (m - 1) / 2 - 6;
+        const room = (0.9 * COLS) / (m - 1) / 2 - 10;
         let high = rnd() < 0.5;
         xs.forEach((x) => {
           const top = ROWS * (high ? 0.26 + rnd() * 0.14 : 0.5 + rnd() * 0.16);
@@ -503,7 +524,8 @@
           perch(x - half + 4, x + half - 4, top);
         });
       } else {
-        // Broken stone floors on old columns, two storeys of them, over grass strewn with rubble.
+        // Broken stone floors floating on what's left of their columns, two storeys of them, over grass
+        // strewn with rubble. The columns are broken off well over the ground: walk under them.
         const floor = waves(ROWS * 0.86, [[5, 180], [2, 41]]);
         ground(floor);
         const slab = (x, half, top, legs) => {
@@ -525,11 +547,11 @@
           }
           for (const [lx, broken] of legs) {
             const foot = floor(lx);
-            const from = broken ? foot - 8 - rnd() * 20 : top + thick;
-            for (let cx = Math.round(lx - 3); cx <= Math.round(lx + 3); cx++) put(cx, from, foot + 2, 2);
+            const end = broken ? top + thick + 6 + rnd() * 14 : foot - 18 - rnd() * 6;
+            for (let cx = Math.round(lx - 3); cx <= Math.round(lx + 3); cx++) put(cx, top + thick, end, 2);
             for (let cx = Math.round(lx - 5); cx <= Math.round(lx + 5); cx++) {
-              if (!broken) put(cx, top + thick, top + thick + 2, 2);
-              put(cx, foot - 2, foot + 2, 2);
+              put(cx, top + thick, top + thick + 2, 2);
+              put(cx, foot - 1, foot + 2, 2);
             }
           }
           perch(x - half + 5, x + half - 5, top);
@@ -550,11 +572,130 @@
         for (let i = 0; i < 5; i++) {
           const x = 10 + rnd() * (COLS - 20);
           const w = 3 + rnd() * 4;
-          const h = 3 + rnd() * 4;
+          const h = 2 + rnd() * 2;
           for (let cx = Math.floor(x - w); cx <= Math.ceil(x + w); cx++) put(cx, floor(x) - h, floor(x) + 2, 2);
         }
       }
       this.perches.sort((p, q) => p[0] - q[0]);
+      this.trampolines();
+      for (const f of later) f();
+      this.gates(rnd);
+    }
+
+    // Trampolines, in the open with nothing over them. On the floor: one on every stretch you can walk along
+    // (walls, like a pillar's foot or a mushroom's stem, end a stretch), more on a long one, so nobody who
+    // ends up down there is stuck; the floor is levelled round each. Where there's no floor, three floating
+    // low over the drop, spread out.
+    trampolines() {
+      const C = this.cells;
+      const at = (cx, cy) => C[cy * COLS + cx];
+      // Each column: the top of whatever's in it (null: nothing), and the top of the floor rising from the
+      // bottom of the map (null: none).
+      const sky = [];
+      const floor = [];
+      for (let cx = 0; cx < COLS; cx++) {
+        let cy = 0;
+        while (cy < ROWS && !at(cx, cy)) cy++;
+        sky.push(cy < ROWS ? cy : null);
+        let fy = ROWS - 1;
+        while (fy >= 0 && at(cx, fy)) fy--;
+        floor.push(fy < ROWS - 1 ? fy + 1 : null);
+      }
+      const low = (cx) => cx >= 0 && cx < COLS && floor[cx] !== null && floor[cx] >= ROWS * 0.74;
+      // Can one half wide go here, centered on c: open earth floor (near enough flat), or open drop?
+      const fits = (c, half, drop) => {
+        let lo = ROWS;
+        let hi = 0;
+        for (let cx = c - half - 3; cx <= c + half + 3; cx++) {
+          if (cx < 0 || cx >= COLS) return false;
+          if (drop) {
+            if (sky[cx] !== null) return false;
+            continue;
+          }
+          if (!low(cx) || sky[cx] !== floor[cx] || at(cx, floor[cx]) !== 1) return false;
+          lo = Math.min(lo, floor[cx]);
+          hi = Math.max(hi, floor[cx]);
+        }
+        return hi - lo <= 8;
+      };
+      const picks = []; // [column, half, over the drop]
+      const place = (from, to, want, apart, drop) => {
+        for (const half of [SPRING.w / 2, 5]) {
+          let best = null;
+          for (let c = from; c <= to; c++) {
+            if (!fits(c, half, drop) || picks.some(([q]) => Math.abs(q - c) < apart)) continue;
+            if (best === null || Math.abs(c - want) < Math.abs(best - want)) best = c;
+          }
+          if (best !== null) return picks.push([best, half, drop]);
+        }
+        return 0;
+      };
+      let from = null;
+      for (let cx = 0; cx <= COLS; cx++) {
+        const on = low(cx) && (from === null || Math.abs(floor[cx] - floor[cx - 1]) <= 4);
+        if (on && from === null) from = cx;
+        if (on) continue;
+        if (from !== null) {
+          const to = cx - 1;
+          const n = Math.max(1, Math.round((to - from) / 160));
+          for (let k = 0; k < n; k++) place(from, to, from + ((to - from) * (k + 0.5)) / n, 40, false);
+        }
+        from = low(cx) ? cx : null; // a step too high to walk up starts another stretch
+      }
+      if (!picks.length) for (const f of [0.2, 0.5, 0.8]) place(0, COLS - 1, f * COLS, 70, true);
+      for (const [c, half, drop] of picks.sort((a, b) => a[0] - b[0])) {
+        let level = Math.round(ROWS * 0.9);
+        if (!drop) {
+          // Level the floor round it (halfway between its highest and lowest), sloping gently back to
+          // the floor on each side.
+          let lo = ROWS;
+          let hi = 0;
+          for (let cx = c - half - 3; cx <= c + half + 3; cx++) [lo, hi] = [Math.min(lo, floor[cx]), Math.max(hi, floor[cx])];
+          level = Math.round((lo + hi) / 2);
+          for (let cx = c - half - 10; cx <= c + half + 10; cx++) {
+            if (!low(cx)) continue;
+            const out = Math.max(0, Math.abs(cx - c) - half - 3) / 8;
+            const want = Math.round(level + (floor[cx] - level) * Math.min(1, out));
+            for (let cy = Math.min(want, floor[cx]); cy < Math.max(want, floor[cx]); cy++) C[cy * COLS + cx] = cy < want ? 0 : 1;
+          }
+        }
+        for (let cx = c - half; cx < c + half; cx++) for (let cy = level - 2; cy < level; cy++) C[cy * COLS + cx] = 6;
+        this.springs.push([c - half, c + half - 1, level - 2]);
+      }
+    }
+
+    // Two pairs of portals on four perches spread across the field (one from each quarter, the pairs
+    // crossing over): each at one end of its perch, leading out toward the middle of it. The perch's spot
+    // for a hero to start on moves over to make room.
+    gates(rnd) {
+      const P = this.perches;
+      if (P.length < 4) return;
+      const four = [0, 1, 2, 3].map((q) => {
+        const ids = P.map((p, j) => j).filter((j) => Math.floor((j * 4) / P.length) === q);
+        return ids[Math.floor(rnd() * ids.length)];
+      });
+      [[four[0], four[2]], [four[1], four[3]]].forEach((pair, k) => {
+        for (const j of pair) {
+          const p = P[j];
+          const side = rnd() < 0.5 ? 1 : -1;
+          const cx = side > 0 ? p[0] + 1 : p[1] - 1;
+          const x = (cx + 0.5) * MAP.CELL;
+          const y = this.groundBelow(x, (p[2] - 6) * MAP.CELL) ?? p[2] * MAP.CELL;
+          this.portals.push({ x, y, pair: k, side });
+          if (p[1] - p[0] >= 16) {
+            if (side > 0) p[0] += 7;
+            else p[1] -= 7;
+          }
+        }
+      });
+    }
+
+    // What's at (x, y), in units: a cell kind (0 air, also off the map).
+    kind(x, y) {
+      const cx = Math.floor(x / MAP.CELL);
+      const cy = Math.floor(y / MAP.CELL);
+      if (cx < 0 || cx >= COLS || cy < 0 || cy >= ROWS) return 0;
+      return this.cells[cy * COLS + cx];
     }
 
     // Is (x, y), in units, solid ground?
@@ -588,7 +729,9 @@
           const dy = cy + 0.5 - y / c;
           if (dx * dx + dy * dy > r2) continue;
           const i = cy * COLS + cx;
-          if (kind === 0) this.cells[i] = 0;
+          if (kind === 0) {
+            if (this.cells[i] !== 6) this.cells[i] = 0;
+          }
           else if (!this.cells[i]) {
             this.cells[i] = kind;
             this.depth[i] = 0;
@@ -737,7 +880,7 @@
   const Arty = {
     MAP, COLS, ROWS, GRAVITY, MAX_SPEED, WIND_ACCEL, HERO_R, HERO_MID, CLIMB, WALK_SPEED, STAMINA, HP, ANGLE_MIN, ANGLE_MAX,
     CHARGE_MS, KO_POINTS, WIN_POINTS, SUDDEN_STEP, SUDDEN_MAX, LAST_TURN, SPECIAL_MAX, SPECIAL_PER_DMG, SPECIAL_PER_HURT, SPECIAL_PER_TURN, SHOW_MS, TURNS, LEVELS,
-    SHOTS, ITEMS, STYLES, stylesFor, JUMP, MOUNTS, ORB, ORBS, GHOST, WATER, SLOWMO, SLOWMO_EXTRA, FFA_WIN_POINTS, ghostY, Terrain, seeded, launch, fly, hop, PATH_MS,
+    SHOTS, ITEMS, STYLES, stylesFor, JUMP, MOUNTS, ORB, ORBS, GHOST, SPRING, PORTAL, WATER, SLOWMO, SLOWMO_EXTRA, FFA_WIN_POINTS, ghostY, ghostAt, Terrain, seeded, launch, fly, hop, PATH_MS,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = Arty;
   else root.Arty = Arty;

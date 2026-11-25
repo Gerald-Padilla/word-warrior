@@ -1882,13 +1882,16 @@
       ['MOVE', pcControls ? 'Left and right arrow keys walk a little (the blue bar).' : '◀ ▶ walk a little each turn (the blue bar). Walking turns you round.'],
       ['JUMP', `${pcControls ? 'Press J' : 'Tap JUMP'} to jump the way you face: out of a hole, or over a gap. It uses up some of your walk.`],
       ['AIM', pcControls ? 'Up and down arrow keys set the angle.' : '▲ ▼ set the angle. Drag the battlefield to look around.'],
+      ['ZOOM', pcControls ? 'The + and − buttons (or the mouse wheel) zoom the battlefield in and out, to find your target.' : 'Pinch the battlefield, or tap + and −, to zoom in and out and find your target.'],
+      artyFfa() ? ['TRAMPOLINES', `Down on the floor? Walk onto a trampoline (or ${pcControls ? 'press J' : 'tap JUMP'} on one) and it throws you up onto a perch the way you're going. Free!`] : null,
+      artyFfa() ? ['PORTALS', 'Walk into a glowing ring and you come out of the other one the same color.'] : null,
       ['FIRE', pcControls ? 'Hold Space to charge the power, let go to shoot.' : 'Hold FIRE to charge the power, let go to shoot. The white mark is your last shot.'],
       ['SHOTS', `SHOT 1: ${shots.name}. SHOT 2: ${shots.alt.name}, ${shots.alt.text}${pcControls ? ' (keys 1 and 2)' : ''}.`],
       ['WIND', 'Changes every turn and bends your shot. The gauge at the top shows which way and how hard: the longer and redder the arrow, the stronger.'],
       options.skills ? ['SPECIAL', `${shots.special.name}: ${shots.special.text}. It charges as you hit and get hit${pcControls ? ' (key 3)' : ''}.`] : null,
       ['ITEMS', `HEAL (+40 HP) and DOUBLE (fire twice): once each a game${pcControls ? ' (keys H and X)' : ''}.`],
       ['POWER-UPS', 'Bubbles float over the middle: shoot one to take it. POTION heals, FURY hits harder, SHIELD halves damage, HASTE goes farther, TWIN SHOT fires twice.'],
-      ['GHOST', `Knocked out? You haunt the field: ${pcControls ? 'arrow keys' : '◀ ▶'} float over it, and every few turns ${pcControls ? 'Space' : 'DROP'} lets a ghost bomb fall after the turn's shot. Its hits still score!`],
+      ['GHOST', `Knocked out? You haunt the field: ${pcControls ? 'the arrow keys' : '◀ ▶ ▲ ▼'} float you anywhere over it, and every few turns ${pcControls ? 'Space' : 'DROP'} lets a ghost bomb fall straight down after the turn's shot. Its hits still score!`],
       ['WIN', `${artyFfa() ? 'Every hero for themselves: be the last one standing (+' + AR.FFA_WIN_POINTS + ').' : 'Wipe out the other team.'} Falling off the bottom is a KO! From turn ${rounds[0]?.turns || AR.TURNS.full}, sudden death: shots hit harder and the water rises every turn.`],
       ['MOUNT', pet ? `You ride your ${pet.name.toLowerCase()}. ${mount.name}: it ${mount.text}.`
         : 'No companion: you fight on foot. Pick one in CHANGE HERO: each moves its own way.'],
@@ -2058,6 +2061,7 @@
 
   // ---- artillery ---------------------------------------------------------
   socket.on('arty:jump', (j) => aView.onJump(j));
+  socket.on('arty:warp', (w) => aView.onWarp(w));
   socket.on('arty:haunt', (g) => aView.onHaunt(g));
   socket.on('arty:drop', (g) => aView.onDrop(g));
   socket.on('arty:flood', (f) => aView.onFlood(f));
@@ -2100,6 +2104,9 @@
     artyChat(false);
   }
   $('#aChatBtn').onclick = () => artyChat(true);
+  // Zoom the battlefield in and out (or pinch it).
+  $('#aZoomIn').onclick = () => aView.zoomBy(1.25);
+  $('#aZoomOut').onclick = () => aView.zoomBy(0.8);
   $('#aChatX').onclick = () => artyChat(false);
   $('#aChat').addEventListener('submit', (e) => {
     e.preventDefault();
@@ -2153,7 +2160,7 @@
       lines = ['ARTILLERY', n > 3 ? 'READY?' : String(Math.max(1, n)), ffa ? 'Every hero for themselves: last one standing wins! Set your angle, hold FIRE, mind the wind!'
         : `You're on ${team.name}. Set your angle, hold FIRE to charge, mind the wind!`];
     } else if (h && !h.alive && !aView.replay && performance.now() - (h.koAt || 0) < 6000) {
-      lines = ['KNOCKED OUT', "YOU'RE A GHOST", 'Float over the field with ◀ ▶ and drop a ghost bomb every few turns!'];
+      lines = ['KNOCKED OUT', "YOU'RE A GHOST", 'Float anywhere with ◀ ▶ ▲ ▼ and drop a ghost bomb every few turns!'];
     }
     $('#aOver').classList.toggle('hidden', !lines);
     if (lines) [1, 2, 3].forEach((i) => { $(`#aO${i}`).textContent = lines[i - 1]; });
@@ -2168,8 +2175,8 @@
       // A ghost: when its bomb is ready, and what to do.
       if (h && !h.alive && h.ghostWait >= 0 && st === 'playing') {
         wait = h.armed ? 'GHOST: YOUR BOMB DROPS AFTER THIS SHOT'
-          : h.ghostWait > 0 ? `GHOST: ◀ ▶ FLOAT · BOMB IN ${h.ghostWait} TURN${h.ghostWait === 1 ? '' : 'S'}`
-            : A.phase === 'aim' ? 'GHOST: BOMB READY! ◀ ▶ AND TAP DROP' : 'GHOST: BOMB READY ON THE NEXT TURN';
+          : h.ghostWait > 0 ? `GHOST: ◀ ▶ ▲ ▼ FLOAT · BOMB IN ${h.ghostWait} TURN${h.ghostWait === 1 ? '' : 'S'}`
+            : A.phase === 'aim' ? 'GHOST: BOMB READY! FLOAT OVER A FOE, TAP DROP' : 'GHOST: BOMB READY ON THE NEXT TURN';
       }
       if (A.boost > 1) wait += ` · SUDDEN DEATH x${A.boost}`;
     } else if (st === 'countdown' || (A && A.phase === 'start')) wait = 'GET READY...';
